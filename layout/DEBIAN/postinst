@@ -1,0 +1,4 @@
+#!/bin/bash
+# WxkbToolbar10 post-install：让微信输入法键盘扩展重新加载插件
+killall -9 wxkb_plugin 2>/dev/null || true
+exit 0
