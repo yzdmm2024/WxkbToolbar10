@@ -1,0 +1,4 @@
+# 强制 LF 入库/检出，避免 Windows CRLF 破坏 postinst 等脚本
+* text=auto eol=lf
+*.deb binary
+*.png binary
