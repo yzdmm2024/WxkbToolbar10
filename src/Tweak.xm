@@ -1,78 +1,246 @@
-// WxkbToolbar10 — 微信输入法键盘扩展工具栏增强
+// WxkbToolbar10 — 微信输入法键盘扩展增强
 // 目标：iPhone 12 Pro / iOS 16.6 / Relaxin rootless (ElleKit TweakInject)
 // 注入目标：com.tencent.wetype.keyboard (wxkb_plugin.appex)
 //
-// 1.2.0 行为：
-//   1) 把「定制工具栏」控制中心里提供的全部功能补进工具栏（与 App 自带功能取并集）。
-//   2) 禁止「自动缩小铺满」：拦截 setShrunken:，图标始终保持原生尺寸。
-//   3) 图标超出可视宽度时恢复横向滑动。
-//   4) 工具栏左移，紧贴左侧固定按钮（微信 logo）排列，消除两者之间的空白；
-//      工具栏与内部滚动容器一起铺满整行剩余宽度，右侧不再留空。
+// 1.3.0 行为：
+//   1) 工具栏功能由「设置 → 微信输入法增强」面板决定：可排序、可隐藏、可增删。
+//      面板首次打开时以「键盘内可用」的一组功能为默认，其余功能默认关闭，
+//      解决 1.2.0 强行补全 17 项导致「有几个点了没效果」的问题。
+//   2) 键盘背景：纯色 / 本地图片（支持透明度）。
+//   3) 按键配色：字母键底色、功能键底色、按键文字色、按下高亮色。
+//   4) 保留 1.2.0 的布局修复：工具栏紧贴左侧 logo 铺满整行 + 原生尺寸横向滑动。
+//   5) 修复进入「定制工具栏」编辑态时被强制撑满导致的界面重叠。
 //
 // 说明：原生布局把 WBFunctionToolBar 固定在 x=102 / 宽 288（WBTopBar 宽 390），
 //       logo 右边界只有 46，于是 logo 与第一个图标之间空出约 68pt 且无法滑入。
-//       1.2.0 在 WBTopBar 布局完成后把工具栏重定位到 logo 右边界并撑满剩余宽度。
+//       这里在 WBTopBar 布局完成后把工具栏重定位到 logo 右边界并撑满剩余宽度。
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import "WXKBShared.h"
 
-// 「定制工具栏」控制中心里的全部功能 id（tag）：
-//   1 语音转文字   2 表情       3 常用语     5 边写边译    14 小程序
-//   16 手写找字    17 单手模式  18 键盘调节  20 键盘选择   27 繁体输入
-//   28 定制工具栏  29 灵动表达  31 剪贴板    32 问 AI      33 字体滤镜
-//   35 排版成图    36 文字整理
-static const int kWXKBCustomFuncs[] = {
-    1, 2, 3, 5, 14, 16, 17, 18, 20, 27, 28, 29, 31, 32, 33, 35, 36
-};
-static const int kWXKBCustomFuncsCount =
-    (int)(sizeof(kWXKBCustomFuncs) / sizeof(kWXKBCustomFuncs[0]));
+#pragma mark - 私有类声明（实现由原 App 提供）
 
-// 私有类声明（Logos 生成 category 需要类名可见；实现由原 App 提供）
 @interface WBFunctionToolBar : UIView
 @end
 
 @interface WBTopBar : UIView
 @end
 
-// 让编译器认识工具栏的私有 getter（实现由原类提供）
+@interface WBKeyView : UIView
+- (id)item;
+@end
+
+@interface WBRuleKeyView : WBKeyView
+@end
+
+@interface WBReturnKeyView : WBKeyView
+@end
+
+@interface WBRootInputView : UIView
+@end
+
+@interface WBMainInputView : UIView
+@end
+
+@interface WBKeyboardView : UIView
+@end
+
+@interface NSObject (WXKBKeyItem)
+- (NSInteger)alphabetIndex;
+- (NSString *)identifier;
+@end
+
 @interface NSObject (WXKBEditing)
 - (BOOL)editing;
 @end
 
-static BOOL WXKBIsEditing(id bar) {
-    if ([bar respondsToSelector:@selector(editing)]) {
-        return [bar editing];
+#pragma mark - 配置
+
+static BOOL      gEnabled      = YES;
+static NSArray  *gFuncList     = nil;    // NSNumber 数组，用户配置的顺序
+static BOOL      gBgEnabled    = NO;
+static int       gBgMode       = 1;      // 1 纯色 2 图片
+static CGFloat   gBgAlpha      = 1.0;
+static UIColor  *gBgColor      = nil;
+static NSString *gBgImage      = nil;
+static BOOL      gKeyEnabled   = NO;
+static UIColor  *gLetterBg     = nil;
+static UIColor  *gFuncBg       = nil;
+static UIColor  *gTextColor    = nil;
+static UIColor  *gHighlight    = nil;
+static double    gLastLoad     = -1;
+
+static UIColor *WXKBColor(NSString *hex, CGFloat alpha) {
+    if (![hex isKindOfClass:[NSString class]]) {
+        return nil;
     }
-    return NO;
+    NSString *s = [hex stringByTrimmingCharactersInSet:
+                       [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([s hasPrefix:@"#"]) {
+        s = [s substringFromIndex:1];
+    }
+    if (s.length == 8) {
+        s = [s substringToIndex:6];   // 容忍 #RRGGBBAA
+    }
+    if (s.length != 6) {
+        return nil;
+    }
+    unsigned int v = 0;
+    if (![[NSScanner scannerWithString:s] scanHexInt:&v]) {
+        return nil;
+    }
+    return [UIColor colorWithRed:((v >> 16) & 0xFF) / 255.0
+                           green:((v >> 8) & 0xFF) / 255.0
+                            blue:(v & 0xFF) / 255.0
+                           alpha:alpha];
 }
 
-// 与 App 传入的功能列表取并集，补齐「定制工具栏」里的全部功能
-static NSArray *WXKBExpandFuncs(NSArray *in) {
-    if (![in isKindOfClass:[NSArray class]]) {
-        return in;
-    }
-
-    NSMutableArray *out = [NSMutableArray arrayWithArray:in];
-    NSMutableSet *have = [NSMutableSet set];
-    for (id o in in) {
-        if ([o respondsToSelector:@selector(intValue)]) {
-            [have addObject:@([o intValue])];
+// 键盘扩展是沙盒进程，读偏好要多种途径兜底。
+static NSDictionary *WXKBLoadPrefs(void) {
+    NSArray *paths = @[
+        @"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist",
+        @"/var/jb/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist",
+    ];
+    for (NSString *p in paths) {
+        NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:p];
+        if ([d isKindOfClass:[NSDictionary class]] && d.count > 0) {
+            return d;
         }
     }
 
-    for (int i = 0; i < kWXKBCustomFuncsCount; i++) {
-        NSNumber *n = @(kWXKBCustomFuncs[i]);
-        if (![have containsObject:n]) {
+    const CFStringRef domain = CFSTR(WXKB_PREFS_DOMAIN_C);
+    CFDictionaryRef raw = CFPreferencesCopyMultiple(
+        NULL, domain, kCFPreferencesCurrentUser, kCFPreferencesCurrentHost);
+    if (!raw) {
+        raw = CFPreferencesCopyMultiple(
+            NULL, domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    }
+    if (!raw) {
+        raw = CFPreferencesCopyMultiple(
+            NULL, domain, kCFPreferencesAnyUser, kCFPreferencesAnyHost);
+    }
+    if (raw) {
+        NSDictionary *d = CFBridgingRelease(raw);
+        if (d.count > 0) {
+            return d;
+        }
+    }
+
+    NSUserDefaults *ud = [[NSUserDefaults alloc] initWithSuiteName:WXKB_PREFS_DOMAIN];
+    NSDictionary *d = [ud persistentDomainForName:WXKB_PREFS_DOMAIN];
+    return ([d isKindOfClass:[NSDictionary class]] && d.count > 0) ? d : nil;
+}
+
+static NSArray *WXKBDefaultFuncList(void) {
+    NSMutableArray *a = [NSMutableArray array];
+    for (int i = 0; i < kWXKBFuncDefaultOnCount; i++) {
+        [a addObject:@(kWXKBFuncDefaultOn[i])];
+    }
+    return a;
+}
+
+static void WXKBReload(BOOL force) {
+    double now = CFAbsoluteTimeGetCurrent();
+    if (!force && gLastLoad > 0 && now - gLastLoad < 2.0) {
+        return;
+    }
+    gLastLoad = now;
+
+    NSDictionary *d = WXKBLoadPrefs();
+    if (!d) {
+        return;   // 读不到就沿用当前值（首次为内置默认）
+    }
+
+    id v = d[WXKB_KEY_ENABLED];
+    gEnabled = v ? [v boolValue] : YES;
+
+    id fl = d[WXKB_KEY_FUNCLIST];
+    gFuncList = [fl isKindOfClass:[NSArray class]] ? fl : nil;
+
+    gBgEnabled = [d[WXKB_KEY_BG_ENABLED] boolValue];
+    id bm = d[WXKB_KEY_BG_MODE];
+    gBgMode = bm ? [bm intValue] : 1;
+    id ba = d[WXKB_KEY_BG_ALPHA];
+    gBgAlpha = ba ? [ba doubleValue] : 1.0;
+    if (gBgAlpha < 0.05 || gBgAlpha > 1.0) {
+        gBgAlpha = 1.0;
+    }
+    id img = d[WXKB_KEY_BG_IMAGE];
+    gBgImage = [img isKindOfClass:[NSString class]] ? img : nil;
+
+    gBgColor = WXKBColor(d[WXKB_KEY_BG_COLOR], gBgAlpha)
+                   ?: [UIColor colorWithWhite:0.11 alpha:gBgAlpha];
+
+    gKeyEnabled = [d[WXKB_KEY_KEY_ENABLED] boolValue];
+    gLetterBg  = WXKBColor(d[WXKB_KEY_KEY_LETTERBG], 1.0)
+                     ?: [UIColor colorWithWhite:1.00 alpha:0.96];
+    gFuncBg    = WXKBColor(d[WXKB_KEY_KEY_FUNCBG], 1.0)
+                     ?: [UIColor colorWithWhite:0.66 alpha:1.00];
+    gTextColor = WXKBColor(d[WXKB_KEY_KEY_TEXT], 1.0) ?: [UIColor blackColor];
+    gHighlight = WXKBColor(d[WXKB_KEY_KEY_HIGHLIGHT], 1.0)
+                     ?: [UIColor colorWithWhite:0.85 alpha:1.00];
+}
+
+static void WXKBOnPrefsChanged(CFNotificationCenterRef center, void *observer,
+                               CFStringRef name, const void *object,
+                               CFDictionaryRef userInfo) {
+    WXKBReload(YES);
+}
+
+#pragma mark - 工具栏功能列表
+
+static BOOL WXKBIsEditing(id bar) {
+    return [bar respondsToSelector:@selector(editing)] ? [bar editing] : NO;
+}
+
+// 用户配置了清单就严格照办（顺序 + 显隐都由用户说了算）；
+// 未配置时用 App 原始列表 + 默认可用功能的并集。
+static NSArray *WXKBApplyFuncList(NSArray *in) {
+    WXKBReload(NO);
+    if (!gEnabled) {
+        return in;
+    }
+
+    NSMutableArray *out = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    if ([gFuncList isKindOfClass:[NSArray class]] && gFuncList.count > 0) {
+        for (id o in gFuncList) {
+            if (![o respondsToSelector:@selector(intValue)]) {
+                continue;
+            }
+            NSNumber *n = @([o intValue]);
+            if (![seen containsObject:n]) {
+                [out addObject:n];
+                [seen addObject:n];
+            }
+        }
+        return out;
+    }
+
+    for (id o in in) {
+        if (![o respondsToSelector:@selector(intValue)]) {
+            continue;
+        }
+        NSNumber *n = @([o intValue]);
+        if (![seen containsObject:n]) {
             [out addObject:n];
-            [have addObject:n];
+            [seen addObject:n];
+        }
+    }
+    for (id o in WXKBDefaultFuncList()) {
+        if (![seen containsObject:o]) {
+            [out addObject:o];
+            [seen addObject:o];
         }
     }
     return out;
 }
 
+#pragma mark - 布局
+
 // 左侧固定按钮（微信 logo 等）的最右边界：与工具栏同处一行、竖直相交、且完全在工具栏左侧。
-// 取所有候选中的最大右边界，作为工具栏新的起始 x。
 static CGFloat WXKBLeftFixedMaxX(UIView *bar, UIView *topBar) {
     UIView *container = topBar.superview;
     if (!container) {
@@ -86,13 +254,13 @@ static CGFloat WXKBLeftFixedMaxX(UIView *bar, UIView *topBar) {
         }
         CGRect f = v.frame;
         if (f.size.width < 20 || f.size.height < 20) {
-            continue;   // 忽略零碎小视图（如 10x10 的 tips 占位）
+            continue;
         }
         if (CGRectGetMaxX(f) > CGRectGetMinX(row) + 0.5) {
-            continue;   // 必须完全在工具栏左侧
+            continue;
         }
         if (CGRectGetMaxY(f) < CGRectGetMinY(row) + 0.5) {
-            continue;   // 必须与本行竖直相交
+            continue;
         }
         if (CGRectGetMinY(f) > CGRectGetMaxY(row) - 0.5) {
             continue;
@@ -104,81 +272,10 @@ static CGFloat WXKBLeftFixedMaxX(UIView *bar, UIView *topBar) {
     return best;
 }
 
-// 让工具栏紧贴左侧固定按钮并铺满整行剩余宽度；内部滚动容器同步铺满工具栏。
-static void WXKBFillRow(UIView *topBar) {
-    Class barCls = objc_getClass("WBFunctionToolBar");
-    if (!barCls) {
-        return;
-    }
-    CGFloat rowW = topBar.bounds.size.width;
-    if (rowW <= 0) {
-        return;
-    }
-
-    for (UIView *bar in topBar.subviews) {
-        if (![bar isKindOfClass:barCls]) {
-            continue;
-        }
-
-        CGFloat inset = WXKBLeftFixedMaxX(bar, topBar);
-        CGFloat x = inset > 0 ? inset : 0;
-        CGFloat w = rowW - x;
-        CGRect f = bar.frame;
-        if (w >= 40 &&
-            (fabs(f.origin.x - x) > 0.5 || fabs(f.size.width - w) > 0.5)) {
-            f.origin.x = x;
-            f.size.width = w;
-            bar.frame = f;
-        }
-
-        CGSize bd = bar.bounds.size;
-        for (UIView *sub in bar.subviews) {
-            if (![sub isKindOfClass:[UIScrollView class]]) {
-                continue;
-            }
-            CGRect sf = sub.frame;
-            if (fabs(sf.origin.x) > 0.5 || fabs(sf.origin.y) > 0.5 ||
-                fabs(sf.size.width - bd.width) > 0.5 ||
-                fabs(sf.size.height - bd.height) > 0.5) {
-                sub.frame = CGRectMake(0, 0, bd.width, bd.height);
-            }
-            UIScrollView *sv = (UIScrollView *)sub;
-            if (sv.contentSize.width > sv.bounds.size.width + 0.5) {
-                sv.scrollEnabled = YES;
-            }
-            break;
-        }
-        break;
-    }
-}
-
-%hook WBFunctionToolBar
-
-- (BOOL)updateFuncs:(NSArray *)funcs suggestedTypes:(NSArray *)types prefersRecent:(BOOL)prefersRecent {
-    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBExpandFuncs(funcs);
-    return %orig(f, types, prefersRecent);
-}
-
-- (BOOL)updateViewWithFuncs:(NSArray *)funcs {
-    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBExpandFuncs(funcs);
-    return %orig(f);
-}
-
-- (BOOL)updateFuncs:(NSArray *)funcs {
-    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBExpandFuncs(funcs);
-    return %orig(f);
-}
-
-// 关键：永远不缩小。图标保持原生尺寸，溢出交给横向滑动，避免挤成一团。
-- (void)setShrunken:(BOOL)shrunken animated:(BOOL)animated completion:(id)completion {
-    %orig(NO, animated, completion);
-}
-
-- (void)layoutSubviews {
-    %orig;
-    // 滚动容器始终铺满工具栏；内容溢出可视宽度时确保可以横向滑动
-    CGSize bd = self.bounds.size;
-    for (UIView *v in self.subviews) {
+// 滚动容器始终铺满工具栏；内容溢出时恢复横向滑动
+static void WXKBFixScroll(UIView *bar) {
+    CGSize bd = bar.bounds.size;
+    for (UIView *v in bar.subviews) {
         if (![v isKindOfClass:[UIScrollView class]]) {
             continue;
         }
@@ -196,6 +293,151 @@ static void WXKBFillRow(UIView *topBar) {
     }
 }
 
+// 工具栏紧贴左侧固定按钮并铺满整行剩余宽度；内部滚动容器同步铺满。
+static void WXKBFillRow(UIView *topBar) {
+    Class barCls = objc_getClass("WBFunctionToolBar");
+    if (!barCls) {
+        return;
+    }
+    CGFloat rowW = topBar.bounds.size.width;
+    if (rowW <= 0) {
+        return;
+    }
+
+    for (UIView *bar in topBar.subviews) {
+        if (![bar isKindOfClass:barCls]) {
+            continue;
+        }
+        // 编辑态（长按图标进入的「定制工具栏」）交给原生布局，
+        // 否则被强制撑满会和原生编辑界面叠在一起。
+        if (WXKBIsEditing(bar)) {
+            return;
+        }
+
+        CGFloat inset = WXKBLeftFixedMaxX(bar, topBar);
+        CGFloat x = inset > 0 ? inset : 0;
+        CGFloat w = rowW - x;
+        CGRect f = bar.frame;
+        if (w >= 40 &&
+            (fabs(f.origin.x - x) > 0.5 || fabs(f.size.width - w) > 0.5)) {
+            f.origin.x = x;
+            f.size.width = w;
+            bar.frame = f;
+        }
+        WXKBFixScroll(bar);
+        break;
+    }
+}
+
+#pragma mark - 按键配色
+
+// 字母键（alphabetIndex 0..25）与功能键分开上色
+static BOOL WXKBIsLetterKey(WBKeyView *v) {
+    id item = nil;
+    @try {
+        item = [v item];
+    } @catch (__unused NSException *e) {
+    }
+    if (!item) {
+        return NO;
+    }
+    NSInteger idx = NSNotFound;
+    @try {
+        idx = [item alphabetIndex];
+    } @catch (__unused NSException *e) {
+    }
+    return (idx >= 0 && idx < 26);
+}
+
+static UIColor *WXKBKeyBackground(WBKeyView *v) {
+    if (!gEnabled || !gKeyEnabled) {
+        return nil;
+    }
+    return WXKBIsLetterKey(v) ? gLetterBg : gFuncBg;
+}
+
+static UIColor *WXKBKeyText(void) {
+    return (gEnabled && gKeyEnabled) ? gTextColor : nil;
+}
+
+static UIColor *WXKBKeyHighlight(void) {
+    return (gEnabled && gKeyEnabled) ? gHighlight : nil;
+}
+
+#pragma mark - 键盘背景
+
+static const NSInteger kWXKBBgViewTag = 0x57584247;   // "WXBG"
+
+static void WXKBApplyBackground(UIView *host) {
+    if (!host) {
+        return;
+    }
+    UIView *bg = [host viewWithTag:kWXKBBgViewTag];
+    if (!gEnabled || !gBgEnabled) {
+        if (bg) {
+            [bg removeFromSuperview];
+        }
+        return;
+    }
+
+    if (!bg) {
+        bg = [[UIView alloc] initWithFrame:host.bounds];
+        bg.tag = kWXKBBgViewTag;
+        bg.userInteractionEnabled = NO;
+        bg.autoresizingMask =
+            UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [host insertSubview:bg atIndex:0];
+    }
+    bg.frame = host.bounds;
+    bg.layer.masksToBounds = YES;
+    bg.layer.contentsGravity = kCAGravityResizeAspectFill;
+
+    UIImage *img = nil;
+    if (gBgMode == 2 && gBgImage.length) {
+        img = [UIImage imageWithContentsOfFile:gBgImage];
+        if (!img && ![gBgImage hasPrefix:@"/var/jb"]) {
+            img = [UIImage imageWithContentsOfFile:
+                       [@"/var/jb" stringByAppendingString:gBgImage]];
+        }
+    }
+    if (img) {
+        bg.backgroundColor = nil;
+        bg.layer.contents = (__bridge id)img.CGImage;
+    } else {
+        bg.layer.contents = nil;
+        bg.backgroundColor = gBgColor;
+    }
+}
+
+#pragma mark - Hooks
+
+%hook WBFunctionToolBar
+
+- (BOOL)updateFuncs:(NSArray *)funcs suggestedTypes:(NSArray *)types prefersRecent:(BOOL)prefersRecent {
+    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
+    return %orig(f, types, prefersRecent);
+}
+
+- (BOOL)updateViewWithFuncs:(NSArray *)funcs {
+    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
+    return %orig(f);
+}
+
+- (BOOL)updateFuncs:(NSArray *)funcs {
+    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
+    return %orig(f);
+}
+
+// 关键：永远不缩小。图标保持原生尺寸，溢出交给横向滑动，避免挤成一团。
+- (void)setShrunken:(BOOL)shrunken animated:(BOOL)animated completion:(id)completion {
+    %orig(NO, animated, completion);
+}
+
+- (void)layoutSubviews {
+    %orig;
+    WXKBFixScroll(self);
+}
+
 %end
 
 // WBTopBar 承载候选栏与工具栏；在它自身布局完成后重定位工具栏，避免被原生布局改回 x=102。
@@ -208,20 +450,127 @@ static void WXKBFillRow(UIView *topBar) {
 
 %end
 
-%ctor {
-    Class c = objc_getClass("WBFunctionToolBar");
-    Class t = objc_getClass("WBTopBar");
-    if (c) {
-        Method m = class_getInstanceMethod(c, @selector(updateFuncs:suggestedTypes:prefersRecent:));
-        Method m2 = class_getInstanceMethod(c, @selector(updateViewWithFuncs:));
-        Method m3 = class_getInstanceMethod(c, @selector(setShrunken:animated:completion:));
-        NSLog(@"[WxkbToolbar10] 1.2.0 loaded custom=%d topBar=%s enc3=%s encView=%s encShrink=%s",
-              kWXKBCustomFuncsCount,
-              t ? "yes" : "no",
-              m ? method_getTypeEncoding(m) : "nil",
-              m2 ? method_getTypeEncoding(m2) : "nil",
-              m3 ? method_getTypeEncoding(m3) : "nil");
-    } else {
-        NSLog(@"[WxkbToolbar10] WBFunctionToolBar not found at load");
+%hook WBKeyView
+
+- (UIColor *)normalBgColorForCurrentState {
+    UIColor *c = WXKBKeyBackground(self);
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)backgroundColorForCurrentState {
+    UIColor *c = WXKBKeyBackground(self);
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)highlightedBgForCurrentState {
+    UIColor *c = WXKBKeyHighlight();
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)tintColorForCurrentState {
+    UIColor *c = WXKBKeyText();
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)normalTintColorForCurrentState {
+    UIColor *c = WXKBKeyText();
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)subTintColorForCurrentState {
+    UIColor *c = WXKBKeyText();
+    if (c) return c;
+    return %orig;
+}
+
+%end
+
+%hook WBRuleKeyView
+
+- (UIColor *)normalBgColorForCurrentState {
+    UIColor *c = WXKBKeyBackground(self);
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)highlightedBgForCurrentState {
+    UIColor *c = WXKBKeyHighlight();
+    if (c) return c;
+    return %orig;
+}
+
+%end
+
+%hook WBReturnKeyView
+
+- (UIColor *)normalBgColorForCurrentState {
+    UIColor *c = WXKBKeyBackground(self);
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)highlightedBgForCurrentState {
+    UIColor *c = WXKBKeyHighlight();
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)normalTintColorForCurrentState {
+    UIColor *c = WXKBKeyText();
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)highlightedTintColorForCurrentState {
+    UIColor *c = WXKBKeyText();
+    if (c) return c;
+    return %orig;
+}
+
+%end
+
+// 键盘根视图：插入一层不拦截触摸的背景视图，纯色/图片都画在这里
+%hook WBRootInputView
+
+- (void)layoutSubviews {
+    %orig;
+    WXKBApplyBackground(self);
+}
+
+%end
+
+%hook WBMainInputView
+
+- (void)layoutSubviews {
+    %orig;
+    if (!objc_getClass("WBRootInputView")) {
+        WXKBApplyBackground(self);
     }
+}
+
+%end
+
+// 键盘每次弹出时强制重读偏好，改完设置收起键盘再弹出即可生效
+%hook WBKeyboardView
+
+- (void)didAttachHosting {
+    %orig;
+    WXKBReload(YES);
+}
+
+%end
+
+%ctor {
+    WXKBReload(YES);
+    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
+                                    NULL, WXKBOnPrefsChanged,
+                                    CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
+                                    CFNotificationSuspensionBehaviorDeliverImmediately);
+    NSLog(@"[WxkbToolbar10] 1.3.0 loaded enabled=%d funcs=%lu bg=%d key=%d",
+          gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gKeyEnabled);
 }
