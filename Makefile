@@ -3,7 +3,10 @@
 #   bundle ：设置面板（PreferenceLoader）
 # rootless（ElleKit / TweakInject），注入目标 com.tencent.wetype.keyboard (wxkb_plugin)
 TARGET := iphone:clang:14.5:14.0
-ARCHS = arm64
+# 必须双架构：键盘扩展是 arm64 进程（微信 App 二进制），而「设置」是系统 App，
+# 进程为 arm64e —— 纯 arm64 的 preference bundle 在 arm64e 进程里 dlopen 会被
+# dyld 拒绝，表现为「未能载入软件包，因为它已损坏或丢失必要的资源」。
+ARCHS = arm64 arm64e
 THEOS_PACKAGE_SCHEME = rootless
 
 include $(THEOS)/makefiles/common.mk
