@@ -10,6 +10,10 @@
 		<string>PSLinkCell</string>
 		<key>detail</key>
 		<string>WxkbToolbar10PrefsRootListController</string>
+		<key>icon</key>
+		<string>icon.png</string>
+		<key>isController</key>
+		<true/>
 		<key>label</key>
 		<string>微信输入法增强</string>
 	</dict>
