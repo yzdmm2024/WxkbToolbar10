@@ -79,7 +79,7 @@ NSArray<NSString *> *WXKBColorPresets(void) {
                                                         set:@selector(setPreferenceValue:specifier:)
                                                         get:@selector(readPreferenceValue:)
                                                      detail:nil
-                                                       cell:PSSwitchCellType
+                                                       cell:PSSwitchCell
                                                        edit:nil];
     [sp setProperty:key forKey:@"key"];
     [sp setProperty:@(def) forKey:@"default"];
