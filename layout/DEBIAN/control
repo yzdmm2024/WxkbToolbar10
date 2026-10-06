@@ -1,9 +1,9 @@
 Package: com.yzdmm.wxkbtoolbar10
 Name: WxkbToolbar10
-Version: 1.1.0
+Version: 1.2.0
 Architecture: iphoneos-arm64
 Maintainer: yzdmm
 Author: yzdmm
 Section: Tweaks
 Depends: mobilesubstrate
-Description: 微信输入法键盘扩展工具栏：纳入「定制工具栏」全部功能，图标保持原生尺寸并支持横向滑动选取（不再自动缩小挤成一团）
+Description: 微信输入法键盘扩展工具栏：纳入「定制工具栏」全部功能，图标保持原生尺寸并支持横向滑动选取；工具栏紧贴左侧 logo 铺满整行，消除左侧空白
