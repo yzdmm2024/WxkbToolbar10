@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Filter</key>
+	<dict>
+		<!-- 注入微信输入法键盘扩展 -->
+		<key>Bundles</key>
+		<array>
+			<string>com.tencent.wetype.keyboard</string>
+		</array>
+		<!-- 兜底：按可执行文件名匹配 wxkb_plugin.appex -->
+		<key>Executables</key>
+		<array>
+			<string>wxkb_plugin</string>
+		</array>
+	</dict>
+</dict>
+</plist>
