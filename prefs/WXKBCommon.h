@@ -9,8 +9,18 @@ void WXKBSetPref(NSString *key, id value);
 
 NSArray<NSString *> *WXKBColorPresets(void);
 
-@interface WXKBBaseListController : PSListController
+// #RRGGBB / #RRGGBBAA <-> UIColor
+UIColor *WXKBColorFromHex(NSString *hex);
+NSString *WXKBHexFromColor(UIColor *color);
+
+// 26 字母逐个配色的读写
+NSString *WXKBLetterColor(NSInteger index);
+void WXKBSetLetterColor(NSInteger index, NSString *hex);
+
+@interface WXKBBaseListController : PSListController <UIColorPickerViewControllerDelegate>
+
 + (void)wxkbNotifyChanged;
+
 - (PSSpecifier *)wxkbSwitch:(NSString *)name key:(NSString *)key def:(BOOL)def;
 - (PSSpecifier *)wxkbLink:(NSString *)name detailClass:(NSString *)cls;
 - (PSSpecifier *)wxkbChoice:(NSString *)name key:(NSString *)key def:(id)def
@@ -20,4 +30,12 @@ NSArray<NSString *> *WXKBColorPresets(void);
               placeholder:(NSString *)placeholder;
 - (PSSpecifier *)wxkbSlider:(NSString *)name key:(NSString *)key def:(double)def
                         min:(double)min max:(double)max;
+
+// 点一下直接弹系统取色器（带色块预览）
+- (PSSpecifier *)wxkbColorRow:(NSString *)name key:(NSString *)key def:(NSString *)def;
+// 26 字母逐个配色行
+- (PSSpecifier *)wxkbLetterRow:(NSString *)letter index:(NSInteger)index;
+// 按钮行
+- (PSSpecifier *)wxkbButton:(NSString *)name action:(SEL)action;
+
 @end

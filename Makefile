@@ -23,10 +23,12 @@ WxkbToolbar10Prefs_FILES = \
 	prefs/WXKBCommon.m \
 	prefs/WxkbToolbar10PrefsRootListController.m \
 	prefs/WXKBFuncListController.m \
-	prefs/WXKBPickerControllers.m
+	prefs/WXKBPickerControllers.m \
+	prefs/WXKBLetterColors.m \
+	prefs/WXKBPhotoPicker.m
 WxkbToolbar10Prefs_BUNDLE_RESOURCE_DIRS = prefs/Resources
 WxkbToolbar10Prefs_INSTALL_PATH = /Library/PreferenceBundles
-WxkbToolbar10Prefs_FRAMEWORKS = UIKit Foundation
+WxkbToolbar10Prefs_FRAMEWORKS = UIKit Foundation PhotosUI
 WxkbToolbar10Prefs_PRIVATE_FRAMEWORKS = Preferences
 WxkbToolbar10Prefs_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -w
 

@@ -1,5 +1,6 @@
 // WXKBCommon.m — 偏好面板公共基类与读写工具
 #import "WXKBCommon.h"
+#import <objc/runtime.h>
 
 static NSUserDefaults *WXKBDefaults(void) {
     static NSUserDefaults *d = nil;
@@ -29,6 +30,89 @@ void WXKBSetPref(NSString *key, id value) {
     [WXKBDefaults() synchronize];
 }
 
+#pragma mark - 颜色转换
+
+UIColor *WXKBColorFromHex(NSString *hex) {
+    if (![hex isKindOfClass:[NSString class]]) {
+        return [UIColor whiteColor];
+    }
+    NSString *s = [hex stringByTrimmingCharactersInSet:
+                       [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([s hasPrefix:@"#"]) {
+        s = [s substringFromIndex:1];
+    }
+    if (s.length == 3) {
+        s = [NSString stringWithFormat:@"%c%c%c%c%c%c",
+             [s characterAtIndex:0], [s characterAtIndex:0],
+             [s characterAtIndex:1], [s characterAtIndex:1],
+             [s characterAtIndex:2], [s characterAtIndex:2]];
+    }
+    if (s.length != 6 && s.length != 8) {
+        return [UIColor whiteColor];
+    }
+    unsigned int v = 0;
+    if (![[NSScanner scannerWithString:s] scanHexInt:&v]) {
+        return [UIColor whiteColor];
+    }
+    CGFloat a = 1.0;
+    if (s.length == 8) {
+        a = (v & 0xFF) / 255.0;
+        v >>= 8;
+    }
+    return [UIColor colorWithRed:((v >> 16) & 0xFF) / 255.0
+                           green:((v >> 8) & 0xFF) / 255.0
+                            blue:(v & 0xFF) / 255.0
+                           alpha:a];
+}
+
+NSString *WXKBHexFromColor(UIColor *color) {
+    if (!color) {
+        return @"#FFFFFF";
+    }
+    CGFloat r = 1, g = 1, b = 1, a = 1;
+    if (![color getRed:&r green:&g blue:&b alpha:&a]) {
+        CGFloat w = 1;
+        if ([color getWhite:&w alpha:&a]) {
+            r = g = b = w;
+        }
+    }
+    int ri = (int)lround(r * 255.0), gi = (int)lround(g * 255.0), bi = (int)lround(b * 255.0);
+    int ai = (int)lround(a * 255.0);
+    if (ai >= 255) {
+        return [NSString stringWithFormat:@"#%02X%02X%02X", ri, gi, bi];
+    }
+    return [NSString stringWithFormat:@"#%02X%02X%02X%02X", ri, gi, bi, ai];
+}
+
+#pragma mark - 26 字母逐个配色
+
+NSString *WXKBLetterColor(NSInteger index) {
+    if (index < 0 || index > 25) {
+        return nil;
+    }
+    NSDictionary *m = WXKBGetPref(WXKB_KEY_LETTER_MAP);
+    if (![m isKindOfClass:[NSDictionary class]]) {
+        return nil;
+    }
+    id v = m[[NSString stringWithFormat:@"%ld", (long)index]];
+    return [v isKindOfClass:[NSString class]] ? v : nil;
+}
+
+void WXKBSetLetterColor(NSInteger index, NSString *hex) {
+    if (index < 0 || index > 25) {
+        return;
+    }
+    NSMutableDictionary *m = [NSMutableDictionary dictionary];
+    NSDictionary *old = WXKBGetPref(WXKB_KEY_LETTER_MAP);
+    if ([old isKindOfClass:[NSDictionary class]]) {
+        [m addEntriesFromDictionary:old];
+    }
+    m[[NSString stringWithFormat:@"%ld", (long)index]] = hex ?: @"";
+    WXKBSetPref(WXKB_KEY_LETTER_MAP, m);
+}
+
+#pragma mark - 预设色
+
 NSArray<NSString *> *WXKBColorPresets(void) {
     static NSArray *presets = nil;
     static dispatch_once_t once;
@@ -40,6 +124,22 @@ NSArray<NSString *> *WXKBColorPresets(void) {
         ];
     });
     return presets;
+}
+
+#pragma mark - 色块缩略图
+
+static UIImage *WXKBSwatch(UIColor *color, CGFloat size) {
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, 0);
+    UIBezierPath *p = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, size, size)
+                                                     cornerRadius:size * 0.28];
+    [color setFill];
+    [p fill];
+    [[UIColor colorWithWhite:0.0 alpha:0.18] setStroke];
+    p.lineWidth = 0.5;
+    [p stroke];
+    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return img;
 }
 
 @implementation WXKBBaseListController
@@ -69,6 +169,51 @@ NSArray<NSString *> *WXKBColorPresets(void) {
     }
     WXKBSetPref(key, value);
     [[self class] wxkbNotifyChanged];
+}
+
+#pragma mark - 26 字母的取值/存值
+
+- (id)wxkbLetterValue:(PSSpecifier *)specifier {
+    NSInteger idx = [[specifier propertyForKey:@"wxkbLetterIndex"] integerValue];
+    return WXKBLetterColor(idx) ?: @"默认";
+}
+
+- (void)wxkbSetLetterValue:(id)value specifier:(PSSpecifier *)specifier {
+    NSInteger idx = [[specifier propertyForKey:@"wxkbLetterIndex"] integerValue];
+    WXKBSetLetterColor(idx, [value isKindOfClass:[NSString class]] ? value : nil);
+    [[self class] wxkbNotifyChanged];
+}
+
+#pragma mark - 色块显示
+
+- (UITableViewCell *)tableView:(UITableView *)tableView
+         cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
+    PSSpecifier *sp = [self specifierAtIndexPath:indexPath];
+    NSString *hex = nil;
+
+    NSNumber *letterIdx = [sp propertyForKey:@"wxkbLetterIndex"];
+    if (letterIdx) {
+        hex = WXKBLetterColor([letterIdx integerValue]);
+        if (!hex.length) {
+            hex = WXKBGetPref(WXKB_KEY_LETTER_BG);
+        }
+        if (![hex isKindOfClass:[NSString class]] || !hex.length) {
+            hex = WXKB_DEF_LETTER_BG;
+        }
+    } else {
+        id v = [sp propertyForKey:@"wxkbSwatchKey"];
+        if ([v isKindOfClass:[NSString class]]) {
+            id cur = WXKBGetPref(v);
+            hex = [cur isKindOfClass:[NSString class]] ? cur
+                                                       : [sp propertyForKey:@"default"];
+        }
+    }
+
+    if ([hex isKindOfClass:[NSString class]] && hex.length) {
+        cell.imageView.image = WXKBSwatch(WXKBColorFromHex(hex), 29);
+    }
+    return cell;
 }
 
 #pragma mark - Specifier 构造
@@ -116,7 +261,11 @@ NSArray<NSString *> *WXKBColorPresets(void) {
 }
 
 - (PSSpecifier *)wxkbColor:(NSString *)name key:(NSString *)key def:(NSString *)def {
-    Class c = NSClassFromString(@"WXKBColorListController");
+    return [self wxkbColorRow:name key:key def:def];
+}
+
+- (PSSpecifier *)wxkbColorRow:(NSString *)name key:(NSString *)key def:(NSString *)def {
+    Class c = NSClassFromString(@"WXKBSystemColorController");
     PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:name
                                                      target:self
                                                         set:@selector(setPreferenceValue:specifier:)
@@ -126,6 +275,32 @@ NSArray<NSString *> *WXKBColorPresets(void) {
                                                        edit:nil];
     [sp setProperty:key forKey:@"key"];
     [sp setProperty:def forKey:@"default"];
+    [sp setProperty:key forKey:@"wxkbSwatchKey"];
+    return sp;
+}
+
+- (PSSpecifier *)wxkbLetterRow:(NSString *)letter index:(NSInteger)index {
+    Class c = NSClassFromString(@"WXKBSystemColorController");
+    PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:letter
+                                                     target:self
+                                                        set:@selector(wxkbSetLetterValue:specifier:)
+                                                        get:@selector(wxkbLetterValue:)
+                                                     detail:c
+                                                       cell:PSLinkCell
+                                                       edit:nil];
+    [sp setProperty:@(index) forKey:@"wxkbLetterIndex"];
+    return sp;
+}
+
+- (PSSpecifier *)wxkbButton:(NSString *)name action:(SEL)action {
+    PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:name
+                                                     target:self
+                                                        set:nil
+                                                        get:nil
+                                                     detail:nil
+                                                       cell:PSButtonCell
+                                                       edit:nil];
+    sp->action = action;
     return sp;
 }
 
