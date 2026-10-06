@@ -23,6 +23,10 @@ static const int kWXKBExtras[] = {
 };
 static const int kWXKBExtrasCount = (int)(sizeof(kWXKBExtras) / sizeof(kWXKBExtras[0]));
 
+// 私有类声明（Logos 生成 category 需要类名可见；实现由原 App 提供）
+@interface WBFunctionToolBar : UIView
+@end
+
 // 让编译器认识工具栏的私有 getter（实现由原类提供）
 @interface NSObject (WXKBEditing)
 - (BOOL)editing;
