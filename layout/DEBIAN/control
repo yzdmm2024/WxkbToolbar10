@@ -1,0 +1,9 @@
+Package: com.yzdmm.wxkbtoolbar10
+Name: WxkbToolbar10
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Maintainer: yzdmm
+Author: yzdmm
+Section: Tweaks
+Depends: mobilesubstrate
+Description: 微信输入法键盘扩展工具栏：功能图标扩展至 10 个，并自动缩小铺满一行（不滑动）
