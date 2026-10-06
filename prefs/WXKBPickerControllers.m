@@ -46,7 +46,7 @@
                                                          detail:nil
                                                            cell:PSButtonCell
                                                            edit:nil];
-        [sp setProperty:@selector(pickColor:) forKey:@"action"];
+        sp->action = @selector(pickColor:);
         [sp setProperty:hex forKey:@"hexValue"];
         [s addObject:sp];
     }
@@ -96,7 +96,7 @@
                                                          detail:nil
                                                            cell:PSButtonCell
                                                            edit:nil];
-        [sp setProperty:@selector(choose:) forKey:@"action"];
+        sp->action = @selector(choose:);
         [sp setProperty:values[i] forKey:@"choiceValue"];
         [s addObject:sp];
     }

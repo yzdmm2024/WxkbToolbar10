@@ -108,7 +108,7 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
                                                            cell:PSButtonCell
                                                            edit:nil];
         [sp setProperty:n forKey:@"funcCode"];
-        [sp setProperty:@selector(addFunc:) forKey:@"action"];
+        sp->action = @selector(addFunc:);
         [s addObject:sp];
     }
 
