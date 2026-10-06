@@ -1,4 +1,4 @@
-# WxkbToolbar10 — 微信输入法键盘扩展工具栏：功能图标扩展至 10 个 + 自动缩小铺满
+# WxkbToolbar10 — 微信输入法键盘扩展工具栏：纳入「定制工具栏」全部功能 + 原生尺寸横向滑动
 # rootless（ElleKit / TweakInject），注入目标 com.tencent.wetype.keyboard (wxkb_plugin)
 TARGET := iphone:clang:14.5:14.0
 ARCHS = arm64

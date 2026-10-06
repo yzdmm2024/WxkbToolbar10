@@ -1,27 +1,27 @@
-// WxkbToolbar10 — 微信输入法键盘扩展工具栏图标扩展 + 自动缩小铺满
+// WxkbToolbar10 — 微信输入法键盘扩展工具栏增强
 // 目标：iPhone 12 Pro / iOS 16.6 / Relaxin rootless (ElleKit TweakInject)
 // 注入目标：com.tencent.wetype.keyboard (wxkb_plugin.appex)
 //
-// 原理：
-//   1) WBFunctionToolBar 的功能列表由 funcs(NSNumber 数组) 决定，拦截更新入口把 funcs
-//      补齐到 WXKB_TARGET_FUNCS 个。
-//   2) 默认布局是固定 34pt 宽 + 12pt 间距的横向 UIScrollView：图标变多只会「横向滑动」，
-//      并不会缩小。因此再拦截布局入口，在按钮溢出时把它们重排为等宽铺满可视宽度，
-//      并把 contentSize 收敛为可视尺寸（即「自动缩小铺满、不滑动」）。
+// 1.1.0 行为：
+//   1) 把「定制工具栏」控制中心里提供的全部功能补进工具栏（与 App 自带功能取并集），
+//      这样每个功能都能从工具栏直接取用。
+//   2) 禁止「自动缩小铺满」：拦截 setShrunken:，图标始终保持原生尺寸。
+//   3) 图标超出可视宽度时恢复横向滑动，左右滑动即可选取，不再挤成一团。
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 
-// 目标功能图标个数（不含工具栏右侧固定的「＋」）
-#define WXKB_TARGET_FUNCS 10
-
-// 补齐顺序：优先加入这几个，再按备选表补足
-static const int kWXKBExtras[] = {
-    2, 3, 31, 32,   // 表情 / 常用语 / 剪贴板 / 问AI
-    16, 36, 35, 29, 33, 14, 18, 27, 17, 28, 20, 1
+// 「定制工具栏」控制中心里的全部功能 id（tag）：
+//   1 语音转文字   2 表情       3 常用语     5 边写边译    14 小程序
+//   16 手写找字    17 单手模式  18 键盘调节  20 键盘选择   27 繁体输入
+//   28 定制工具栏  29 灵动表达  31 剪贴板    32 问 AI      33 字体滤镜
+//   35 排版成图    36 文字整理
+static const int kWXKBCustomFuncs[] = {
+    1, 2, 3, 5, 14, 16, 17, 18, 20, 27, 28, 29, 31, 32, 33, 35, 36
 };
-static const int kWXKBExtrasCount = (int)(sizeof(kWXKBExtras) / sizeof(kWXKBExtras[0]));
+static const int kWXKBCustomFuncsCount =
+    (int)(sizeof(kWXKBCustomFuncs) / sizeof(kWXKBCustomFuncs[0]));
 
 // 私有类声明（Logos 生成 category 需要类名可见；实现由原 App 提供）
 @interface WBFunctionToolBar : UIView
@@ -32,11 +32,16 @@ static const int kWXKBExtrasCount = (int)(sizeof(kWXKBExtras) / sizeof(kWXKBExtr
 - (BOOL)editing;
 @end
 
+static BOOL WXKBIsEditing(id bar) {
+    if ([bar respondsToSelector:@selector(editing)]) {
+        return [bar editing];
+    }
+    return NO;
+}
+
+// 与 App 传入的功能列表取并集，补齐「定制工具栏」里的全部功能
 static NSArray *WXKBExpandFuncs(NSArray *in) {
     if (![in isKindOfClass:[NSArray class]]) {
-        return in;
-    }
-    if ((int)[in count] >= WXKB_TARGET_FUNCS) {
         return in;
     }
 
@@ -48,78 +53,14 @@ static NSArray *WXKBExpandFuncs(NSArray *in) {
         }
     }
 
-    for (int i = 0; i < kWXKBExtrasCount && (int)[out count] < WXKB_TARGET_FUNCS; i++) {
-        NSNumber *n = @(kWXKBExtras[i]);
+    for (int i = 0; i < kWXKBCustomFuncsCount; i++) {
+        NSNumber *n = @(kWXKBCustomFuncs[i]);
         if (![have containsObject:n]) {
             [out addObject:n];
             [have addObject:n];
         }
     }
     return out;
-}
-
-// 编辑（定制工具栏）状态下保持原样，避免干扰拖拽排序
-static BOOL WXKBIsEditing(id bar) {
-    if ([bar respondsToSelector:@selector(editing)]) {
-        return [bar editing];
-    }
-    return NO;
-}
-
-static UIScrollView *WXKBFindScroll(UIView *bar) {
-    for (UIView *v in bar.subviews) {
-        if ([v isKindOfClass:[UIScrollView class]]) {
-            return (UIScrollView *)v;
-        }
-    }
-    return nil;
-}
-
-static BOOL WXKBIsToolBarButton(UIView *v) {
-    NSString *cn = NSStringFromClass([v class]);
-    return [cn containsString:@"ToolBarButton"] && ![cn containsString:@"Indicator"];
-}
-
-// 溢出时把功能按钮等宽铺满可视宽度，并收敛 contentSize（取消滑动）
-static void WXKBRefill(id bar) {
-    UIView *barView = (UIView *)bar;
-    UIScrollView *sv = WXKBFindScroll(barView);
-    if (!sv) {
-        return;
-    }
-    if (WXKBIsEditing(bar)) {
-        sv.scrollEnabled = YES;   // 编辑态恢复滑动，避免影响拖拽排序
-        return;
-    }
-
-    CGRect b = sv.bounds;
-    if (b.size.width <= 0 || b.size.height <= 0) {
-        return;
-    }
-
-    NSMutableArray<UIView *> *btns = [NSMutableArray array];
-    for (UIView *v in sv.subviews) {
-        if (WXKBIsToolBarButton(v)) {
-            [btns addObject:v];
-        }
-    }
-    NSUInteger n = btns.count;
-    if (n < 2) {
-        return;
-    }
-
-    // 仅在「图标溢出」或「已扩容到多图标」时铺满，普通少量图标保持原样
-    BOOL overflow = sv.contentSize.width > b.size.width + 0.5;
-    if (!overflow && n < 8) {
-        return;
-    }
-
-    CGFloat slot = b.size.width / (CGFloat)n;
-    for (NSUInteger i = 0; i < n; i++) {
-        btns[i].frame = CGRectMake(slot * (CGFloat)i, 0, slot, b.size.height);
-    }
-    sv.contentSize = b.size;
-    sv.scrollEnabled = NO;
 }
 
 %hook WBFunctionToolBar
@@ -139,14 +80,24 @@ static void WXKBRefill(id bar) {
     return %orig(f);
 }
 
-- (void)layoutSubviews {
-    %orig;
-    WXKBRefill(self);
+// 关键：永远不缩小。图标保持原生尺寸，溢出交给横向滑动，避免挤成一团。
+- (void)setShrunken:(BOOL)shrunken animated:(BOOL)animated completion:(id)completion {
+    %orig(NO, animated, completion);
 }
 
-- (void)layoutForAnimated:(BOOL)animated animateFinishedBlock:(id)block {
-    %orig(animated, block);
-    WXKBRefill(self);
+- (void)layoutSubviews {
+    %orig;
+    // 图标溢出可视宽度时，确保可以横向滑动选取
+    for (UIView *v in self.subviews) {
+        if (![v isKindOfClass:[UIScrollView class]]) {
+            continue;
+        }
+        UIScrollView *sv = (UIScrollView *)v;
+        if (sv.contentSize.width > sv.bounds.size.width + 0.5) {
+            sv.scrollEnabled = YES;
+        }
+        break;
+    }
 }
 
 %end
@@ -156,9 +107,9 @@ static void WXKBRefill(id bar) {
     if (c) {
         Method m = class_getInstanceMethod(c, @selector(updateFuncs:suggestedTypes:prefersRecent:));
         Method m2 = class_getInstanceMethod(c, @selector(updateViewWithFuncs:));
-        Method m3 = class_getInstanceMethod(c, @selector(layoutSubviews));
-        NSLog(@"[WxkbToolbar10] loaded target=%d enc3=%s encView=%s encLayout=%s",
-              WXKB_TARGET_FUNCS,
+        Method m3 = class_getInstanceMethod(c, @selector(setShrunken:animated:completion:));
+        NSLog(@"[WxkbToolbar10] loaded custom=%d enc3=%s encView=%s encShrink=%s",
+              kWXKBCustomFuncsCount,
               m ? method_getTypeEncoding(m) : "nil",
               m2 ? method_getTypeEncoding(m2) : "nil",
               m3 ? method_getTypeEncoding(m3) : "nil");
