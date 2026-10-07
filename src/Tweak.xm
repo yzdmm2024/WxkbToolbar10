@@ -15,6 +15,14 @@
 //   3) 下移明确为整体刚性平移（用户要求，绝不压缩尺寸），上限=底部安全区（刚好
 //      填满键盘下方空当贴到屏幕底；屏幕底边以下的部分物理上无法显示）。
 //
+// 1.6.11 行为（用户实测 1.6.10 截图：按钮行钉在候选栏位置，挡住候选字/输入拼音）：
+//   根因：键盘根 253pt 紧凑排列——候选栏 WBTopBar(0..56) 与字母键盘 WBKeyboardView
+//     (56..253) 紧邻、中间无空隙，1.6.10 把行钉在 y=0 正好压在候选栏上。
+//   修复（真正「插入」而非覆盖）：候选栏保持原位不动；字母键盘整体刚性下移一行
+//     (kWXKBRowH=34，键位只平移不压缩)；按钮行钉在候选栏正下方(=56)；根视图 /
+//     WBMainInputView / 输入视图控制器.view 同步增高 34pt，宿主键盘窗口跟着变高。
+//     关闭增强时整组还原回 253（WXKBInsertLayout 的 active=NO 分支）。
+//
 // 1.6.3 行为（frida 真机诊断后的三处根治）：
 //   1) 总根因：键盘扩展沙盒读不到全局偏好 —— NSUserDefaults persistentDomain
 //      与 CFPreferences 在 wxkb_plugin 里全返回 null，导致 1.5.x 以来
@@ -1414,6 +1422,18 @@ static UIView *WXKBFindToolbar(UIView *v) {
     return nil;
 }
 
+// 通用：在视图树里找第一个指定类名的子视图（含自身）
+static UIView *WXKBFindClass(UIView *v, const char *name) {
+    Class cls = objc_getClass(name);
+    if (!cls || !v) return nil;
+    if ([v isKindOfClass:cls]) return v;
+    for (UIView *s in v.subviews) {
+        UIView *r = WXKBFindClass(s, name);
+        if (r) return r;
+    }
+    return nil;
+}
+
 // —— 增强按钮：独立固定行，钉在「候选文字 ↔ 字母键盘」之间的条带上 ——
 // 1.6.10：彻底告别「寄生在微信原生工具栏滚动视图里」的方案。实测副作用太多：
 //   a) 微信对自家滚动条里的触摸有自己的接管逻辑，点我们的按钮会被它当成原生
@@ -1431,16 +1451,56 @@ static void WXKBRemoveStrayBars(UIView *v, UIView *keep) {
     for (UIView *s in [v.subviews copy]) WXKBRemoveStrayBars(s, keep);
 }
 
-static void WXKBEnsureActionBar(UIView *root) {
+// 1.6.11：把按钮行真正「插入」候选栏与字母键盘之间——
+// 候选栏保持原样（不再被覆盖），字母键盘整体刚性下移 H（键位只平移、不压缩），
+// 根视图与输入视图控制器.view 同步增高 H，宿主键盘窗口跟着变高（与「下移」同原理：
+// 直接改 ivc.view 的高度，系统按此呈现更高的键盘）。关闭时整组还原回 253。
+static const CGFloat kWXKBRowH = 34.0;
+
+// 插入布局：候选栏不动；字母键盘下移 H；根 / Main / ivc.view 增高 H
+static void WXKBInsertLayout(UIView *root, UIView *inputView, BOOL active) {
+    UIView *top = WXKBFindClass(root, "WBTopBar");
+    UIView *kb  = WXKBFindClass(root, "WBKeyboardView");
+    if (!top || !kb) return;
+
+    CGFloat H = kWXKBRowH;
+    CGFloat topBottom = CGRectGetMaxY(top.frame);   // 候选栏底边（如 56）
+    CGFloat kbH = kb.frame.size.height;             // 字母键盘高（如 197）
+    CGFloat baseH = topBottom + kbH;                // 原键盘总高（如 253）
+    CGFloat targetKbY   = active ? (topBottom + H) : topBottom;
+    CGFloat targetRootH = active ? (baseH + H)     : baseH;
+
+    // 字母键盘整体下移 H（只平移、不压缩）
+    CGRect kf = kb.frame;
+    if (fabs(kf.origin.y - targetKbY) > 0.5)
+        kb.frame = CGRectMake(kf.origin.x, targetKbY, kf.size.width, kf.size.height);
+
+    // 根 / Main 增高 H（向下延伸，候选栏保持原位）
+    UIView *main = WXKBFindClass(root, "WBMainInputView");
+    if (main) {
+        CGRect mf = main.frame;
+        if (fabs(mf.size.height - targetRootH) > 0.5)
+            main.frame = CGRectMake(mf.origin.x, mf.origin.y, mf.size.width, targetRootH);
+    }
+    CGRect rf = root.frame;
+    if (fabs(rf.size.height - targetRootH) > 0.5)
+        root.frame = CGRectMake(rf.origin.x, rf.origin.y, rf.size.width, targetRootH);
+
+    // 输入视图控制器.view 同步增高，宿主键盘窗口跟着变高
+    if (inputView && inputView != root) {
+        CGRect wf = inputView.frame;
+        if (fabs(wf.size.height - targetRootH) > 0.5)
+            inputView.frame = CGRectMake(wf.origin.x, wf.origin.y, wf.size.width, targetRootH);
+    }
+}
+
+static void WXKBEnsureActionBar(UIView *root, UIView *inputView) {
     if (!root) return;
     UIView *bar = [root viewWithTag:kWXKBActionBarTag];
     NSArray *actions = WXKBResolvedActions();
 
     UIView *tb = WXKBFindToolbar(root);
-    if (WXKBIsEditing(tb)) {
-        if (bar) [bar removeFromSuperview];
-        return;
-    }
+    BOOL editing = WXKBIsEditing(tb);
 
     // 屏外预加载布局（不在窗口里 / 不在窗口可视范围）不建行，避免幽灵行
     UIWindow *win = root.window;
@@ -1449,27 +1509,24 @@ static void WXKBEnsureActionBar(UIView *root) {
         CGRect wf = [root convertRect:root.bounds toView:nil];
         visible = CGRectIntersectsRect(wf, win.bounds);
     }
-    if (!gEnabled || actions.count == 0 || !visible) {
+    BOOL active = gEnabled && !editing && actions.count > 0 && visible;
+
+    // 先应用（或还原）插入布局——无论条在不在都执行，保证开关即时生效
+    WXKBInsertLayout(root, inputView, active);
+
+    if (!active) {
         if (bar) [bar removeFromSuperview];
         return;
     }
-    CGSize bd = root.bounds.size;
-    if (bd.width < 60 || bd.height < 80) return;
 
-    // 条带位置：优先对齐原生工具栏（它就在候选栏与字母键盘之间）；
-    // 找不到就退回顶部一条（极少触发）
-    CGFloat y = 2, h = 30;
-    @try {
-        if (tb && tb.superview) {
-            CGRect tf = [root convertRect:tb.frame fromView:tb.superview];
-            if (tf.size.width > 60 && tf.size.height >= 20 && tf.size.height <= 64 &&
-                tf.origin.y > -1 && tf.origin.y < bd.height - 20) {
-                y = tf.origin.y;
-                h = tf.size.height;
-            }
-        }
-    } @catch (__unused NSException *e) {
-    }
+    CGSize bd = root.bounds.size;
+    if (bd.width < 60) return;
+
+    // 条带位置：紧挨候选栏正下方（候选栏底边），即「候选字 ↔ 字母键盘」之间
+    UIView *top = WXKBFindClass(root, "WBTopBar");
+    CGFloat y = top ? CGRectGetMaxY(top.frame) : 2;
+    if (y < 1) y = 2;
+    CGFloat h = kWXKBRowH;
 
     BOOL needBuild = NO;
     if (!bar) {
@@ -1483,7 +1540,7 @@ static void WXKBEnsureActionBar(UIView *root) {
         bar.frame = CGRectMake(0, y, bd.width, h);
     }
 
-    // 按钮行底色：沿用键盘同色，盖住原生工具栏那排图标（我们这排就是替代它）
+    // 按钮行底色：沿用键盘同色
     BOOL dark = NO;
     if (@available(iOS 12.0, *))
         dark = (root.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark);
@@ -1715,7 +1772,7 @@ static void WXKBEnsureActionBar(UIView *root) {
         // 兜底：拿不到控制器就把位移压在自己身上
         WXKBApplyOffset(me);
     }
-    WXKBEnsureActionBar(self);
+    WXKBEnsureActionBar(self, ivc ? ivc.view : nil);
     WXKBScheduleSync();
 }
 
@@ -1749,7 +1806,7 @@ static void WXKBEnsureActionBar(UIView *root) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.10 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.11 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
 }
