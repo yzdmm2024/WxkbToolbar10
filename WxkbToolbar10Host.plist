@@ -2,28 +2,36 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!--
-	  宿主 App 侧 dylib：只用来执行全选/剪切/粘贴/全删/收起键盘这些
-	  必须作用于宿主 firstResponder 的动作（键盘扩展在独立沙盒进程里，
-	  够不到宿主的输入框）。
-
-	  刻意不加 Classes 过滤：它不 hook 任何类，只在 %ctor 里注册 Darwin
-	  通知监听器，进程启动开销可忽略；加了 Classes 反而会在键盘层不出现时
-	  漏注入，导致按钮无反应。
-
-	  明确排除系统界面：
-	    SpringBoard  —— 避免在系统 UI 里弹剪贴板/短语面板
-	    Preferences  —— 设置自己会读到偏好，避免自我触发
-	    wxkb_plugin  —— 键盘扩展自身已由 WxkbToolbar10.plist 注入
-	-->
-	<key>Exclude</key>
+	<key>Filter</key>
 	<dict>
+		<!--
+		  宿主 App 侧 dylib：执行全选/剪切/粘贴/全删/收起键盘这类必须作用于宿主
+		  firstResponder 的动作（键盘扩展在独立沙盒进程里够不到宿主输入框）。
+
+		  注意：ElleKit/TweakInject 要求 Filter 里至少有「一条正向匹配规则」
+		  （Bundles / Classes / Executables），否则该 tweak 不会被注入任何进程。
+		  所以这里用 Executables=["*"] 匹配全部进程，再用 Exclude 把系统界面和
+		  键盘扩展自身排除掉。
+
+		  以前把 Exclude 放在顶层、没有 Filter，导致 Host 从未被注入 —— 剪切/粘贴/
+		  快捷短语/收起键盘/粘贴历史 等宿主动作从 1.0 起就永远没反应，根因在此。
+		-->
 		<key>Executables</key>
 		<array>
-			<string>SpringBoard</string>
-			<string>Preferences</string>
-			<string>wxkb_plugin</string>
+			<string>*</string>
 		</array>
+		<key>Exclude</key>
+		<dict>
+			<key>Bundles</key>
+			<array>
+				<string>com.apple.springboard</string>
+				<string>com.apple.Preferences</string>
+			</array>
+			<key>Executables</key>
+			<array>
+				<string>wxkb_plugin</string>
+			</array>
+		</dict>
 	</dict>
 </dict>
 </plist>
