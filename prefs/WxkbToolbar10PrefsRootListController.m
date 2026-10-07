@@ -28,16 +28,21 @@
     // ---- 工具栏功能 ----
     g = [PSSpecifier groupSpecifierWithName:@"工具栏功能"];
     [g setProperty:@"可拖动排序、左滑隐藏；移除的功能会从键盘工具栏上消失。"
+                  @"「需微信主 App」那组在键盘里点了不会有反应，默认不显示。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbLink:@"功能排序与显隐" detailClass:@"WXKBFuncListController"]];
+    [s addObject:[self wxkbLink:@"编辑增强按钮" detailClass:@"WXKBActionListController"]];
 
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];
-    [g setProperty:@"「图片」请到「背景图片」里从相册选，会按键盘比例自动横向裁剪。"
+    [g setProperty:@"「整键盘透明」会清掉键盘自带的背景层，透出后面的内容；"
+                  @"按键底色与按键文字色不受影响，默认仍是黑字。"
+                  @"「图片」请到「背景图片」里从相册选，会按键盘比例自动横向裁剪。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用自定义背景" key:WXKB_KEY_BG_ENABLED def:NO]];
+    [s addObject:[self wxkbSwitch:@"整键盘透明" key:WXKB_KEY_TRANSPARENT def:NO]];
     [s addObject:[self wxkbChoice:@"背景类型" key:WXKB_KEY_BG_MODE def:@1
                            values:@[@1, @2]
                            titles:@[@"纯色", @"图片"]]];
@@ -79,10 +84,11 @@
 
     // ---- 按键形状 ----
     g = [PSSpecifier groupSpecifierWithName:@"按键形状"];
-    [g setProperty:@"0 = 原生直角。改大后按键更圆润。" forKey:@"footerText"];
+    [g setProperty:@"0 = 原生直角。改大后按键更圆润（上限 22）。"
+            forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
-                              min:0.0 max:14.0]];
+                              min:0.0 max:22.0]];
 
     _specifiers = s;
     return _specifiers;

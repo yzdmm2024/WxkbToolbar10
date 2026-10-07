@@ -17,12 +17,12 @@ static NSDictionary *WXKBFuncNames(void) {
             @27: @"繁体输入",
             @28: @"定制工具栏",
             @31: @"剪贴板",
-            @14: @"小程序（需主 App）",
-            @29: @"灵动表达（需主 App）",
-            @32: @"问 AI（需主 App）",
-            @33: @"字体滤镜（需主 App）",
-            @35: @"排版成图（需主 App）",
-            @36: @"文字整理（需主 App）"
+            @14: @"小程序",
+            @29: @"灵动表达",
+            @32: @"问 AI",
+            @33: @"字体滤镜",
+            @35: @"排版成图",
+            @36: @"文字整理"
         };
     });
     return d;
@@ -30,6 +30,15 @@ static NSDictionary *WXKBFuncNames(void) {
 
 static NSString *WXKBFuncName(int code) {
     return WXKBFuncNames()[@(code)] ?: [NSString stringWithFormat:@"功能 %d", code];
+}
+
+// 这几项点了必须由微信主 App 处理，键盘扩展进程里必然无响应。
+// 之前混在同一个列表里，用户按了没反应又不知道原因，所以单独分组并写清楚。
+static BOOL WXKBFuncNeedsHostApp(int code) {
+    for (int i = 0; i < kWXKBFuncNeedsHostAppCount; i++) {
+        if (kWXKBFuncNeedsHostApp[i] == code) return YES;
+    }
+    return NO;
 }
 
 // 用户配置的清单；首次访问时用「键盘内可用」的一组功能初始化
@@ -45,17 +54,29 @@ static NSArray<NSNumber *> *WXKBEnabledFuncs(void) {
         return a;
     }
     NSMutableArray *a = [NSMutableArray array];
-    for (int i = 0; i < kWXKBFuncDefaultOnCount; i++) {
-        [a addObject:@(kWXKBFuncDefaultOn[i])];
+    for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
+        [a addObject:@(kWXKBFuncWorksInKb[i])];
     }
     WXKBSetPref(WXKB_KEY_FUNCLIST, a);
     return a;
 }
 
+// 键盘内已启用的功能码（保持用户顺序）—— 需主 App 的项不在其中
+static NSArray<NSNumber *> *WXKBDefaultEnabledSplit(void) {
+    NSMutableArray *a = [NSMutableArray array];
+    for (NSNumber *n in WXKBEnabledFuncs()) {
+        if (!WXKBFuncNeedsHostApp(n.intValue)) [a addObject:n];
+    }
+    return a;
+}
+
 static NSArray<NSNumber *> *WXKBAllFuncs(void) {
     NSMutableArray *a = [NSMutableArray array];
-    for (int i = 0; i < kWXKBFuncCount; i++) {
-        [a addObject:@(kWXKBFuncCodes[i])];
+    for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
+        [a addObject:@(kWXKBFuncWorksInKb[i])];
+    }
+    for (int i = 0; i < kWXKBFuncNeedsHostAppCount; i++) {
+        [a addObject:@(kWXKBFuncNeedsHostApp[i])];
     }
     return a;
 }
@@ -77,11 +98,31 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
     }
     NSMutableArray *s = [NSMutableArray array];
     NSArray<NSNumber *> *enabled = WXKBEnabledFuncs();
+    NSArray<NSNumber *> *all = WXKBAllFuncs();
 
-    PSSpecifier *g = [PSSpecifier groupSpecifierWithName:@"已显示"];
-    [g setProperty:@"点右上角「编辑」可拖动排序、左滑隐藏。" forKey:@"footerText"];
-    [s addObject:g];
+    // ---- 分组一：键盘内可用 ----
+    NSMutableArray *kbOn = [NSMutableArray array];
+    NSMutableArray *kbHidden = [NSMutableArray array];
+    for (NSNumber *n in all) {
+        if (WXKBFuncNeedsHostApp(n.intValue)) continue;
+        if ([enabled containsObject:n]) {
+            [kbOn addObject:n];
+        } else {
+            [kbHidden addObject:n];
+        }
+    }
+    // 已显示列表里可能残留了旧的「需主 App」项，保持用户顺序但并入对应分组
     for (NSNumber *n in enabled) {
+        if (!WXKBFuncNeedsHostApp(n.intValue) && ![kbOn containsObject:n]) {
+            [kbOn addObject:n];
+        }
+    }
+
+    PSSpecifier *g = [PSSpecifier groupSpecifierWithName:@"键盘内可用（点了有反应）"];
+    [g setProperty:@"点右上角「编辑」可拖动排序、左滑隐藏。"
+            forKey:@"footerText"];
+    [s addObject:g];
+    for (NSNumber *n in kbOn) {
         PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:WXKBFuncName(n.intValue)
                                                          target:self
                                                             set:nil
@@ -90,34 +131,94 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
                                                            cell:PSStaticTextCell
                                                            edit:nil];
         [sp setProperty:n forKey:@"funcCode"];
+        [sp setProperty:@NO forKey:@"wxkbHostOnly"];
         [s addObject:sp];
     }
 
-    g = [PSSpecifier groupSpecifierWithName:@"已隐藏"];
-    [g setProperty:@"点击任意一项即可重新加回工具栏。" forKey:@"footerText"];
+    // ---- 分组二：需主 App（键盘里点了没反应） ----
+    NSMutableArray *hostOn = [NSMutableArray array];
+    NSMutableArray *hostHidden = [NSMutableArray array];
+    for (NSNumber *n in enabled) {
+        if (WXKBFuncNeedsHostApp(n.intValue)) [hostOn addObject:n];
+    }
+    for (NSNumber *n in all) {
+        if (!WXKBFuncNeedsHostApp(n.intValue)) continue;
+        if ([hostOn containsObject:n]) continue;
+        [hostHidden addObject:n];
+    }
+
+    g = [PSSpecifier groupSpecifierWithName:@"需微信主 App（键盘里点了没反应）"];
+    [g setProperty:@"这几项由微信主 App 处理，键盘扩展进程里点了不会有任何反应，"
+                  @"所以默认不显示。确认要用再自己加回来。"
+            forKey:@"footerText"];
     [s addObject:g];
-    for (NSNumber *n in WXKBAllFuncs()) {
-        if ([enabled containsObject:n]) {
-            continue;
-        }
-        PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:WXKBFuncName(n.intValue)
+    for (NSNumber *n in hostOn) {
+        PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:
+                              [WXKBFuncName(n.intValue) stringByAppendingString:@"（无反应）"]
                                                          target:self
                                                             set:nil
                                                             get:nil
                                                          detail:nil
-                                                           cell:PSButtonCell
+                                                           cell:PSStaticTextCell
                                                            edit:nil];
         [sp setProperty:n forKey:@"funcCode"];
-        sp->action = @selector(addFunc:);
+        [sp setProperty:@YES forKey:@"wxkbHostOnly"];
         [s addObject:sp];
+    }
+
+    // ---- 分组三：已隐藏 ----
+    if (kbHidden.count > 0 || hostHidden.count > 0) {
+        g = [PSSpecifier groupSpecifierWithName:@"已隐藏（点击加回工具栏）"];
+        [g setProperty:@"点击任意一项即可重新加回工具栏。" forKey:@"footerText"];
+        [s addObject:g];
+        for (NSNumber *n in kbHidden) {
+            PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:WXKBFuncName(n.intValue)
+                                                             target:self
+                                                                set:nil
+                                                                get:nil
+                                                             detail:nil
+                                                               cell:PSButtonCell
+                                                               edit:nil];
+            [sp setProperty:n forKey:@"funcCode"];
+            sp->action = @selector(addFunc:);
+            [s addObject:sp];
+        }
+        for (NSNumber *n in hostHidden) {
+            PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:
+                                  [WXKBFuncName(n.intValue) stringByAppendingString:@"（无反应）"]
+                                                             target:self
+                                                                set:nil
+                                                                get:nil
+                                                             detail:nil
+                                                               cell:PSButtonCell
+                                                               edit:nil];
+            [sp setProperty:n forKey:@"funcCode"];
+            sp->action = @selector(addFunc:);
+            [s addObject:sp];
+        }
     }
 
     _specifiers = s;
     return _specifiers;
 }
 
-- (NSUInteger)enabledCount {
-    return WXKBEnabledFuncs().count;
+// 「已显示」区从第 1 行开始
+- (NSUInteger)visibleOffset {
+    return 1;
+}
+
+// specifiers 里「已显示」区的顺序：先键盘内可用，再需主 App
+static NSArray<NSNumber *> *WXKBOrderedVisible(void) {
+    NSMutableArray *a = [NSMutableArray array];
+    for (NSNumber *n in WXKBDefaultEnabledSplit()) [a addObject:n];
+    for (NSNumber *n in WXKBEnabledFuncs()) {
+        if (WXKBFuncNeedsHostApp(n.intValue)) [a addObject:n];
+    }
+    return a;
+}
+
+- (NSUInteger)visibleCount {
+    return WXKBOrderedVisible().count;
 }
 
 - (void)saveEnabled:(NSArray<NSNumber *> *)list {
@@ -140,33 +241,44 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
 
 #pragma mark - 编辑（排序 / 隐藏）
 
-- (NSInteger)enabledOffset {
-    return 1;   // 前面有一个分组行
-}
-
-- (BOOL)isEnabledRow:(NSIndexPath *)indexPath {
-    NSUInteger n = [self enabledCount];
-    return indexPath.row >= [self enabledOffset] &&
-           indexPath.row < [self enabledOffset] + (NSInteger)n;
+- (BOOL)isVisibleRow:(NSIndexPath *)indexPath {
+    NSUInteger n = [self visibleCount];
+    return indexPath.row >= (NSInteger)[self visibleOffset] &&
+           indexPath.row < (NSInteger)[self visibleOffset] + (NSInteger)n;
 }
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
-    return [self isEnabledRow:indexPath];
+    return [self isVisibleRow:indexPath];
 }
 
 - (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath {
-    return [self isEnabledRow:indexPath];
+    return [self isVisibleRow:indexPath];
+}
+
+// 映射 specifier 行号 <-> 启用清单下标
+- (NSNumber *)codeAtRow:(NSInteger)row {
+    NSArray *ordered = WXKBOrderedVisible();
+    NSInteger idx = row - (NSInteger)[self visibleOffset];
+    if (idx < 0 || idx >= (NSInteger)ordered.count) return nil;
+    return ordered[(NSUInteger)idx];
+}
+
+- (NSInteger)rowForCode:(NSNumber *)code {
+    NSArray *ordered = WXKBOrderedVisible();
+    NSInteger idx = (NSInteger)[ordered indexOfObject:code];
+    if (idx == NSNotFound) return NSNotFound;
+    return idx + (NSInteger)[self visibleOffset];
 }
 
 - (NSIndexPath *)tableView:(UITableView *)tableView
     targetIndexPathForMoveFromRowAtIndexPath:(NSIndexPath *)sourceIndexPath
                          toProposedIndexPath:(NSIndexPath *)proposedDestinationIndexPath {
-    NSInteger lo = [self enabledOffset];
-    NSInteger hi = lo + (NSInteger)[self enabledCount] - 1;
-    if (proposedDestinationIndexPath.row > hi) {
+    NSInteger lo = (NSInteger)[self visibleOffset];
+    NSInteger hi = lo + (NSInteger)[self visibleCount] - 1;
+    if ((NSInteger)proposedDestinationIndexPath.row > hi) {
         return [NSIndexPath indexPathForRow:hi inSection:proposedDestinationIndexPath.section];
     }
-    if (proposedDestinationIndexPath.row < lo) {
+    if ((NSInteger)proposedDestinationIndexPath.row < lo) {
         return [NSIndexPath indexPathForRow:lo inSection:proposedDestinationIndexPath.section];
     }
     return proposedDestinationIndexPath;
@@ -175,15 +287,16 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
 - (void)tableView:(UITableView *)tableView
     moveRowAtIndexPath:(NSIndexPath *)sourceIndexPath
            toIndexPath:(NSIndexPath *)destinationIndexPath {
+    NSNumber *moving = [self codeAtRow:sourceIndexPath.row];
+    NSNumber *landing = [self codeAtRow:destinationIndexPath.row];
+    if (!moving || !landing) return;
+
     NSMutableArray *list = [WXKBEnabledFuncs() mutableCopy];
-    NSInteger from = sourceIndexPath.row - [self enabledOffset];
-    NSInteger to = destinationIndexPath.row - [self enabledOffset];
-    if (from < 0 || to < 0 || from >= (NSInteger)list.count || to >= (NSInteger)list.count) {
-        return;
-    }
-    NSNumber *item = list[from];
-    [list removeObjectAtIndex:from];
-    [list insertObject:item atIndex:to];
+    NSInteger from = (NSInteger)[list indexOfObject:moving];
+    NSInteger to = (NSInteger)[list indexOfObject:landing];
+    if (from == NSNotFound || to == NSNotFound) return;
+    [list removeObjectAtIndex:(NSUInteger)from];
+    [list insertObject:moving atIndex:(NSUInteger)to];
     [self saveEnabled:list];
 }
 
@@ -193,12 +306,12 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
     if (editingStyle != UITableViewCellEditingStyleDelete) {
         return;
     }
+    NSNumber *code = [self codeAtRow:indexPath.row];
+    if (!code) return;
     NSMutableArray *list = [WXKBEnabledFuncs() mutableCopy];
-    NSInteger idx = indexPath.row - [self enabledOffset];
-    if (idx < 0 || idx >= (NSInteger)list.count) {
-        return;
-    }
-    [list removeObjectAtIndex:idx];
+    NSInteger idx = (NSInteger)[list indexOfObject:code];
+    if (idx == NSNotFound) return;
+    [list removeObjectAtIndex:(NSUInteger)idx];
     [self saveEnabled:list];
 }
 

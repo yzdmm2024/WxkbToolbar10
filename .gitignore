@@ -1,4 +1,6 @@
 .theos/
 packages/
+build/
 *.o
 *.dylib
+*.gen.m

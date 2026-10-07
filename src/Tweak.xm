@@ -2,13 +2,21 @@
 // 目标：iPhone 12 Pro / iOS 16.6 / Relaxin rootless (ElleKit TweakInject)
 // 注入目标：com.tencent.wetype.keyboard (wxkb_plugin.appex)
 //
-// 1.5.0 行为：
+// 1.6.0 行为：
 //   1) 工具栏功能由「设置 → 微信输入法增强」面板决定：可排序、可隐藏、可增删。
+//      「需主 App」的那几项单独分组并明确标注，避免点了没反应还不知道为什么。
 //   2) 键盘背景：纯色 / 相册图片（按键盘比例横向裁剪，存 NSData）/ 高级路径，支持透明度。
-//   3) 按键配色：四组底色（字母 / 左侧功能 / 右侧功能 / 空格）+ 文字色 + 按下高亮色。
-//   4) 字母键支持 A→Z 渐变，以及 26 个字母逐个单独上色。
-//   5) 按键圆角可调。
-//   6) 保留 1.2.0 的布局修复：工具栏紧贴左侧 logo 铺满整行 + 原生尺寸横向滑动。
+//   3) 整键盘透明：递归清掉键盘所有原生不透明背景层，透出后面的内容；按键底色与
+//      文字色保持不变（默认黑字）。
+//   4) 按键配色：四组底色（字母 / 左侧功能 / 右侧功能 / 空格）+ 文字色 + 按下高亮色。
+//   5) 字母键支持 A→Z 渐变，以及 26 个字母逐个单独上色。
+//   6) 按键圆角可调（1.5.x 无效的根因已修：原生每次状态切换都会把圆角写回固定值，
+//      现在改成「递归定位真正的背景视图 + 下一轮 runloop 补刀」，盖得住）。
+//   7) 工具栏尾部新增「编辑增强」按钮：光标左右 / 全选 / 剪切 / 粘贴 / 全删 /
+//      剪贴板历史 / 快捷短语 / 收起键盘 / 切换输入法。能在扩展内做的直接走
+//      UITextDocumentProxy；需要宿主 App 响应的通过 Darwin 通知桥到
+//      WxkbToolbar10Host（注入宿主 App 的那个 dylib）。
+//   8) 保留 1.2.0 的布局修复：工具栏紧贴左侧 logo 铺满整行 + 原生尺寸横向滑动。
 //
 // 说明：原生布局把 WBFunctionToolBar 固定在 x=102 / 宽 288（WBTopBar 宽 390），
 //       logo 右边界只有 46，于是 logo 与第一个图标之间空出约 68pt 且无法滑入。
@@ -65,6 +73,7 @@ static CGFloat   gBgAlpha      = 1.0;
 static UIColor  *gBgColor      = nil;
 static NSString *gBgImage      = nil;
 static NSData   *gBgImageData  = nil;
+static BOOL      gTransparent  = NO;
 static BOOL      gKeyEnabled   = NO;
 static UIColor  *gLetterBg     = nil;
 static UIColor  *gFuncLBg      = nil;
@@ -77,6 +86,8 @@ static UIColor  *gGradFrom     = nil;
 static UIColor  *gGradTo       = nil;
 static NSDictionary *gLetterMap = nil;
 static CGFloat   gCorner       = 0.0;
+static NSArray  *gActionOrder  = nil;
+static NSDictionary *gActionShow = nil;
 static double    gLastLoad     = -1;
 
 static UIColor *WXKBColor(NSString *hex, CGFloat alpha) {
@@ -144,10 +155,43 @@ static NSDictionary *WXKBLoadPrefs(void) {
 
 static NSArray *WXKBDefaultFuncList(void) {
     NSMutableArray *a = [NSMutableArray array];
-    for (int i = 0; i < kWXKBFuncDefaultOnCount; i++) {
-        [a addObject:@(kWXKBFuncDefaultOn[i])];
+    for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
+        [a addObject:@(kWXKBFuncWorksInKb[i])];
     }
     return a;
+}
+
+// 编辑增强按钮最终清单：用户排序 + 用户显隐，缺项按默认补齐。
+static NSArray *WXKBResolvedActions(void) {
+    NSMutableArray *out = [NSMutableArray array];
+    if ([gActionOrder isKindOfClass:[NSArray class]]) {
+        for (id o in gActionOrder) {
+            if (![o respondsToSelector:@selector(intValue)]) continue;
+            NSNumber *n = @([o intValue]);
+            if (![out containsObject:n]) [out addObject:n];
+        }
+    } else {
+        for (int i = 0; i < kWXKBActionCount; i++) {
+            [out addObject:@(kWXKBActionCodes[i])];
+        }
+    }
+    for (int i = 0; i < kWXKBActionCount; i++) {
+        NSNumber *n = @(kWXKBActionCodes[i]);
+        if (![out containsObject:n]) [out addObject:n];
+    }
+    // 逐个套显隐开关
+    NSMutableArray *on = [NSMutableArray array];
+    for (NSNumber *n in out) {
+        BOOL show = YES;
+        if ([gActionShow isKindOfClass:[NSDictionary class]]) {
+            id v = gActionShow[n];
+            if (v != nil && [v respondsToSelector:@selector(boolValue)]) {
+                show = [v boolValue];
+            }
+        }
+        if (show) [on addObject:n];
+    }
+    return on;
 }
 
 static void WXKBReload(BOOL force) {
@@ -185,6 +229,8 @@ static void WXKBReload(BOOL force) {
     gBgColor = WXKBColor(d[WXKB_KEY_BG_COLOR], gBgAlpha)
                    ?: [UIColor colorWithWhite:0.11 alpha:gBgAlpha];
 
+    gTransparent = [d[WXKB_KEY_TRANSPARENT] boolValue];
+
     // ---- 按键配色 ----
     gKeyEnabled = [d[WXKB_KEY_KEY_ENABLED] boolValue];
 
@@ -213,15 +259,264 @@ static void WXKBReload(BOOL force) {
     // ---- 圆角 ----
     id cr = d[WXKB_KEY_CORNER];
     gCorner = cr ? [cr doubleValue] : 0.0;
-    if (gCorner < 0.0 || gCorner > 14.0) {
+    if (gCorner < 0.0 || gCorner > 22.0) {
         gCorner = 0.0;
     }
+
+    // ---- 编辑增强 ----
+    id ao = d[WXKB_KEY_ACTION_ORDER];
+    gActionOrder = [ao isKindOfClass:[NSArray class]] ? ao : nil;
+    id as = d[WXKB_KEY_ACTION_SHOW];
+    gActionShow = [as isKindOfClass:[NSDictionary class]] ? as : nil;
+}
+
+#pragma mark - 全树重同步（圆角 / 透明的统一入口）
+
+// 递归找出「真正画背景的那个视图」。
+// 1.5.x 的 bug：只对 key.subviews 一层设 cornerRadius，而原生每次状态切换
+// （highlighted / 主题刷新）都会在背景视图自己的 layout 里把圆角写回固定值，
+// 于是用户的设置被无声覆盖。这里下探到真正带背景的叶子视图，并在下一轮
+// runloop 再补一次，确保盖过原生最后一次写入。
+static UIView *WXKBFindBgLeaf(UIView *v, NSInteger depth) {
+    if (depth > 4 || v.subviews.count == 0) {
+        return v;
+    }
+    for (UIView *s in v.subviews) {
+        if ([s isKindOfClass:[UIImageView class]] ||
+            [s isKindOfClass:[UILabel class]] ||
+            [s isKindOfClass:[UIButton class]]) {
+            continue;   // 图标 / 文字不是背景
+        }
+        UIView *leaf = WXKBFindBgLeaf(s, depth + 1);
+        if (leaf) {
+            return leaf;
+        }
+    }
+    return v;
+}
+
+static void WXKBApplyCorner(UIView *v) {
+    if (!v || !gEnabled || gCorner <= 0.01) {
+        return;
+    }
+    CGFloat r = MIN(gCorner, MIN(v.bounds.size.height, v.bounds.size.width) / 2.0);
+    if (r <= 0.01) {
+        return;
+    }
+
+    UIView *leaf = WXKBFindBgLeaf(v, 0);
+    NSMutableArray *targets = [NSMutableArray arrayWithObject:(leaf ?: v)];
+    if (leaf != v) {
+        [targets addObject:v];
+    }
+    for (UIView *t in targets) {
+        if (!t) continue;
+        if (fabs(t.layer.cornerRadius - r) > 0.01) {
+            t.layer.cornerRadius = r;
+        }
+        if (!t.layer.masksToBounds) {
+            t.layer.masksToBounds = YES;
+        }
+    }
+}
+
+static BOOL WXKBIsKeyView(UIView *v) {
+    static Class keyCls, ruleCls, retCls;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        keyCls  = objc_getClass("WBKeyView");
+        ruleCls = objc_getClass("WBRuleKeyView");
+        retCls  = objc_getClass("WBReturnKeyView");
+    });
+    if (keyCls && [v isKindOfClass:keyCls]) return YES;
+    if (ruleCls && [v isKindOfClass:ruleCls]) return YES;
+    if (retCls && [v isKindOfClass:retCls]) return YES;
+    return NO;
+}
+
+// —— 整键盘透明 ——
+
+static const void *kWXKBOrigBgKey   = &kWXKBOrigBgKey;
+static const void *kWXKBOrigOpaqueKey = &kWXKBOrigOpaqueKey;
+static const void *kWXKBOrigEffectKey = &kWXKBOrigEffectKey;
+static const void *kWXKBOrigImgKey  = &kWXKBOrigImgKey;
+
+static void WXKBClearBgTree(UIView *v) {
+    if (!v) return;
+
+    // 按键及其子树一律不动：按键底色/文字色保持用户设置（默认黑字）
+    if (WXKBIsKeyView(v)) return;
+
+    // 我们自己插入的背景层不参与，单独处理
+    if (v.tag == 0x57584247) {
+        for (UIView *s in v.subviews) WXKBClearBgTree(s);
+        return;
+    }
+
+    if (!objc_getAssociatedObject(v, kWXKBOrigBgKey)) {
+        objc_setAssociatedObject(v, kWXKBOrigBgKey,
+                                 v.backgroundColor ?: [UIColor clearColor],
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(v, kWXKBOrigOpaqueKey,
+                                 @(v.opaque), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if ([v isKindOfClass:[UIVisualEffectView class]]) {
+            UIVisualEffect *e = ((UIVisualEffectView *)v).effect;
+            objc_setAssociatedObject(v, kWXKBOrigEffectKey,
+                                     e, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        if ([v isKindOfClass:[UIImageView class]]) {
+            objc_setAssociatedObject(v, kWXKBOrigImgKey,
+                                     ((UIImageView *)v).image,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    }
+
+    if ([v isKindOfClass:[UIVisualEffectView class]]) {
+        ((UIVisualEffectView *)v).effect = nil;
+    } else if ([v isKindOfClass:[UIImageView class]]) {
+        // 只清「铺满父级」的那种背景图，图标不受影响
+        UIImageView *iv = (UIImageView *)v;
+        if (iv.superview && iv.bounds.size.width >= iv.superview.bounds.size.width - 2 &&
+            iv.bounds.size.height >= iv.superview.bounds.size.height - 2) {
+            iv.image = nil;
+        }
+    }
+
+    v.backgroundColor = [UIColor clearColor];
+    v.opaque = NO;
+    v.layer.opaque = NO;
+    if (@available(iOS 13.0, *)) {
+        v.backgroundColor = [UIColor clearColor];
+    }
+
+    for (UIView *s in v.subviews) {
+        WXKBClearBgTree(s);
+    }
+}
+
+static void WXKBRestoreBgTree(UIView *v) {
+    if (!v) return;
+    if (WXKBIsKeyView(v)) return;
+
+    UIColor *bg = objc_getAssociatedObject(v, kWXKBOrigBgKey);
+    if (bg) {
+        v.backgroundColor = (bg == [UIColor clearColor]) ? nil : bg;
+        NSNumber *op = objc_getAssociatedObject(v, kWXKBOrigOpaqueKey);
+        v.opaque = op ? op.boolValue : YES;
+        objc_setAssociatedObject(v, kWXKBOrigBgKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(v, kWXKBOrigOpaqueKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    UIVisualEffect *e = objc_getAssociatedObject(v, kWXKBOrigEffectKey);
+    if (e && [v isKindOfClass:[UIVisualEffectView class]]) {
+        ((UIVisualEffectView *)v).effect = e;
+        objc_setAssociatedObject(v, kWXKBOrigEffectKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    UIImage *img = objc_getAssociatedObject(v, kWXKBOrigImgKey);
+    if (img && [v isKindOfClass:[UIImageView class]]) {
+        ((UIImageView *)v).image = img;
+        objc_setAssociatedObject(v, kWXKBOrigImgKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    for (UIView *s in v.subviews) {
+        WXKBRestoreBgTree(s);
+    }
+}
+
+static void WXKBApplyTransparency(UIView *host) {
+    if (!host) return;
+    if (!gEnabled || !gTransparent) {
+        WXKBRestoreBgTree(host);
+        return;
+    }
+    WXKBClearBgTree(host);
+}
+
+// 键盘窗口自身也要透明，否则整棵树的透明会被窗口底色吃掉
+static void WXKBClearKeyboardWindows(void) {
+    @try {
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            if (w.windowLevel == UIWindowLevelNormal ||
+                w.windowLevel == UIWindowLevelAlert) {
+                if (w.backgroundColor && ![w.backgroundColor isEqual:[UIColor clearColor]]) {
+                    objc_setAssociatedObject(w, kWXKBOrigBgKey,
+                                             w.backgroundColor,
+                                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    w.backgroundColor = [UIColor clearColor];
+                }
+                if (w.opaque) {
+                    objc_setAssociatedObject(w, kWXKBOrigOpaqueKey, @(YES),
+                                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    w.opaque = NO;
+                }
+            }
+        }
+    } @catch (__unused NSException *e) {
+    }
+}
+
+static void WXKBRestoreKeyboardWindows(void) {
+    @try {
+        for (UIWindow *w in [UIApplication sharedApplication].windows) {
+            UIColor *bg = objc_getAssociatedObject(w, kWXKBOrigBgKey);
+            if (bg) {
+                w.backgroundColor = bg;
+                objc_setAssociatedObject(w, kWXKBOrigBgKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            NSNumber *op = objc_getAssociatedObject(w, kWXKBOrigOpaqueKey);
+            if (op) {
+                w.opaque = op.boolValue;
+                objc_setAssociatedObject(w, kWXKBOrigOpaqueKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+        }
+    } @catch (__unused NSException *e) {
+    }
+}
+
+// 全树扫一遍，重新盖上圆角 + 透明度。原生 layout 之后跑一次，稳赢原生写入。
+static void WXKBSyncTree(UIView *root) {
+    if (!root) return;
+    @try {
+        if (WXKBIsKeyView(root)) {
+            WXKBApplyCorner(root);
+            return;   // 按键子树里没有背景层要清
+        }
+        if (gEnabled && gTransparent) {
+            WXKBClearBgTree(root);
+        } else if (gEnabled && gBgEnabled) {
+            WXKBRestoreBgTree(root);
+        }
+        for (UIView *s in root.subviews) {
+            WXKBSyncTree(s);
+        }
+    } @catch (__unused NSException *e) {
+    }
+}
+
+static BOOL gSyncScheduled = NO;
+static void WXKBScheduleSync(void) {
+    if (gSyncScheduled) return;
+    gSyncScheduled = YES;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        gSyncScheduled = NO;
+        @try {
+            for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                WXKBSyncTree(w);
+            }
+            if (gEnabled && gTransparent) {
+                WXKBClearKeyboardWindows();
+            } else {
+                WXKBRestoreKeyboardWindows();
+            }
+        } @catch (__unused NSException *e) {
+        }
+    });
 }
 
 static void WXKBOnPrefsChanged(CFNotificationCenterRef center, void *observer,
                                CFStringRef name, const void *object,
                                CFDictionaryRef userInfo) {
     WXKBReload(YES);
+    WXKBScheduleSync();
 }
 
 #pragma mark - 工具栏功能列表
@@ -532,26 +827,6 @@ static UIColor *WXKBKeyHighlight(void) {
     return (gEnabled && gKeyEnabled) ? gHighlight : nil;
 }
 
-#pragma mark - 按键圆角
-
-static void WXKBApplyCorner(UIView *v) {
-    if (!v || !gEnabled || gCorner <= 0.01) {
-        return;
-    }
-    CGFloat r = gCorner;
-    if (fabs(v.layer.cornerRadius - r) > 0.01) {
-        v.layer.cornerRadius = r;
-    }
-    for (UIView *sub in v.subviews) {
-        if (fabs(sub.layer.cornerRadius - r) > 0.01) {
-            sub.layer.cornerRadius = r;
-        }
-        if (!sub.layer.masksToBounds) {
-            sub.layer.masksToBounds = YES;
-        }
-    }
-}
-
 #pragma mark - 键盘背景
 
 static const NSInteger kWXKBBgViewTag = 0x57584247;   // "WXBG"
@@ -561,7 +836,7 @@ static void WXKBApplyBackground(UIView *host) {
         return;
     }
     UIView *bg = [host viewWithTag:kWXKBBgViewTag];
-    if (!gEnabled || !gBgEnabled) {
+    if (!gEnabled || (!gBgEnabled && !gTransparent)) {
         if (bg) {
             [bg removeFromSuperview];
         }
@@ -581,7 +856,7 @@ static void WXKBApplyBackground(UIView *host) {
     bg.layer.contentsGravity = kCAGravityResizeAspectFill;
 
     UIImage *img = nil;
-    if (gBgMode == 2) {
+    if (gBgEnabled && gBgMode == 2) {
         if (gBgImageData.length) {
             img = [UIImage imageWithData:gBgImageData];
         }
@@ -596,9 +871,275 @@ static void WXKBApplyBackground(UIView *host) {
     if (img) {
         bg.backgroundColor = nil;
         bg.layer.contents = (__bridge id)img.CGImage;
-    } else {
+    } else if (gBgEnabled) {
         bg.layer.contents = nil;
         bg.backgroundColor = gBgColor;
+    } else {
+        // 只开了整键盘透明：这一层保持全透
+        bg.layer.contents = nil;
+        bg.backgroundColor = [UIColor clearColor];
+        bg.opaque = NO;
+    }
+}
+
+#pragma mark - 编辑增强按钮
+
+// —— 与宿主 App 的通信 ——
+// 键盘扩展是独立进程，够不到宿主的 firstResponder，全选/剪切/粘贴/收起键盘
+// 必须让 WxkbToolbar10Host（在宿主 App 里）代为执行。
+
+static CFStringRef WXKBHostNotifyName(int code) {
+    switch (code) {
+        case WXKB_ACT_SELECT_ALL:   return CFSTR("com.yzdmm.wxkbtoolbar10/host/selectAll");
+        case WXKB_ACT_CUT:          return CFSTR("com.yzdmm.wxkbtoolbar10/host/cut");
+        case WXKB_ACT_PASTE:        return CFSTR("com.yzdmm.wxkbtoolbar10/host/paste");
+        case WXKB_ACT_DELETE_ALL:   return CFSTR("com.yzdmm.wxkbtoolbar10/host/deleteAll");
+        case WXKB_ACT_CLIPBOARD:    return CFSTR("com.yzdmm.wxkbtoolbar10/host/clipboard");
+        case WXKB_ACT_PHRASES:      return CFSTR("com.yzdmm.wxkbtoolbar10/host/phrases");
+        case WXKB_ACT_DISMISS:      return CFSTR("com.yzdmm.wxkbtoolbar10/host/dismiss");
+        default:                    return NULL;
+    }
+}
+
+static void WXKBAskHost(int code) {
+    CFStringRef name = WXKBHostNotifyName(code);
+    if (!name) return;
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                         name, NULL, NULL, YES);
+}
+
+// —— 扩展内能自己做的 ——
+
+static UIInputViewController *WXKBInputController(void) {
+    @try {
+        UIApplication *app = [UIApplication sharedApplication];
+        NSMutableArray *wins = [NSMutableArray array];
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *s in app.connectedScenes) {
+                if ([s isKindOfClass:[UIWindowScene class]]) {
+                    [wins addObjectsFromArray:((UIWindowScene *)s).windows];
+                }
+            }
+        }
+        if (wins.count == 0) [wins addObjectsFromArray:app.windows];
+        for (UIWindow *w in wins) {
+            UIViewController *vc = w.rootViewController;
+            while (vc) {
+                if ([vc isKindOfClass:[UIInputViewController class]]) {
+                    return (UIInputViewController *)vc;
+                }
+                if ([vc isKindOfClass:[UINavigationController class]]) {
+                    UIViewController *c = [(UINavigationController *)vc visibleViewController];
+                    if (c && c != vc) { vc = c; continue; }
+                }
+                vc = vc.presentedViewController;
+            }
+        }
+    } @catch (__unused NSException *e) {
+    }
+    return nil;
+}
+
+static id<UITextDocumentProxy> WXKBProxy(void) {
+    UIInputViewController *vc = WXKBInputController();
+    if (vc) {
+        id<UITextDocumentProxy> p = [vc textDocumentProxy];
+        if (p) return p;
+    }
+    return nil;
+}
+
+static void WXKBActCursorMove(NSInteger delta) {
+    @try {
+        id<UITextDocumentProxy> p = WXKBProxy();
+        if (!p) { WXKBAskHost(WXKB_ACT_CURSOR_LEFT); return; }
+        [p adjustTextPositionByCharacterOffset:delta];
+    } @catch (__unused NSException *e) {
+    }
+}
+
+static void WXKBActGlobe(void) {
+    @try {
+        UIInputViewController *vc = WXKBInputController();
+        if (vc && [vc respondsToSelector:@selector(advanceToNextInputMode)]) {
+            [vc advanceToNextInputMode];
+            return;
+        }
+    } @catch (__unused NSException *e) {
+    }
+    // 扩展内切不动就交给宿主
+    WXKBAskHost(WXKB_ACT_GLOBE);
+}
+
+// 光标位置未知时，全删退化成「把光标前的字全删掉」
+static void WXKBActDeleteAllLocal(void) {
+    @try {
+        id<UITextDocumentProxy> p = WXKBProxy();
+        if (!p) { WXKBAskHost(WXKB_ACT_DELETE_ALL); return; }
+        NSString *before = [p documentContextBeforeInput] ?: @"";
+        if (before.length == 0) return;
+        for (NSInteger i = 0; i < (NSInteger)before.length; i++) {
+            [p deleteBackward];
+        }
+    } @catch (__unused NSException *e) {
+        WXKBAskHost(WXKB_ACT_DELETE_ALL);
+    }
+}
+
+// —— 按钮宿主 ——
+@interface WXKBActionTarget : NSObject
+@end
+
+@implementation WXKBActionTarget
+- (void)fire:(id)sender {
+    NSNumber *code = objc_getAssociatedObject(sender, "wxkbCode");
+    int c = code ? code.intValue : 0;
+    @try {
+        switch (c) {
+            case WXKB_ACT_CURSOR_LEFT:  WXKBActCursorMove(-1); break;
+            case WXKB_ACT_CURSOR_RIGHT: WXKBActCursorMove(1);  break;
+            case WXKB_ACT_GLOBE:        WXKBActGlobe();        break;
+            case WXKB_ACT_DELETE_ALL:   WXKBActDeleteAllLocal(); break;
+            // 其余必须回宿主 App
+            case WXKB_ACT_SELECT_ALL:
+            case WXKB_ACT_CUT:
+            case WXKB_ACT_PASTE:
+            case WXKB_ACT_CLIPBOARD:
+            case WXKB_ACT_PHRASES:
+            case WXKB_ACT_DISMISS:
+                WXKBAskHost(c);
+                break;
+            default: break;
+        }
+    } @catch (__unused NSException *e) {
+    }
+}
+@end
+
+static const NSInteger kWXKBActionBarTag = 0x57584142;   // "WXAB"
+
+static UIImage *WXKBActionImage(int code, CGFloat size) {
+    NSString *sf = nil, *fallback = nil;
+    switch (code) {
+        case WXKB_ACT_SELECT_ALL:  sf = @"selection.pin.in.out"; fallback = @"全"; break;
+        case WXKB_ACT_CUT:         sf = @"scissors";             fallback = @"剪"; break;
+        case WXKB_ACT_PASTE:       sf = @"doc.on.clipboard";    fallback = @"粘"; break;
+        case WXKB_ACT_CURSOR_LEFT: sf = @"arrow.left";          fallback = @"←"; break;
+        case WXKB_ACT_CURSOR_RIGHT:sf = @"arrow.right";         fallback = @"→"; break;
+        case WXKB_ACT_DELETE_ALL:  sf = @"trash";               fallback = @"清"; break;
+        case WXKB_ACT_CLIPBOARD:   sf = @"list.clipboard";      fallback = @"历"; break;
+        case WXKB_ACT_PHRASES:     sf = @"text.quote";          fallback = @"语"; break;
+        case WXKB_ACT_DISMISS:     sf = @"keyboard.chevron.compact.down"; fallback = @"收"; break;
+        case WXKB_ACT_GLOBE:       sf = @"globe";               fallback = @"🌐"; break;
+        default: return nil;
+    }
+    @try {
+        UIImageSymbolConfiguration *cfg =
+            [UIImageSymbolConfiguration configurationWithPointSize:size
+                                                            weight:UIImageSymbolWeightRegular];
+        UIImage *img = [UIImage systemImageNamed:sf withConfiguration:cfg];
+        if (img) return img;
+    } @catch (__unused NSException *e) {
+    }
+    return nil;
+}
+
+// 重建工具栏尾部的自定义按钮条
+static void WXKBRebuildActionBar(UIView *bar) {
+    if (!bar) return;
+
+    UIScrollView *sv = nil;
+    for (UIView *v in bar.subviews) {
+        if ([v isKindOfClass:[UIScrollView class]]) { sv = (UIScrollView *)v; break; }
+    }
+
+    UIView *old = [bar viewWithTag:kWXKBActionBarTag];
+    if (old) {
+        // 内容没变就别重建，避免每次 layout 都闪一下
+        NSArray *want = WXKBResolvedActions();
+        NSMutableArray *have = [NSMutableArray array];
+        for (UIView *b in old.subviews) {
+            NSNumber *c = objc_getAssociatedObject(b, "wxkbCode");
+            if (c) [have addObject:c];
+        }
+        if ([want isEqualToArray:have] &&
+            fabs(old.frame.size.height - sv.bounds.size.height) < 0.5) {
+            return;
+        }
+        [old removeFromSuperview];
+    }
+
+    if (!gEnabled) return;
+    NSArray *actions = WXKBResolvedActions();
+    if (actions.count == 0 || !sv) return;
+
+    CGSize bd = bar.bounds.size;
+    if (bd.height < 10) return;
+
+    // 找到原生最后一个图标，作为插入点
+    CGFloat startX = 0;
+    for (UIView *v in sv.subviews) {
+        CGFloat m = CGRectGetMaxX(v.frame);
+        if (m > startX) startX = m;
+    }
+    if (startX <= 0) {
+        startX = sv.contentOffset.x + bd.width * 0.45;
+    }
+    startX += 10;
+
+    CGFloat btn = MIN(30.0, bd.height * 0.62);
+    CGFloat gap = 3.0;
+    CGFloat y = (bd.height - btn) / 2.0;
+
+    UIView *strip = [[UIView alloc] initWithFrame:
+                        CGRectMake(startX, 0, actions.count * (btn + gap), btn)];
+    strip.tag = kWXKBActionBarTag;
+    strip.userInteractionEnabled = YES;
+    strip.backgroundColor = [UIColor clearColor];
+
+    static WXKBActionTarget *target;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ target = [[WXKBActionTarget alloc] init]; });
+
+    CGFloat x = 0;
+    for (NSNumber *n in actions) {
+        int code = n.intValue;
+        UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+        b.frame = CGRectMake(x, 0, btn, btn);
+        b.backgroundColor = [UIColor clearColor];
+        b.tag = code;
+        UIImage *img = WXKBActionImage(code, btn * 0.52);
+        if (img) {
+            [b setImage:img forState:UIControlStateNormal];
+        } else {
+            [b setTitle:@"?" forState:UIControlStateNormal];
+        }
+        // 透明键盘上按键文字保持黑色，按钮图标跟着黑
+        b.tintColor = gKeyEnabled && gTextColor ? gTextColor : [UIColor blackColor];
+        [b setTitleColor:b.tintColor forState:UIControlStateNormal];
+        b.adjustsImageWhenHighlighted = NO;
+        objc_setAssociatedObject(b, "wxkbCode", n, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [b addTarget:target action:@selector(fire:) forControlEvents:UIControlEventTouchUpInside];
+        [strip addSubview:b];
+        x += btn + gap;
+    }
+    strip.frame = CGRectMake(startX, y, x, btn);
+    [sv addSubview:strip];
+
+    CGFloat right = CGRectGetMaxX(strip.frame) + 12;
+    if (sv.contentSize.width < right || sv.contentSize.width < x) {
+        sv.contentSize = CGSizeMake(MAX(right, x), bd.height);
+    }
+    if (sv.contentSize.width > sv.bounds.size.width + 0.5) {
+        sv.scrollEnabled = YES;
+    }
+}
+
+static void WXKBEnsureActionBar(UIView *bar) {
+    if (!bar || WXKBIsEditing(bar)) return;
+    @try {
+        WXKBRebuildActionBar(bar);
+    } @catch (__unused NSException *e) {
     }
 }
 
@@ -608,17 +1149,23 @@ static void WXKBApplyBackground(UIView *host) {
 
 - (BOOL)updateFuncs:(NSArray *)funcs suggestedTypes:(NSArray *)types prefersRecent:(BOOL)prefersRecent {
     NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
-    return %orig(f, types, prefersRecent);
+    BOOL r = %orig(f, types, prefersRecent);
+    WXKBEnsureActionBar(self);
+    return r;
 }
 
 - (BOOL)updateViewWithFuncs:(NSArray *)funcs {
     NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
-    return %orig(f);
+    BOOL r = %orig(f);
+    WXKBEnsureActionBar(self);
+    return r;
 }
 
 - (BOOL)updateFuncs:(NSArray *)funcs {
     NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
-    return %orig(f);
+    BOOL r = %orig(f);
+    WXKBEnsureActionBar(self);
+    return r;
 }
 
 // 关键：永远不缩小。图标保持原生尺寸，溢出交给横向滑动，避免挤成一团。
@@ -629,6 +1176,8 @@ static void WXKBApplyBackground(UIView *host) {
 - (void)layoutSubviews {
     %orig;
     WXKBFixScroll(self);
+    WXKBEnsureActionBar(self);
+    WXKBScheduleSync();
 }
 
 %end
@@ -748,6 +1297,8 @@ static void WXKBApplyBackground(UIView *host) {
 - (void)layoutSubviews {
     %orig;
     WXKBApplyBackground(self);
+    WXKBApplyTransparency(self);
+    WXKBScheduleSync();
 }
 
 %end
@@ -769,6 +1320,7 @@ static void WXKBApplyBackground(UIView *host) {
 - (void)didAttachHosting {
     %orig;
     WXKBReload(YES);
+    WXKBScheduleSync();
 }
 
 %end
@@ -779,7 +1331,7 @@ static void WXKBApplyBackground(UIView *host) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.5.0 loaded enabled=%d funcs=%lu bg=%d key=%d grad=%d corner=%.1f",
-          gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gKeyEnabled,
-          gGradEnabled, gCorner);
+    NSLog(@"[WxkbToolbar10] 1.6.0 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f acts=%lu",
+          gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
+          gGradEnabled, gCorner, (unsigned long)WXKBResolvedActions().count);
 }

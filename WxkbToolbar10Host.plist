@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  宿主 App 侧 dylib：只用来执行全选/剪切/粘贴/全删/收起键盘这些
+	  必须作用于宿主 firstResponder 的动作（键盘扩展在独立沙盒进程里，
+	  够不到宿主的输入框）。
+
+	  刻意不加 Classes 过滤：它不 hook 任何类，只在 %ctor 里注册 Darwin
+	  通知监听器，进程启动开销可忽略；加了 Classes 反而会在键盘层不出现时
+	  漏注入，导致按钮无反应。
+
+	  明确排除系统界面：
+	    SpringBoard  —— 避免在系统 UI 里弹剪贴板/短语面板
+	    Preferences  —— 设置自己会读到偏好，避免自我触发
+	    wxkb_plugin  —— 键盘扩展自身已由 WxkbToolbar10.plist 注入
+	-->
+	<key>Exclude</key>
+	<dict>
+		<key>Executables</key>
+		<array>
+			<string>SpringBoard</string>
+			<string>Preferences</string>
+			<string>wxkb_plugin</string>
+		</array>
+	</dict>
+</dict>
+</plist>
