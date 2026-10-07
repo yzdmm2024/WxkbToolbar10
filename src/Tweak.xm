@@ -1284,9 +1284,11 @@ static const CGFloat kWXKBSkinFuncCapH    = 122.0;   // key9a 键帽本体高（
 // 把键帽条里的「画布底色」抠成透明（1.7.2 核心修复）。
 // 背景：皮肤条里键帽四周是浅灰画布（实测 (245,247,250)），不抠掉的话贴到键盘上
 // 每颗键周围会有一圈浅色边（暗色键盘上尤其明显——用户截图里的「白边」就是它）。
-// 做法：从条带四边做泛洪填充（BFS），凡与边界连通、且颜色接近画布的像素 → alpha 0。
-// 键帽的黑色描边会天然挡住泛洪，穹顶内部再浅的颜色也不会被误删
-// （顶面色 (245,168,154) 离画布的曼哈顿距离 ≥160，容差 90 非常安全）。
+// 做法：从条带四边做泛洪填充（BFS），凡与边界连通的「中性亮灰」像素 → alpha 0。
+// 判据用「通道差」而不是「离画布色的距离」：画布是无色偏中性灰(max-min<=5)，
+// 而键帽顶面再淡也有色偏(实测 26+9 颗全部 max-min>=15，最淡的 V 键只有 15/23)，
+// 若按距离(容差需>=90 才能吃掉投影边缘)会把淡色顶面一起误删——模拟验证踩过这个坑。
+// 键帽黑描边(暗)与穹顶内部(有色偏)都不满足判据，泛洪天然被挡在键帽轮廓之外。
 static UIImage *WXKBKeycapStrip(UIImage *img) {
     if (!img) return nil;
     CGImageRef cg = img.CGImage;
@@ -1306,15 +1308,19 @@ static UIImage *WXKBKeycapStrip(UIImage *img) {
     UInt8 *mark = (UInt8 *)calloc(W * H, 1);
     NSInteger *stk = (NSInteger *)malloc(sizeof(NSInteger) * W * H);
     if (mark && stk) {
-        const int tol = 90;   // |r-245|+|g-247|+|b-250| 的曼哈顿容差
         NSInteger top = 0;
         size_t lastX = W - 1, lastY = H - 1;
         #define WXKB_SEED(IDX) do { \
             size_t _i = (size_t)(IDX); \
             if (!mark[_i]) { \
                 const UInt8 *p = px + _i * 4; \
-                int d = abs(p[0] - 245) + abs(p[1] - 247) + abs(p[2] - 250); \
-                if (d <= tol) { mark[_i] = 1; stk[top++] = (NSInteger)_i; } \
+                UInt8 _mx = p[0] > p[1] ? (p[0] > p[2] ? p[0] : p[2]) \
+                                        : (p[1] > p[2] ? p[1] : p[2]); \
+                UInt8 _mn = p[0] < p[1] ? (p[0] < p[2] ? p[0] : p[2]) \
+                                        : (p[1] < p[2] ? p[1] : p[2]); \
+                if (_mx - _mn <= 7 && _mn >= 225) { \
+                    mark[_i] = 1; stk[top++] = (NSInteger)_i; \
+                } \
             } \
         } while (0)
         for (size_t x = 0; x < W; x++) { WXKB_SEED(x); WXKB_SEED(lastY * W + x); }
