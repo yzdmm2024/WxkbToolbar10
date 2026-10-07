@@ -1,5 +1,6 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
+#import "WXKBSkinImport.h"
 
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController
 @end
@@ -24,6 +25,20 @@
     [g setProperty:@"改动后收起键盘再弹出即可生效。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用增强" key:WXKB_KEY_ENABLED def:YES]];
+
+    // ---- 皮肤（百度 .bdi） ----
+    g = [PSSpecifier groupSpecifierWithName:@"皮肤（百度输入法 .bdi）"];
+    [g setProperty:@"一键套用百度输入法皮肤：整键盘背景图 + 按键文字色/高亮色，"
+                  @"并跟随系统深色自动切换。导入后「键盘背景」「按键配色」仍可手动微调。"
+                  @"注意：百度的是整图皮肤，按键形状/艺术字无法迁移，仅还原风格与配色。"
+            forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbButton:@"导入百度皮肤 (.bdi)"
+                            action:@selector(importBdi:)]];
+    [s addObject:[self wxkbButton:@"应用内置「秋意」预设"
+                            action:@selector(applyQiuyi:)]];
+    [s addObject:[self wxkbButton:@"清除皮肤（恢复默认）"
+                            action:@selector(clearSkin:)]];
 
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];
@@ -118,5 +133,37 @@
 - (void)kbUp:(id)sender   { [self setKbOffset:[self kbOffsetValue] - 5]; }
 - (void)kbDown:(id)sender { [self setKbOffset:[self kbOffsetValue] + 5]; }
 - (void)kbReset:(id)sender{ [self setKbOffset:0]; }
+
+#pragma mark - 皮肤（.bdi / 预设 / 清除）
+
+- (void)importBdi:(id)sender {
+    WXKBImportBdiFromViewController(self);
+}
+
+- (void)applyQiuyi:(id)sender {
+    BOOL ok = WXKBApplyQiuyiPreset();
+    NSString *title = ok ? @"已应用" : @"应用失败";
+    NSString *msg = ok ? @"「秋意」皮肤已套用，收起键盘再弹出即可生效。"
+                       : @"未找到内置皮肤资源。";
+    UIAlertController *a = [UIAlertController
+        alertControllerWithTitle:title message:msg
+                   preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"好"
+                                          style:UIAlertActionStyleDefault
+                                        handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+
+- (void)clearSkin:(id)sender {
+    WXKBClearSkin();
+    UIAlertController *a = [UIAlertController
+        alertControllerWithTitle:@"已清除"
+                   message:@"皮肤已恢复默认，收起键盘再弹出即可生效。"
+                   preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"好"
+                                          style:UIAlertActionStyleDefault
+                                        handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
+}
 
 @end

@@ -161,6 +161,7 @@ static CGFloat   gBgAlpha      = 1.0;
 static UIColor  *gBgColor      = nil;
 static NSString *gBgImage      = nil;
 static NSData   *gBgImageData  = nil;
+static NSData   *gBgImageDataDark = nil;
 static BOOL      gTransparent  = NO;
 static BOOL      gKeyEnabled   = NO;
 static UIColor  *gLetterBg     = nil;
@@ -168,7 +169,9 @@ static UIColor  *gFuncLBg      = nil;
 static UIColor  *gFuncRBg      = nil;
 static UIColor  *gSpaceBg      = nil;
 static UIColor  *gTextColor    = nil;
+static UIColor  *gTextColorDark = nil;
 static UIColor  *gHighlight    = nil;
+static UIColor  *gHighlightDark = nil;
 static BOOL      gGradEnabled  = NO;
 static UIColor  *gGradFrom     = nil;
 static UIColor  *gGradTo       = nil;
@@ -296,6 +299,8 @@ static void WXKBReload(BOOL force) {
     gBgImage = [img isKindOfClass:[NSString class]] ? img : nil;
     id imgData = d[WXKB_KEY_BG_IMAGE_DATA];
     gBgImageData = [imgData isKindOfClass:[NSData class]] ? imgData : nil;
+    id imgDataDark = d[WXKB_KEY_BG_IMAGE_DATA_DARK];
+    gBgImageDataDark = [imgDataDark isKindOfClass:[NSData class]] ? imgDataDark : nil;
 
     gBgColor = WXKBColor(d[WXKB_KEY_BG_COLOR], gBgAlpha)
                    ?: [UIColor colorWithWhite:0.11 alpha:gBgAlpha];
@@ -319,6 +324,8 @@ static void WXKBReload(BOOL force) {
     gTextColor = WXKBColor(d[WXKB_KEY_KEY_TEXT], 1.0) ?: [UIColor blackColor];
     gHighlight = WXKBColor(d[WXKB_KEY_KEY_HIGHLIGHT], 1.0)
                      ?: [UIColor colorWithWhite:0.85 alpha:1.00];
+    gTextColorDark = WXKBColor(d[WXKB_KEY_KEY_TEXT_DARK], 1.0);
+    gHighlightDark = WXKBColor(d[WXKB_KEY_KEY_HIGHLIGHT_DARK], 1.0);
 
     // ---- 渐变 / 逐个 ----
     gGradEnabled = [d[WXKB_KEY_GRAD_ENABLED] boolValue];
@@ -1002,12 +1009,22 @@ static UIColor *WXKBKeyBackground(WBKeyView *v) {
     return nil;
 }
 
+static BOOL WXKBDarkMode(void) {
+    if (@available(iOS 13.0, *)) {
+        return ([UIScreen mainScreen].traitCollection.userInterfaceStyle
+                    == UIUserInterfaceStyleDark);
+    }
+    return NO;
+}
+
 static UIColor *WXKBKeyText(void) {
-    return (gEnabled && gKeyEnabled) ? gTextColor : nil;
+    if (!(gEnabled && gKeyEnabled)) return nil;
+    return WXKBDarkMode() ? (gTextColorDark ?: gTextColor) : gTextColor;
 }
 
 static UIColor *WXKBKeyHighlight(void) {
-    return (gEnabled && gKeyEnabled) ? gHighlight : nil;
+    if (!(gEnabled && gKeyEnabled)) return nil;
+    return WXKBDarkMode() ? (gHighlightDark ?: gHighlight) : gHighlight;
 }
 
 #pragma mark - 键盘背景
@@ -1039,8 +1056,16 @@ static void WXKBApplyBackground(UIView *host) {
     bg.layer.contentsGravity = kCAGravityResizeAspectFill;
 
     UIImage *img = nil;
+    BOOL dark = NO;
+    if (@available(iOS 13.0, *)) {
+        dark = (host.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark);
+    }
     if (gBgEnabled && gBgMode == 2) {
-        if (gBgImageData.length) {
+        // 深色模式优先用深色背景图，没有则回退浅色图
+        if (dark && gBgImageDataDark.length) {
+            img = [UIImage imageWithData:gBgImageDataDark];
+        }
+        if (!img && gBgImageData.length) {
             img = [UIImage imageWithData:gBgImageData];
         }
         if (!img && gBgImage.length) {
@@ -1440,7 +1465,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.18 loaded enabled=%d bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
+    NSLog(@"[WxkbToolbar10] 1.6.19 loaded enabled=%d bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset);
 }

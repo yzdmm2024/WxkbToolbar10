@@ -20,8 +20,9 @@
 #define WXKB_KEY_BG_ENABLED    @"bgEnabled"
 #define WXKB_KEY_BG_MODE       @"bgMode"        // 1=纯色  2=图片
 #define WXKB_KEY_BG_COLOR      @"bgColor"       // #RRGGBB 或 #RRGGBBAA
-#define WXKB_KEY_BG_IMAGE      @"bgImage"       // 高级：绝对路径
-#define WXKB_KEY_BG_IMAGE_DATA @"bgImageData"   // 相册选图后裁剪好的 PNG/JPEG 数据
+#define WXKB_KEY_BG_IMAGE      @"bgImage"       // 高级：绝对路径（浅色）
+#define WXKB_KEY_BG_IMAGE_DATA @"bgImageData"   // 浅色模式背景图数据
+#define WXKB_KEY_BG_IMAGE_DATA_DARK @"bgImageDataDark" // 深色模式背景图数据
 #define WXKB_KEY_BG_ALPHA      @"bgAlpha"       // 0.05 ~ 1.0
 
 // 整键盘透明：把键盘自身所有不透明背景层清掉，透出后面的内容。
@@ -36,8 +37,10 @@
 #define WXKB_KEY_FUNC_L_BG     @"keyFuncLeftBg"   // 左侧功能键（大小写/数字/符号…）
 #define WXKB_KEY_FUNC_R_BG     @"keyFuncRightBg"  // 右侧功能键（删除/中英/发送…）
 #define WXKB_KEY_SPACE_BG      @"keySpaceBg"      // 空格键
-#define WXKB_KEY_KEY_TEXT      @"keyTextColor"    // 按键文字色
-#define WXKB_KEY_KEY_HIGHLIGHT @"keyHighlightColor" // 按下高亮色
+#define WXKB_KEY_KEY_TEXT      @"keyTextColor"    // 浅色模式按键文字色
+#define WXKB_KEY_KEY_TEXT_DARK @"keyTextColorDark" // 深色模式按键文字色
+#define WXKB_KEY_KEY_HIGHLIGHT @"keyHighlightColor" // 浅色模式按下高亮色
+#define WXKB_KEY_KEY_HIGHLIGHT_DARK @"keyHighlightColorDark" // 深色模式按下高亮色
 
 // 26 字母渐变
 #define WXKB_KEY_GRAD_ENABLED  @"letterGradientEnabled"
