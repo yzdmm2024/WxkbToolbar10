@@ -83,6 +83,10 @@ static const int kWXKBFuncNeedsHostApp[] = {14, 17, 29, 32, 33, 35, 36};
 // 面板里展示的全部条目 = 可用 + 需主 App
 #define kWXKBFuncAllCount (kWXKBFuncWorksInKbCount + kWXKBFuncNeedsHostAppCount)
 
+// 功能显隐：每个功能一个独立开关键（iOS 设置原生开关按钮）。
+// 取代旧版单个 funcList 数组，方便用「按钮/开关」逐个开关。
+#define WXKB_FUNC_ON_KEY(code) [NSString stringWithFormat:@"funcOn_%d", (int)(code)]
+
 #pragma mark - 编辑增强按钮 id
 
 #define WXKB_ACT_SELECT_ALL    1   // 全选

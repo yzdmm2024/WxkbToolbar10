@@ -31,7 +31,7 @@
                   @"「需微信主 App」那组在键盘里点了不会有反应，默认不显示。"
             forKey:@"footerText"];
     [s addObject:g];
-    [s addObject:[self wxkbLink:@"功能排序与显隐" detailClass:@"WXKBFuncListController"]];
+    [s addObject:[self wxkbLink:@"功能显隐" detailClass:@"WXKBFuncListController"]];
 
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];

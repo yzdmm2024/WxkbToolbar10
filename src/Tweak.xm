@@ -283,8 +283,55 @@ static void WXKBReload(BOOL force) {
     id v = d[WXKB_KEY_ENABLED];
     gEnabled = v ? [v boolValue] : YES;
 
-    id fl = d[WXKB_KEY_FUNCLIST];
-    gFuncList = [fl isKindOfClass:[NSArray class]] ? fl : nil;
+    // ---- 功能显隐 ----
+    // 新版：每个功能一个独立开关键 funcOn_<code>（iOS 设置原生开关）。
+    // 旧版：单个 funcList 数组。兼容策略：
+    //   1) 任一 funcOn_<code> 键存在 → 以开关键为准；
+    //   2) 否则若旧 funcList 数组存在 → 直接复用（保留用户之前的显隐，过滤掉需主 App 的码）；
+    //   3) 都没有 → 键盘内可用功能默认全开。
+    NSMutableArray *funcEnabled = [NSMutableArray array];
+    BOOL haveKeys = NO;
+    for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
+        if (d[WXKB_FUNC_ON_KEY(kWXKBFuncWorksInKb[i])] != nil) {
+            haveKeys = YES;
+            break;
+        }
+    }
+    if (haveKeys) {
+        for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
+            int code = kWXKBFuncWorksInKb[i];
+            id onv = d[WXKB_FUNC_ON_KEY(code)];
+            BOOL on = onv ? [onv boolValue] : YES;
+            if (on) {
+                [funcEnabled addObject:@(code)];
+            }
+        }
+    } else {
+        id oldList = d[WXKB_KEY_FUNCLIST];
+        if ([oldList isKindOfClass:[NSArray class]] && [oldList count] > 0) {
+            NSMutableSet *hostOnly = [NSMutableSet set];
+            for (int i = 0; i < kWXKBFuncNeedsHostAppCount; i++) {
+                [hostOnly addObject:@(kWXKBFuncNeedsHostApp[i])];
+            }
+            for (id o in oldList) {
+                if (![o respondsToSelector:@selector(intValue)]) {
+                    continue;
+                }
+                NSNumber *n = @([o intValue]);
+                if ([hostOnly containsObject:n]) {
+                    continue;   // 需主 App 的码键盘侧永不显示
+                }
+                if (![funcEnabled containsObject:n]) {
+                    [funcEnabled addObject:n];
+                }
+            }
+        } else {
+            for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
+                [funcEnabled addObject:@(kWXKBFuncWorksInKb[i])];
+            }
+        }
+    }
+    gFuncList = funcEnabled;
 
     // ---- 背景 ----
     gBgEnabled = [d[WXKB_KEY_BG_ENABLED] boolValue];
@@ -1500,7 +1547,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.13 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
+    NSLog(@"[WxkbToolbar10] 1.6.14 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset);
 }
