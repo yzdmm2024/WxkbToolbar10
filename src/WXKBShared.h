@@ -56,12 +56,16 @@
 // 按键形状：0 默认圆角（由 keyCornerRadius 决定）/ 1 圆形 / 2 六边形 / 3 水珠
 #define WXKB_KEY_SHAPE         @"keyShape"
 
-// 彩虹键盘：开启后 A→Z 每个字母一种颜色（覆盖渐变与逐个配色），
-// 数字/符号键（1-0）也会按数字顺序取彩虹色。
-#define WXKB_KEY_RAINBOW       @"rainbow"
+// 内置皮肤：开启后把 A→Z 字母键与功能键渲染成真实「彩虹按键」键帽
+//（百度输入法导出的真·键帽 PNG），关闭则恢复普通按键配色。
+// 这是对旧版「彩虹键盘（程序生成 A→Z 色）」的替代。
+#define WXKB_KEY_SKIN_ENABLED  @"skinEnabled"
 
-// 彩虹样式：0 标准彩虹（高饱和） / 1 马卡龙粉彩（低饱和，类似机械键帽皮肤）
-#define WXKB_KEY_RAINBOW_STYLE @"rainbowStyle"
+// 皮肤名：当前仅内置 "rainbow" = 百度「彩虹按键」；保留扩展位。
+#define WXKB_KEY_SKIN_NAME     @"skinName"
+
+// 皮肤资源在设备上的目录（tweak 从 jbroot 读取）
+#define WXKB_SKIN_DIR          @"/Library/Application Support/WxkbToolbar10/skins"
 
 // 立体键帽：在按键背后垫一层向下的深色「侧壁」，模拟电脑键盘 3D 键帽（纯视觉，不动布局）
 #define WXKB_KEY_KEYCAP3D      @"keyCap3D"

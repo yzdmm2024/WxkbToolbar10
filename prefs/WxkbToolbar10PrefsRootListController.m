@@ -63,17 +63,19 @@
     [s addObject:[self wxkbColorRow:@"按下高亮色" key:WXKB_KEY_KEY_HIGHLIGHT
                                  def:WXKB_DEF_HIGHLIGHT]];
 
-    // ---- 字母渐变 / 逐个 ----
-    g = [PSSpecifier groupSpecifierWithName:@"字母键进阶"];
-    [g setProperty:@"彩虹键盘：A→Z 每个字母一种颜色（优先级最高，覆盖下面的渐变与逐个配色）；"
-                  @"数字·符号面板的 1-0 也会按数字顺序取彩虹色。「马卡龙」是低饱和粉彩，"
-                  @"接近机械键盘键帽皮肤的观感。"
+    // ---- 皮肤（内置）----
+    g = [PSSpecifier groupSpecifierWithName:@"皮肤（内置）"];
+    [g setProperty:@"开启后把键盘渲染成内置的「彩虹按键」真实皮肤（来自百度输入法导出的真·键帽图），"
+                  @"替代旧版程序生成的彩虹色。关闭则恢复上方普通按键配色。皮肤图片缺失时会自动退回彩虹配色。"
             forKey:@"footerText"];
     [s addObject:g];
-    [s addObject:[self wxkbSwitch:@"彩虹键盘（A→Z 全色）" key:WXKB_KEY_RAINBOW def:NO]];
-    [s addObject:[self wxkbChoice:@"彩虹样式" key:WXKB_KEY_RAINBOW_STYLE def:@0
-                           values:@[@0, @1]
-                           titles:@[@"标准彩虹（高饱和）", @"马卡龙（粉彩）"]]];
+    [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
+
+    // ---- 字母渐变 / 逐个 ----
+    g = [PSSpecifier groupSpecifierWithName:@"字母键进阶"];
+    [g setProperty:@"字母键支持 A→Z 渐变，以及 26 字母逐个单独上色。"
+            forKey:@"footerText"];
+    [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用字母渐变" key:WXKB_KEY_GRAD_ENABLED def:NO]];
     [s addObject:[self wxkbColorRow:@"渐变起始色" key:WXKB_KEY_GRAD_FROM
                                  def:WXKB_DEF_GRAD_FROM]];
@@ -86,7 +88,7 @@
     [g setProperty:@"点一下即套用整套配色，之后仍可在上方逐项微调。开启「启用自定义配色」后预设才会显示。"
             forKey:@"footerText"];
     [s addObject:g];
-    for (NSString *nm in @[@"键帽粉彩", @"彩虹", @"极光", @"莫兰迪", @"暗夜", @"清新"]) {
+    for (NSString *nm in @[@"极光", @"莫兰迪", @"暗夜", @"清新"]) {
         PSSpecifier *b = [self wxkbButton:[NSString stringWithFormat:@"应用「%@」", nm]
                                       action:@selector(applyPreset:)];
         [b setProperty:nm forKey:@"wxkbPreset"];
@@ -150,37 +152,8 @@
 // 预设名 -> 一套偏好。每行：键 -> 值（颜色用 #RRGGBB，开关用 @YES/@NO）
 - (NSDictionary *)wxkbPresetTable {
     return @{
-        @"键帽粉彩": @{                    // 仿机械键盘粉彩键帽皮肤（马卡龙彩虹 + 3D 键帽）
-            WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_RAINBOW: @YES,
-            WXKB_KEY_RAINBOW_STYLE: @1,
-            WXKB_KEY_KEYCAP3D: @YES,
-            WXKB_KEY_SHAPE: @0,
-            WXKB_KEY_CORNER: @7.0,
-            WXKB_KEY_LETTER_BG: @"#FFFFFF",
-            WXKB_KEY_DIGIT_BG: @"#FFFFFF",
-            WXKB_KEY_FUNC_L_BG: @"#F2F2F4",
-            WXKB_KEY_FUNC_R_BG: @"#F2F2F4",
-            WXKB_KEY_SPACE_BG: @"#FFFFFF",
-            WXKB_KEY_KEY_TEXT: @"#1C1C1E",
-            WXKB_KEY_KEY_HIGHLIGHT: @"#E5E5EA"
-        },
-        @"彩虹": @{
-            WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_RAINBOW: @YES,
-            WXKB_KEY_RAINBOW_STYLE: @0,
-            WXKB_KEY_KEYCAP3D: @NO,
-            WXKB_KEY_LETTER_BG: @"#FFFFFF",
-            WXKB_KEY_DIGIT_BG: @"#FFD166",
-            WXKB_KEY_FUNC_L_BG: @"#FFD166",
-            WXKB_KEY_FUNC_R_BG: @"#EF476F",
-            WXKB_KEY_SPACE_BG: @"#FFFFFF",
-            WXKB_KEY_KEY_TEXT: @"#1C1C1E",
-            WXKB_KEY_KEY_HIGHLIGHT: @"#FFD166"
-        },
         @"极光": @{
             WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_RAINBOW: @NO,
             WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_GRAD_ENABLED: @YES,
             WXKB_KEY_LETTER_BG: @"#101826",
@@ -194,7 +167,6 @@
         },
         @"莫兰迪": @{
             WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_RAINBOW: @NO,
             WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#D8CFC4",
@@ -206,7 +178,6 @@
         },
         @"暗夜": @{
             WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_RAINBOW: @NO,
             WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#2B2B2E",
@@ -218,7 +189,6 @@
         },
         @"清新": @{
             WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_RAINBOW: @NO,
             WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#E8F5E9",

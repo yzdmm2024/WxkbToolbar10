@@ -178,8 +178,8 @@ static UIColor  *gGradTo       = nil;
 static NSDictionary *gLetterMap = nil;
 static CGFloat   gCorner       = 0.0;
 static int       gShape        = 0;      // 0 默认圆角 1 圆形 2 六边形 3 水珠
-static BOOL      gRainbow      = NO;     // 彩虹键盘
-static int       gRainbowStyle = 0;      // 0 标准 1 马卡龙粉彩
+static BOOL      gSkinEnabled  = NO;     // 内置皮肤「彩虹按键」（百度）开关
+static NSString *gSkinName     = nil;    // 皮肤名（当前固定 rainbow）
 static BOOL      gCap3D        = NO;     // 立体键帽（电脑键盘风）
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
 static double    gLastLoad     = -1;
@@ -349,12 +349,9 @@ static void WXKBReload(BOOL force) {
     if (s < 0 || s > 3) s = 0;
     gShape = s;
 
-    gRainbow = [d[WXKB_KEY_RAINBOW] boolValue];
-
-    id rs = d[WXKB_KEY_RAINBOW_STYLE];
-    int rstyle = rs ? [rs intValue] : 0;
-    if (rstyle < 0 || rstyle > 1) rstyle = 0;
-    gRainbowStyle = rstyle;
+    gSkinEnabled = [d[WXKB_KEY_SKIN_ENABLED] boolValue];
+    id sn = d[WXKB_KEY_SKIN_NAME];
+    gSkinName = ([sn isKindOfClass:[NSString class]] && [sn length]) ? sn : @"rainbow";
 
     gCap3D = [d[WXKB_KEY_KEYCAP3D] boolValue];
 
@@ -475,7 +472,7 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     CAShapeLayer *wall = objc_getAssociatedObject(v, kWXKBCapLayerKey);
     CAShapeLayer *body = objc_getAssociatedObject(target, kWXKBCapBodyKey);
     CAGradientLayer *top  = objc_getAssociatedObject(target, kWXKBCapTopKey);
-    if (!gEnabled || !gCap3D) {
+    if (!gEnabled || !gCap3D || gSkinEnabled) {
         if (wall)  { [wall removeFromSuperlayer];  objc_setAssociatedObject(v, kWXKBCapLayerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         if (body)  { [body removeFromSuperlayer];  objc_setAssociatedObject(target, kWXKBCapBodyKey,  nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         if (top)   { [top  removeFromSuperlayer];  objc_setAssociatedObject(target, kWXKBCapTopKey,   nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
@@ -675,6 +672,7 @@ static void WXKBApplyCorner(UIView *v) {
     WXKBApplyCornerInner(v);
     if (!v) return;
     WXKBApplyCap(v, WXKBFindBgLeaf(v, 0));
+    WXKBApplySkin(v, WXKBFindBgLeaf(v, 0));
 }
 
 static BOOL WXKBIsKeyView(UIView *v) {
@@ -1260,31 +1258,148 @@ static UIColor *WXKBGradientColor(NSInteger idx) {
                            alpha:a1 + (a2 - a1) * t];
 }
 
-// 马卡龙粉彩：低饱和、高亮度，接近机械键盘粉彩键帽皮肤的观感
-static UIColor *WXKBRainbowColor(CGFloat hue) {
-    if (gRainbowStyle == 1) {
-        return [UIColor colorWithHue:hue saturation:0.38 brightness:0.99 alpha:1.0];
+#pragma mark - 内置皮肤（百度「彩虹按键」真实键帽）
+
+// 从 jbroot 下的皮肤目录加载真实键帽 PNG（key26a = 26 字母键帽横排；key9a = 9 功能键帽横排），
+// 按索引切片成单颗键帽图。皮肤由「彩虹按键」指令从百度输入法导出，
+// 路径 = WXKB_SKIN_DIR/<皮肤名>/res/。图片缺失时由下方「平均色」兜底成彩虹配色。
+static UIImage *gSkinLetterImg[26];
+static UIImage *gSkinFuncImg[9];
+static UIColor *gSkinLetterCol[26];
+static UIColor *gSkinFuncCol[9];
+static BOOL      gSkinLoaded = NO;
+static BOOL      gSkinTried  = NO;
+
+// 把一张横排键帽条切成 count 片
+static NSArray<UIImage *> *WXKBSliceStrip(UIImage *img, NSInteger count) {
+    if (!img || count <= 0) return nil;
+    CGImageRef base = img.CGImage;
+    if (!base) return nil;
+    size_t W = CGImageGetWidth(base), H = CGImageGetHeight(base);
+    if (W == 0 || H == 0) return nil;
+    CGFloat sliceW = (CGFloat)W / (CGFloat)count;
+    CGFloat scale = img.scale > 0 ? img.scale : 1.0;
+    NSMutableArray *arr = [NSMutableArray arrayWithCapacity:count];
+    for (NSInteger i = 0; i < count; i++) {
+        CGRect r = CGRectMake((CGFloat)i * sliceW, 0.0, sliceW, (CGFloat)H);
+        CGImageRef cg = CGImageCreateWithImageInRect(base, r);
+        if (!cg) { [arr addObject:[NSNull null]]; continue; }
+        UIImage *u = [UIImage imageWithCGImage:cg scale:scale
+                                  orientation:UIImageOrientationUp];
+        CGImageRelease(cg);
+        [arr addObject:u ? u : [NSNull null]];
     }
-    return [UIColor colorWithHue:hue saturation:0.85 brightness:1.0 alpha:1.0];
+    return arr;
 }
 
-// 数字键彩虹：1-9、0 依次取色相（0 当 10 用，刚好铺满一排）
-static UIColor *WXKBDigitRainbowColor(NSString *ident) {
-    if (ident.length != 1) return nil;
-    unichar c = [ident characterAtIndex:0];
-    int d = -1;
-    if (c >= '1' && c <= '9') d = c - '0';
-    else if (c == '0') d = 10;
-    if (d <= 0) return nil;
-    return WXKBRainbowColor((CGFloat)d / 10.0);
+// 取一张小图的平均色（图片加载失败时的兜底配色）
+static UIColor *WXKBAverageColor(UIImage *img) {
+    if (!img) return nil;
+    CGSize s = CGSizeMake(8, 8);
+    UIGraphicsBeginImageContextWithOptions(s, YES, 1.0);
+    [img drawInRect:CGRectMake(0, 0, s.width, s.height)];
+    UIImage *small = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    if (!small) return nil;
+    CGImageRef cg = small.CGImage;
+    if (!cg) return nil;
+    CGDataProviderRef dp = CGImageGetDataProvider(cg);
+    if (!dp) return nil;
+    NSData *data = (__bridge_transfer NSData *)CGDataProviderCopyData(dp);
+    if (!data || data.length < 4) return nil;
+    const unsigned char *p = data.bytes;
+    NSUInteger n = 8 * 8, r = 0, g = 0, b = 0;
+    for (NSUInteger i = 0; i < n; i++) {
+        r += p[i * 4 + 0]; g += p[i * 4 + 1]; b += p[i * 4 + 2];
+    }
+    return [UIColor colorWithRed:(r / (CGFloat)n) / 255.0
+                           green:(g / (CGFloat)n) / 255.0
+                            blue:(b / (CGFloat)n) / 255.0 alpha:1.0];
+}
+
+static void WXKBLoadSkin(void) {
+    if (gSkinLoaded || gSkinTried) return;
+    gSkinTried = YES;
+    if (!gSkinEnabled || !gSkinName.length) return;
+    NSString *dir = [[WXKBJbrootPath([WXKB_SKIN_DIR
+        stringByAppendingPathComponent:gSkinName]) stringByAppendingPathComponent:@"res"]
+        stringByAppendingString:@"/"];
+    if (!dir) return;
+    UIImage *letter = [UIImage imageWithContentsOfFile:[dir stringByAppendingString:@"key26a.png"]];
+    UIImage *func   = [UIImage imageWithContentsOfFile:[dir stringByAppendingString:@"key9a.png"]];
+    NSArray *la = WXKBSliceStrip(letter, 26);
+    NSArray *fa = WXKBSliceStrip(func, 9);
+    for (NSInteger i = 0; i < 26; i++) {
+        id o = la ? la[i] : nil;
+        if ([o isKindOfClass:[UIImage class]]) {
+            gSkinLetterImg[i] = o;
+            gSkinLetterCol[i] = WXKBAverageColor(o);
+        }
+    }
+    for (NSInteger i = 0; i < 9; i++) {
+        id o = fa ? fa[i] : nil;
+        if ([o isKindOfClass:[UIImage class]]) {
+            gSkinFuncImg[i] = o;
+            gSkinFuncCol[i] = WXKBAverageColor(o);
+        }
+    }
+    if (gSkinLetterImg[0]) gSkinLoaded = YES; else gSkinTried = NO;  // 没读到则下次再试
+}
+
+// 取一颗键对应的皮肤键帽图。字母键按 alphabetIndex；其余按 identifier 哈希稳定取 9 片之一。
+static UIImage *WXKBSkinImageFor(WBKeyView *v) {
+    WXKBLoadSkin();
+    NSInteger li = WXKBLetterIndex(v);
+    if (li != NSNotFound && gSkinLetterImg[li]) {
+        return gSkinLetterImg[li];
+    }
+    NSString *ident = WXKBIdentifier(v) ?: @"";
+    NSInteger j = 0;
+    if (ident.length) {
+        j = (NSInteger)([ident hash] % 9);
+        if (j < 0) j += 9;
+    }
+    if (gSkinFuncImg[j]) return gSkinFuncImg[j];
+    if (gSkinLetterImg[0]) {                       // 功能图也缺失：退回字母条循环取色
+        NSInteger k = (li != NSNotFound) ? li : (j % 26);
+        return gSkinLetterImg[k];
+    }
+    return nil;
+}
+
+static const void *kWXKBSkinKey = &kWXKBSkinKey;
+
+// 把皮肤键帽图贴到键的背景叶上（contents 在 backgroundColor 之上、在文字之下）。
+static void WXKBApplySkin(UIView *v, UIView *leaf) {
+    if (!v) return;
+    UIView *target = leaf ?: v;
+    UIImage *prev = objc_getAssociatedObject(v, kWXKBSkinKey);
+    if (!gEnabled || !gSkinEnabled) {
+        if (prev) {
+            target.layer.contents = nil;
+            objc_setAssociatedObject(v, kWXKBSkinKey, nil,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        return;
+    }
+    UIImage *img = WXKBSkinImageFor((WBKeyView *)v);
+    if (!img) {                                    // 图片缺失：不动（键保持普通配色）
+        if (prev) {
+            target.layer.contents = nil;
+            objc_setAssociatedObject(v, kWXKBSkinKey, nil,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        return;
+    }
+    if (prev != img) {
+        target.layer.contents = (__bridge id)img.CGImage;
+        target.layer.contentsGravity = kCAGravityResizeAspectFill;
+        objc_setAssociatedObject(v, kWXKBSkinKey, img,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
 }
 
 static UIColor *WXKBLetterColorFor(NSInteger idx) {
-    if (gRainbow) {
-        // 彩虹键盘：A→Z 按色相铺满整个光谱
-        CGFloat hue = (CGFloat)(idx % 26) / 26.0;
-        return WXKBRainbowColor(hue);
-    }
     if (gLetterMap) {
         id v = gLetterMap[[NSString stringWithFormat:@"%ld", (long)idx]];
         if ([v isKindOfClass:[NSString class]] && [v length]) {
@@ -1313,10 +1428,6 @@ static UIColor *WXKBKeyBackground(WBKeyView *v) {
             return (idx != NSNotFound) ? WXKBLetterColorFor(idx) : gLetterBg;
         }
         case WXKBKeyKindDigit: {
-            if (gRainbow) {
-                UIColor *c = WXKBDigitRainbowColor(WXKBIdentifier(v));
-                if (c) return c;
-            }
             if (gDigitBg) return gDigitBg;
             // 未单独设置数字/符号键底色时沿用旧行为：按左右半区归功能键组
             UIView *win = v.window;
@@ -1784,7 +1895,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.21 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d rainbow=%d rstyle=%d cap3d=%d corner=%.1f offset=%.1f",
+    NSLog(@"[WxkbToolbar10] 1.7.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, gRainbow, gRainbowStyle, gCap3D, gCorner, gKbOffset);
+          gGradEnabled, gShape, gCap3D, gCorner, gKbOffset, gSkinEnabled);
 }
