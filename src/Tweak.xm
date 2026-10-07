@@ -461,7 +461,7 @@ static void WXKBApplyCorner(UIView *v);
 static UIColor *WXKBKeyBackground(WBKeyView *v);
 
 // —— 立体键帽（电脑键盘风）——
-// 在按键 layer 最底下垫一层向下伸出 3.5pt 的深色「侧壁」，模拟真实键帽的厚度。
+// 在按键 layer 最底下垫一层向下伸出 5pt 的同色系深色「侧壁」，模拟真实键帽的厚度。
 // 只加图层、不动布局：不碰 frame / 布局约束，也不碰文字，规避 1.6.16 那类崩溃。
 
 static const void *kWXKBCapLayerKey = &kWXKBCapLayerKey;
@@ -484,8 +484,12 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     if (v.layer.masksToBounds) {
         v.layer.masksToBounds = NO;
     }
+    // 取消裁剪后系统原生阴影会跟着漏出来（角上一圈灰），直接压掉
+    if (v.layer.shadowOpacity > 0.0) {
+        v.layer.shadowOpacity = 0.0;
+    }
 
-    static const CGFloat kDepth = 3.5;
+    static const CGFloat kDepth = 5.0;
     UIView *target = leaf ?: v;
     CGFloat rad = 5.0;
     if (gShape == 0) {
@@ -504,17 +508,20 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     } else if (gShape == 3) {                // 水珠：同形状整体下移
         wallPath = WXKBWaterDropPath(sz);
         if (wallPath) [wallPath applyTransform:CGAffineTransformMakeTranslation(0, kDepth)];
-    } else {                                 // 默认圆角 / 圆形：拉长圆角矩形
+    } else {                                 // 默认圆角 / 圆形：同轮廓整体下移
+        // 不能用「拉长矩形」：那会让侧壁在圆角处比按键本体宽出一截，
+        // 视觉上就是角上挂一块灰色。平移同轮廓路径则侧边完全重合。
         if (gShape == 1) rad = MIN(sz.width, sz.height) / 2.0;
         wallPath = [UIBezierPath bezierPathWithRoundedRect:
-                        CGRectMake(0, 0, sz.width, sz.height + kDepth)
+                        CGRectMake(0, 0, sz.width, sz.height)
                                        cornerRadius:rad];
+        [wallPath applyTransform:CGAffineTransformMakeTranslation(0, kDepth)];
     }
     if (!wallPath) {
         return;
     }
 
-    // 侧壁颜色 = 按键底色加深（配色关闭时取原生背景叶颜色）
+    // 侧壁颜色：保色相压亮度（×0.6 那种直乘会把粉彩变成灰）
     UIColor *base = WXKBKeyBackground((WBKeyView *)v);
     if (!base) {
         CGColorRef cg = target.layer.backgroundColor ?: v.layer.backgroundColor;
@@ -522,18 +529,24 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
             base = [UIColor colorWithCGColor:cg];
         }
     }
-    CGFloat r = 0.78, g = 0.78, b = 0.80, a = 1.0;
-    if ([base getRed:&r green:&g blue:&b alpha:&a]) {
-        // 深色底（亮度低）再加深会看不清，改为提亮一点点做出侧面反光
-        if (r + g + b < 0.9) {
-            r = MIN(r * 1.5 + 0.03, 1.0);
-            g = MIN(g * 1.5 + 0.03, 1.0);
-            b = MIN(b * 1.5 + 0.05, 1.0);
-        } else {
-            r *= 0.60; g *= 0.60; b *= 0.62;
+    UIColor *wallColor = [UIColor colorWithRed:0.55 green:0.55 blue:0.58 alpha:1.0];
+    CGFloat h0 = 0, s0 = 0, br0 = 0, al0 = 0;
+    if (base && [base getHue:&h0 saturation:&s0 brightness:&br0 alpha:&al0] && s0 > 0.02) {
+        // 彩色键：同色系深色（亮度约砍半、饱和度加深），立体感来自色差而非灰
+        wallColor = [UIColor colorWithHue:h0
+                               saturation:MIN(s0 * 1.35 + 0.08, 1.0)
+                               brightness:MAX(br0 * 0.55, 0.18)
+                                    alpha:1.0];
+    } else if (base) {
+        CGFloat w0 = 0, a0 = 0;
+        if ([base getWhite:&w0 alpha:&a0]) {
+            // 灰白键：压成中灰偏暗，模拟键帽侧面
+            wallColor = [UIColor colorWithWhite:(w0 > 0.5 ? w0 * 0.62
+                                                         : MIN(w0 * 1.6 + 0.05, 1.0))
+                                          alpha:1.0];
         }
     }
-    CGColorRef wallCG = [UIColor colorWithRed:r green:g blue:b alpha:1.0].CGColor;
+    CGColorRef wallCG = wallColor.CGColor;
 
     if (!wall) {
         wall = [CAShapeLayer layer];
