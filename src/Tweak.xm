@@ -298,12 +298,36 @@ static void WXKBReload(BOOL force) {
         }
     }
     if (haveKeys) {
-        for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
-            int code = kWXKBFuncWorksInKb[i];
+        // 按用户自定义顺序（funcOrder）排列键盘内可用的功能；
+        // 没有 funcOrder 时退回内置默认顺序。这决定微信工具栏从左到右的排列。
+        NSArray *order = d[WXKB_KEY_FUNC_ORDER];
+        NSMutableArray *ord = [NSMutableArray array];
+        if ([order isKindOfClass:[NSArray class]]) {
+            NSMutableSet *seen = [NSMutableSet set];
+            for (id x in order) {
+                NSNumber *n = [x isKindOfClass:[NSNumber class]] ? x
+                    : ([x respondsToSelector:@selector(intValue)] ? @([x intValue]) : nil);
+                if (!n) continue;
+                BOOL known = NO;
+                for (int k = 0; k < kWXKBFuncWorksInKbCount; k++) {
+                    if (kWXKBFuncWorksInKb[k] == [n intValue]) { known = YES; break; }
+                }
+                if (!known || [seen containsObject:n]) continue;
+                [ord addObject:n];
+                [seen addObject:n];
+            }
+        }
+        // 补齐全内置功能，保证不漏任何一个
+        for (int k = 0; k < kWXKBFuncWorksInKbCount; k++) {
+            NSNumber *n = @(kWXKBFuncWorksInKb[k]);
+            if (![ord containsObject:n]) [ord addObject:n];
+        }
+        for (NSNumber *n in ord) {
+            int code = [n intValue];
             id onv = d[WXKB_FUNC_ON_KEY(code)];
             BOOL on = onv ? [onv boolValue] : YES;
             if (on) {
-                [funcEnabled addObject:@(code)];
+                [funcEnabled addObject:n];
             }
         }
     } else {
@@ -1547,7 +1571,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.14 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
+    NSLog(@"[WxkbToolbar10] 1.6.15 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset);
 }

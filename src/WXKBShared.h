@@ -16,6 +16,8 @@
 
 #define WXKB_KEY_ENABLED       @"enabled"
 #define WXKB_KEY_FUNCLIST      @"funcList"
+// 键盘内可用功能的自定义顺序（NSNumber 数组，决定微信工具栏从左到右的排列）
+#define WXKB_KEY_FUNC_ORDER    @"funcOrder"
 
 // 背景
 #define WXKB_KEY_BG_ENABLED    @"bgEnabled"
