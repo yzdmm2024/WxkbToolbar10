@@ -164,6 +164,7 @@ static NSData   *gBgImageData  = nil;
 static BOOL      gTransparent  = NO;
 static BOOL      gKeyEnabled   = NO;
 static UIColor  *gLetterBg     = nil;
+static UIColor  *gDigitBg      = nil;    // 数字/符号键（数字·符号面板中间主键）
 static UIColor  *gFuncLBg      = nil;
 static UIColor  *gFuncRBg      = nil;
 static UIColor  *gSpaceBg      = nil;
@@ -178,6 +179,8 @@ static NSDictionary *gLetterMap = nil;
 static CGFloat   gCorner       = 0.0;
 static int       gShape        = 0;      // 0 默认圆角 1 圆形 2 六边形 3 水珠
 static BOOL      gRainbow      = NO;     // 彩虹键盘
+static int       gRainbowStyle = 0;      // 0 标准 1 马卡龙粉彩
+static BOOL      gCap3D        = NO;     // 立体键帽（电脑键盘风）
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
 static double    gLastLoad     = -1;
 
@@ -314,6 +317,7 @@ static void WXKBReload(BOOL force) {
 
     gLetterBg = WXKBColor(d[WXKB_KEY_LETTER_BG], 1.0)
                     ?: [UIColor colorWithWhite:1.00 alpha:0.96];
+    gDigitBg  = WXKBColor(d[WXKB_KEY_DIGIT_BG], 1.0);   // nil = 沿用左右功能键分组
     gFuncLBg  = WXKBColor(d[WXKB_KEY_FUNC_L_BG], 1.0) ?: legacyFunc
                     ?: [UIColor colorWithWhite:0.66 alpha:1.00];
     gFuncRBg  = WXKBColor(d[WXKB_KEY_FUNC_R_BG], 1.0) ?: legacyFunc
@@ -346,6 +350,13 @@ static void WXKBReload(BOOL force) {
     gShape = s;
 
     gRainbow = [d[WXKB_KEY_RAINBOW] boolValue];
+
+    id rs = d[WXKB_KEY_RAINBOW_STYLE];
+    int rstyle = rs ? [rs intValue] : 0;
+    if (rstyle < 0 || rstyle > 1) rstyle = 0;
+    gRainbowStyle = rstyle;
+
+    gCap3D = [d[WXKB_KEY_KEYCAP3D] boolValue];
 
     // ---- 键盘位置 ----
     id of2 = d[WXKB_KEY_OFFSET];
@@ -446,7 +457,101 @@ static void WXKBApplyShapeMask(UIView *target, NSInteger shape, CGSize sz) {
     }
 }
 
-static void WXKBApplyCorner(UIView *v) {
+static void WXKBApplyCorner(UIView *v);
+static UIColor *WXKBKeyBackground(WBKeyView *v);
+
+// —— 立体键帽（电脑键盘风）——
+// 在按键 layer 最底下垫一层向下伸出 3.5pt 的深色「侧壁」，模拟真实键帽的厚度。
+// 只加图层、不动布局：不碰 frame / 布局约束，也不碰文字，规避 1.6.16 那类崩溃。
+
+static const void *kWXKBCapLayerKey = &kWXKBCapLayerKey;
+
+static void WXKBApplyCap(UIView *v, UIView *leaf) {
+    CAShapeLayer *wall = objc_getAssociatedObject(v, kWXKBCapLayerKey);
+    if (!gEnabled || !gCap3D) {
+        if (wall) {
+            [wall removeFromSuperlayer];
+            objc_setAssociatedObject(v, kWXKBCapLayerKey, nil,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        return;
+    }
+    CGSize sz = v.bounds.size;
+    if (sz.width <= 8.0 || sz.height <= 8.0) {
+        return;
+    }
+    // 侧壁要伸出按键底部，按键自身不能再裁剪
+    if (v.layer.masksToBounds) {
+        v.layer.masksToBounds = NO;
+    }
+
+    static const CGFloat kDepth = 3.5;
+    UIView *target = leaf ?: v;
+    CGFloat rad = 5.0;
+    if (gShape == 0) {
+        rad = target.layer.cornerRadius;
+        if (gCorner > 0.01) {
+            rad = gCorner;
+        }
+        rad = MIN(rad, MIN(sz.width, sz.height) / 2.0);
+        if (rad <= 0.5) rad = 5.0;
+    }
+
+    UIBezierPath *wallPath = nil;
+    if (gShape == 2) {                       // 六边形：同形状整体下移
+        wallPath = WXKBHexagonPath(sz);
+        if (wallPath) [wallPath applyTransform:CGAffineTransformMakeTranslation(0, kDepth)];
+    } else if (gShape == 3) {                // 水珠：同形状整体下移
+        wallPath = WXKBWaterDropPath(sz);
+        if (wallPath) [wallPath applyTransform:CGAffineTransformMakeTranslation(0, kDepth)];
+    } else {                                 // 默认圆角 / 圆形：拉长圆角矩形
+        if (gShape == 1) rad = MIN(sz.width, sz.height) / 2.0;
+        wallPath = [UIBezierPath bezierPathWithRoundedRect:
+                        CGRectMake(0, 0, sz.width, sz.height + kDepth)
+                                       cornerRadius:rad];
+    }
+    if (!wallPath) {
+        return;
+    }
+
+    // 侧壁颜色 = 按键底色加深（配色关闭时取原生背景叶颜色）
+    UIColor *base = WXKBKeyBackground((WBKeyView *)v);
+    if (!base) {
+        CGColorRef cg = target.layer.backgroundColor ?: v.layer.backgroundColor;
+        if (cg) {
+            base = [UIColor colorWithCGColor:cg];
+        }
+    }
+    CGFloat r = 0.78, g = 0.78, b = 0.80, a = 1.0;
+    if ([base getRed:&r green:&g blue:&b alpha:&a]) {
+        // 深色底（亮度低）再加深会看不清，改为提亮一点点做出侧面反光
+        if (r + g + b < 0.9) {
+            r = MIN(r * 1.5 + 0.03, 1.0);
+            g = MIN(g * 1.5 + 0.03, 1.0);
+            b = MIN(b * 1.5 + 0.05, 1.0);
+        } else {
+            r *= 0.60; g *= 0.60; b *= 0.62;
+        }
+    }
+    CGColorRef wallCG = [UIColor colorWithRed:r green:g blue:b alpha:1.0].CGColor;
+
+    if (!wall) {
+        wall = [CAShapeLayer layer];
+        wall.name = @"wxkb_keycap_wall";
+        wall.zPosition = -1000;              // 永远垫在按键内容底下
+        objc_setAssociatedObject(v, kWXKBCapLayerKey, wall,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [v.layer insertSublayer:wall atIndex:0];
+    }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    wall.frame = CGRectMake(0, 0, sz.width, sz.height + kDepth);
+    wall.path = wallPath.CGPath;
+    wall.fillColor = wallCG;
+    [CATransaction commit];
+}
+
+static void WXKBApplyCornerInner(UIView *v) {
     if (!v || !gEnabled) {
         return;
     }
@@ -469,7 +574,8 @@ static void WXKBApplyCorner(UIView *v) {
         if (target != v) [arr addObject:v];
         for (UIView *t in arr) {
             if (fabs(t.layer.cornerRadius - r) > 0.01) t.layer.cornerRadius = r;
-            t.layer.masksToBounds = YES;
+            // 开键帽时按键自身不能裁剪（侧壁要伸出底部），只裁背景叶
+            if (t == target || !gCap3D) t.layer.masksToBounds = YES;
         }
         return;
     }
@@ -481,6 +587,12 @@ static void WXKBApplyCorner(UIView *v) {
         v.layer.mask = nil;
         v.layer.cornerRadius = 0;
     }
+}
+
+static void WXKBApplyCorner(UIView *v) {
+    WXKBApplyCornerInner(v);
+    if (!v) return;
+    WXKBApplyCap(v, WXKBFindBgLeaf(v, 0));
 }
 
 static BOOL WXKBIsKeyView(UIView *v) {
@@ -936,6 +1048,7 @@ static void WXKBFillRow(UIView *topBar) {
 
 typedef NS_ENUM(NSInteger, WXKBKeyKind) {
     WXKBKeyKindLetter = 0,   // A-Z
+    WXKBKeyKindDigit,        // 数字/符号键（数字·符号面板中间的主键，identifier 是单字符）
     WXKBKeyKindFuncLeft,     // 大小写 / 数字 / 符号 …
     WXKBKeyKindFuncRight,    // 删除 / 中英切换 / 发送 …
     WXKBKeyKindSpace,        // 空格
@@ -998,6 +1111,17 @@ static WXKBKeyKind WXKBKindOf(WBKeyView *v) {
         return WXKBKeyKindLetter;
     }
 
+    // 数字/符号键：identifier 是单个非字母字符（1-0、- / : ~ ( ) 等，
+    // 只出现在数字·符号面板；中文面板的「，。」这类符号键也会归进来，语义一致）。
+    NSString *ident0 = WXKBIdentifier(v);
+    if (ident0.length == 1) {
+        unichar c = [ident0 characterAtIndex:0];
+        BOOL isLetter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+        if (!isLetter) {
+            return WXKBKeyKindDigit;
+        }
+    }
+
     static NSArray *spaceKeys, *leftKeys, *rightKeys;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
@@ -1054,11 +1178,30 @@ static UIColor *WXKBGradientColor(NSInteger idx) {
                            alpha:a1 + (a2 - a1) * t];
 }
 
+// 马卡龙粉彩：低饱和、高亮度，接近机械键盘粉彩键帽皮肤的观感
+static UIColor *WXKBRainbowColor(CGFloat hue) {
+    if (gRainbowStyle == 1) {
+        return [UIColor colorWithHue:hue saturation:0.38 brightness:0.99 alpha:1.0];
+    }
+    return [UIColor colorWithHue:hue saturation:0.85 brightness:1.0 alpha:1.0];
+}
+
+// 数字键彩虹：1-9、0 依次取色相（0 当 10 用，刚好铺满一排）
+static UIColor *WXKBDigitRainbowColor(NSString *ident) {
+    if (ident.length != 1) return nil;
+    unichar c = [ident characterAtIndex:0];
+    int d = -1;
+    if (c >= '1' && c <= '9') d = c - '0';
+    else if (c == '0') d = 10;
+    if (d <= 0) return nil;
+    return WXKBRainbowColor((CGFloat)d / 10.0);
+}
+
 static UIColor *WXKBLetterColorFor(NSInteger idx) {
     if (gRainbow) {
         // 彩虹键盘：A→Z 按色相铺满整个光谱
         CGFloat hue = (CGFloat)(idx % 26) / 26.0;
-        return [UIColor colorWithHue:hue saturation:0.85 brightness:1.0 alpha:1.0];
+        return WXKBRainbowColor(hue);
     }
     if (gLetterMap) {
         id v = gLetterMap[[NSString stringWithFormat:@"%ld", (long)idx]];
@@ -1086,6 +1229,20 @@ static UIColor *WXKBKeyBackground(WBKeyView *v) {
         case WXKBKeyKindLetter: {
             NSInteger idx = WXKBLetterIndex(v);
             return (idx != NSNotFound) ? WXKBLetterColorFor(idx) : gLetterBg;
+        }
+        case WXKBKeyKindDigit: {
+            if (gRainbow) {
+                UIColor *c = WXKBDigitRainbowColor(WXKBIdentifier(v));
+                if (c) return c;
+            }
+            if (gDigitBg) return gDigitBg;
+            // 未单独设置数字/符号键底色时沿用旧行为：按左右半区归功能键组
+            UIView *win = v.window;
+            CGFloat mid = win ? (win.bounds.size.width / 2.0) : 195.0;
+            CGFloat cx = [v.superview convertPoint:CGPointMake(CGRectGetMidX(v.bounds),
+                                                               CGRectGetMidY(v.bounds))
+                                            toView:win].x;
+            return (cx < mid) ? gFuncLBg : gFuncRBg;
         }
         case WXKBKeyKindFuncLeft:
             return gFuncLBg;
@@ -1545,7 +1702,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.20 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d rainbow=%d corner=%.1f offset=%.1f",
+    NSLog(@"[WxkbToolbar10] 1.6.21 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d rainbow=%d rstyle=%d cap3d=%d corner=%.1f offset=%.1f",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, gRainbow, gCorner, gKbOffset);
+          gGradEnabled, gShape, gRainbow, gRainbowStyle, gCap3D, gCorner, gKbOffset);
 }

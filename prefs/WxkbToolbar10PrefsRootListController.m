@@ -44,12 +44,14 @@
 
     // ---- 按键配色 ----
     g = [PSSpecifier groupSpecifierWithName:@"按键配色"];
-    [g setProperty:@"点每一行用系统颜色面板选色。四个底色分别对应：字母键 / 左侧功能键（大小写·数字·符号）/ 右侧功能键（删除·中英切换·发送）/ 空格。"
+    [g setProperty:@"点每一行用系统颜色面板选色。五组底色分别对应：字母键 / 数字·符号键（数字符号面板中间的主键）/ 左侧功能键（大小写·数字·符号）/ 右侧功能键（删除·中英切换·发送）/ 空格。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用自定义配色" key:WXKB_KEY_KEY_ENABLED def:NO]];
     [s addObject:[self wxkbColorRow:@"字母键底色" key:WXKB_KEY_LETTER_BG
                                  def:WXKB_DEF_LETTER_BG]];
+    [s addObject:[self wxkbColorRow:@"数字/符号键底色" key:WXKB_KEY_DIGIT_BG
+                                 def:@"#FFD166"]];
     [s addObject:[self wxkbColorRow:@"左侧功能键底色" key:WXKB_KEY_FUNC_L_BG
                                  def:WXKB_DEF_FUNC_L_BG]];
     [s addObject:[self wxkbColorRow:@"右侧功能键底色" key:WXKB_KEY_FUNC_R_BG
@@ -63,10 +65,15 @@
 
     // ---- 字母渐变 / 逐个 ----
     g = [PSSpecifier groupSpecifierWithName:@"字母键进阶"];
-    [g setProperty:@"彩虹键盘会让 A→Z 每个字母一种颜色（优先级最高，覆盖下面的渐变与逐个配色）。"
+    [g setProperty:@"彩虹键盘：A→Z 每个字母一种颜色（优先级最高，覆盖下面的渐变与逐个配色）；"
+                  @"数字·符号面板的 1-0 也会按数字顺序取彩虹色。「马卡龙」是低饱和粉彩，"
+                  @"接近机械键盘键帽皮肤的观感。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"彩虹键盘（A→Z 全色）" key:WXKB_KEY_RAINBOW def:NO]];
+    [s addObject:[self wxkbChoice:@"彩虹样式" key:WXKB_KEY_RAINBOW_STYLE def:@0
+                           values:@[@0, @1]
+                           titles:@[@"标准彩虹（高饱和）", @"马卡龙（粉彩）"]]];
     [s addObject:[self wxkbSwitch:@"启用字母渐变" key:WXKB_KEY_GRAD_ENABLED def:NO]];
     [s addObject:[self wxkbColorRow:@"渐变起始色" key:WXKB_KEY_GRAD_FROM
                                  def:WXKB_DEF_GRAD_FROM]];
@@ -79,7 +86,7 @@
     [g setProperty:@"点一下即套用整套配色，之后仍可在上方逐项微调。开启「启用自定义配色」后预设才会显示。"
             forKey:@"footerText"];
     [s addObject:g];
-    for (NSString *nm in @[@"彩虹", @"极光", @"莫兰迪", @"暗夜", @"清新"]) {
+    for (NSString *nm in @[@"键帽粉彩", @"彩虹", @"极光", @"莫兰迪", @"暗夜", @"清新"]) {
         PSSpecifier *b = [self wxkbButton:[NSString stringWithFormat:@"应用「%@」", nm]
                                       action:@selector(applyPreset:)];
         [b setProperty:nm forKey:@"wxkbPreset"];
@@ -87,14 +94,16 @@
     }
 
     // ---- 按键形状 ----
-    g = [PSSpecifier groupSpecifierWithName:@"按键形状"];
+    g = [PSSpecifier groupSpecifierWithName:@"按键形状 / 立体键帽"];
     [g setProperty:@"「默认圆角」由下方滑块决定；「圆形 / 六边形 / 水珠」会忽略圆角滑块，"
-                  @"直接把按键裁成对应形状（仅改视觉，不影响键盘布局）。"
+                  @"直接把按键裁成对应形状。「立体键帽」在按键底下垫一层深色侧壁，"
+                  @"模拟电脑键盘的 3D 键帽。以上都只改视觉，不影响键盘布局。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbChoice:@"按键形状" key:WXKB_KEY_SHAPE def:@0
                            values:@[@0, @1, @2, @3]
                            titles:@[@"默认圆角", @"圆形", @"六边形", @"水珠"]]];
+    [s addObject:[self wxkbSwitch:@"立体键帽（电脑键盘风）" key:WXKB_KEY_KEYCAP3D def:NO]];
     [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
                               min:0.0 max:22.0]];
 
@@ -141,10 +150,28 @@
 // 预设名 -> 一套偏好。每行：键 -> 值（颜色用 #RRGGBB，开关用 @YES/@NO）
 - (NSDictionary *)wxkbPresetTable {
     return @{
+        @"键帽粉彩": @{                    // 仿机械键盘粉彩键帽皮肤（马卡龙彩虹 + 3D 键帽）
+            WXKB_KEY_KEY_ENABLED: @YES,
+            WXKB_KEY_RAINBOW: @YES,
+            WXKB_KEY_RAINBOW_STYLE: @1,
+            WXKB_KEY_KEYCAP3D: @YES,
+            WXKB_KEY_SHAPE: @0,
+            WXKB_KEY_CORNER: @7.0,
+            WXKB_KEY_LETTER_BG: @"#FFFFFF",
+            WXKB_KEY_DIGIT_BG: @"#FFFFFF",
+            WXKB_KEY_FUNC_L_BG: @"#F2F2F4",
+            WXKB_KEY_FUNC_R_BG: @"#F2F2F4",
+            WXKB_KEY_SPACE_BG: @"#FFFFFF",
+            WXKB_KEY_KEY_TEXT: @"#1C1C1E",
+            WXKB_KEY_KEY_HIGHLIGHT: @"#E5E5EA"
+        },
         @"彩虹": @{
             WXKB_KEY_KEY_ENABLED: @YES,
             WXKB_KEY_RAINBOW: @YES,
+            WXKB_KEY_RAINBOW_STYLE: @0,
+            WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_LETTER_BG: @"#FFFFFF",
+            WXKB_KEY_DIGIT_BG: @"#FFD166",
             WXKB_KEY_FUNC_L_BG: @"#FFD166",
             WXKB_KEY_FUNC_R_BG: @"#EF476F",
             WXKB_KEY_SPACE_BG: @"#FFFFFF",
@@ -154,6 +181,7 @@
         @"极光": @{
             WXKB_KEY_KEY_ENABLED: @YES,
             WXKB_KEY_RAINBOW: @NO,
+            WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_GRAD_ENABLED: @YES,
             WXKB_KEY_LETTER_BG: @"#101826",
             WXKB_KEY_FUNC_L_BG: @"#0E1524",
@@ -167,6 +195,7 @@
         @"莫兰迪": @{
             WXKB_KEY_KEY_ENABLED: @YES,
             WXKB_KEY_RAINBOW: @NO,
+            WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#D8CFC4",
             WXKB_KEY_FUNC_L_BG: @"#C9BFB2",
@@ -178,6 +207,7 @@
         @"暗夜": @{
             WXKB_KEY_KEY_ENABLED: @YES,
             WXKB_KEY_RAINBOW: @NO,
+            WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#2B2B2E",
             WXKB_KEY_FUNC_L_BG: @"#1F1F22",
@@ -189,6 +219,7 @@
         @"清新": @{
             WXKB_KEY_KEY_ENABLED: @YES,
             WXKB_KEY_RAINBOW: @NO,
+            WXKB_KEY_KEYCAP3D: @NO,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#E8F5E9",
             WXKB_KEY_FUNC_L_BG: @"#C8E6C9",

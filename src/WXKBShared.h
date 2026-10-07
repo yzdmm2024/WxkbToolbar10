@@ -33,6 +33,7 @@
 
 // 四色分组底色
 #define WXKB_KEY_LETTER_BG     @"keyLetterBg"     // 字母键
+#define WXKB_KEY_DIGIT_BG      @"keyDigitBg"      // 数字/符号键（数字·符号面板中间的主键）
 #define WXKB_KEY_FUNC_L_BG     @"keyFuncLeftBg"   // 左侧功能键（大小写/数字/符号…）
 #define WXKB_KEY_FUNC_R_BG     @"keyFuncRightBg"  // 右侧功能键（删除/中英/发送…）
 #define WXKB_KEY_SPACE_BG      @"keySpaceBg"      // 空格键
@@ -55,8 +56,15 @@
 // 按键形状：0 默认圆角（由 keyCornerRadius 决定）/ 1 圆形 / 2 六边形 / 3 水珠
 #define WXKB_KEY_SHAPE         @"keyShape"
 
-// 彩虹键盘：开启后 A→Z 每个字母一种颜色（覆盖渐变与逐个配色）
+// 彩虹键盘：开启后 A→Z 每个字母一种颜色（覆盖渐变与逐个配色），
+// 数字/符号键（1-0）也会按数字顺序取彩虹色。
 #define WXKB_KEY_RAINBOW       @"rainbow"
+
+// 彩虹样式：0 标准彩虹（高饱和） / 1 马卡龙粉彩（低饱和，类似机械键帽皮肤）
+#define WXKB_KEY_RAINBOW_STYLE @"rainbowStyle"
+
+// 立体键帽：在按键背后垫一层向下的深色「侧壁」，模拟电脑键盘 3D 键帽（纯视觉，不动布局）
+#define WXKB_KEY_KEYCAP3D      @"keyCap3D"
 
 // 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
 #define WXKB_KEY_OFFSET        @"kbOffset"
