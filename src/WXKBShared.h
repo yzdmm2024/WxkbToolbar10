@@ -54,10 +54,6 @@
 // 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
 #define WXKB_KEY_OFFSET        @"kbOffset"
 
-// 编辑增强按钮（渲染在宿主 App 的键盘底栏一带）
-#define WXKB_KEY_ACTION_ORDER  @"actionOrder"    // NSNumber 数组，用户排序后的顺序
-#define WXKB_KEY_ACTION_SHOW   @"actionShow"     // NSDictionary { code(NSNumber) -> BOOL(NSNumber) }
-
 #pragma mark - 默认值
 
 #define WXKB_DEF_LETTER_BG     @"#FFFFFF"

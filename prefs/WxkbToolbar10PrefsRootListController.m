@@ -32,7 +32,6 @@
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbLink:@"功能排序与显隐" detailClass:@"WXKBFuncListController"]];
-    [s addObject:[self wxkbLink:@"编辑增强按钮" detailClass:@"WXKBActionListController"]];
 
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];

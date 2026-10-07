@@ -176,8 +176,6 @@ static UIColor  *gGradTo       = nil;
 static NSDictionary *gLetterMap = nil;
 static CGFloat   gCorner       = 0.0;
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
-static NSArray  *gActionOrder  = nil;
-static NSDictionary *gActionShow = nil;
 static double    gLastLoad     = -1;
 
 static UIColor *WXKBColor(NSString *hex, CGFloat alpha) {
@@ -270,39 +268,6 @@ static NSDictionary *WXKBLoadPrefs(void) {
     return ([d isKindOfClass:[NSDictionary class]] && d.count > 0) ? d : nil;
 }
 
-// 编辑增强按钮最终清单：用户排序 + 用户显隐，缺项按默认补齐。
-static NSArray *WXKBResolvedActions(void) {
-    NSMutableArray *out = [NSMutableArray array];
-    if ([gActionOrder isKindOfClass:[NSArray class]]) {
-        for (id o in gActionOrder) {
-            if (![o respondsToSelector:@selector(intValue)]) continue;
-            NSNumber *n = @([o intValue]);
-            if (![out containsObject:n]) [out addObject:n];
-        }
-    } else {
-        for (int i = 0; i < kWXKBActionCount; i++) {
-            [out addObject:@(kWXKBActionCodes[i])];
-        }
-    }
-    for (int i = 0; i < kWXKBActionCount; i++) {
-        NSNumber *n = @(kWXKBActionCodes[i]);
-        if (![out containsObject:n]) [out addObject:n];
-    }
-    // 逐个套显隐开关
-    NSMutableArray *on = [NSMutableArray array];
-    for (NSNumber *n in out) {
-        BOOL show = YES;
-        if ([gActionShow isKindOfClass:[NSDictionary class]]) {
-            id v = gActionShow[n];
-            if (v != nil && [v respondsToSelector:@selector(boolValue)]) {
-                show = [v boolValue];
-            }
-        }
-        if (show) [on addObject:n];
-    }
-    return on;
-}
-
 static void WXKBReload(BOOL force) {
     double now = CFAbsoluteTimeGetCurrent();
     if (!force && gLastLoad > 0 && now - gLastLoad < 2.0) {
@@ -379,11 +344,6 @@ static void WXKBReload(BOOL force) {
         gKbOffset = 0.0;
     }
 
-    // ---- 编辑增强 ----
-    id ao = d[WXKB_KEY_ACTION_ORDER];
-    gActionOrder = [ao isKindOfClass:[NSArray class]] ? ao : nil;
-    id as = d[WXKB_KEY_ACTION_SHOW];
-    gActionShow = [as isKindOfClass:[NSDictionary class]] ? as : nil;
 }
 
 #pragma mark - 全树重同步（圆角 / 透明的统一入口）
@@ -458,8 +418,6 @@ static const void *kWXKBOrigEffectKey = &kWXKBOrigEffectKey;
 static const void *kWXKBOrigImgKey  = &kWXKBOrigImgKey;
 static const void *kWXKBOrigHiddenKey = &kWXKBOrigHiddenKey;
 
-// 增强按钮条 tag（"WXAB"）。声明提前：WXKBClearBgTree 需要按它跳过清理。
-static const NSInteger kWXKBActionBarTag = 0x57584142;
 
 static void WXKBClearBgTree(UIView *v) {
     if (!v) return;
@@ -473,8 +431,6 @@ static void WXKBClearBgTree(UIView *v) {
         return;
     }
 
-    // 增强按钮条不参与清理：深色底 + 白图标必须常驻可见（透明模式下尤其）
-    if (v.tag == kWXKBActionBarTag) return;
 
     // 1.6.6：系统键盘 backdrop（_UIBackdropEffectView / UIKBBackdropView 等私有类）
     // 不走 backgroundColor / UIVisualEffectView API，probe 里 backgroundColor 全透明
@@ -1332,210 +1288,6 @@ static void WXKBFireAction(int c) {
     }
 }
 
-// 1.6.5：按钮条改为「我们自己、完全受控的常驻子视图」（见 WXKBEnsureActionBar），
-// 不再依赖手势命中识别，下面这段手势方案已废弃。
-
-// addTarget 兜底：手势万一被微信的某个手势抢走，按钮自己的 TouchUpInside
-// 还能接住；反之亦然。两路都通时 WXKBFireAction 幂等（各动作自身无状态）。
-@interface WXKBActionTarget : NSObject
-@end
-@implementation WXKBActionTarget
-- (void)fire:(id)sender {
-    NSNumber *code = objc_getAssociatedObject(sender, "wxkbCode");
-    if (code) WXKBFireAction((int)code.intValue);
-    // 1.6.8：点完增强按钮后，原生工具栏自动动画滚回最左（回到原生功能区）——
-    // 我们的按钮在队尾，用户左滑过来点一下，不应停在队尾。
-    // 1.6.10：按钮行已改挂根视图、不在滚动条里，此段通常不触发；向上查找时
-    // 以键盘根视图为界，防止误滚到更高层不相关的滚动视图。
-    UIScrollView *sv = nil;
-    UIView *p = [sender superview];
-    Class rootCls = objc_getClass("WBRootInputView");
-    while (p && !sv) {
-        if (rootCls && [p isKindOfClass:rootCls]) break;
-        if ([p isKindOfClass:[UIScrollView class]]) sv = (UIScrollView *)p;
-        else p = [p superview];
-    }
-    if (sv) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            [sv setContentOffset:CGPointZero animated:YES];
-        });
-    }
-}
-@end
-
-static UIImage *WXKBActionImage(int code, CGFloat size) {
-    NSString *sf = nil, *fallback = nil;
-    switch (code) {
-        case WXKB_ACT_SELECT_ALL:  sf = @"selection.pin.in.out"; fallback = @"全"; break;
-        case WXKB_ACT_CUT:         sf = @"scissors";             fallback = @"剪"; break;
-        case WXKB_ACT_PASTE:       sf = @"doc.on.clipboard";    fallback = @"粘"; break;
-        case WXKB_ACT_CURSOR_LEFT: sf = @"arrow.left";          fallback = @"←"; break;
-        case WXKB_ACT_CURSOR_RIGHT:sf = @"arrow.right";         fallback = @"→"; break;
-        case WXKB_ACT_DELETE_ALL:  sf = @"trash";               fallback = @"清"; break;
-        case WXKB_ACT_CLIPBOARD:   sf = @"list.clipboard";      fallback = @"历"; break;
-        case WXKB_ACT_PHRASES:     sf = @"text.quote";          fallback = @"语"; break;
-        case WXKB_ACT_DISMISS:     sf = @"keyboard.chevron.compact.down"; fallback = @"收"; break;
-        case WXKB_ACT_GLOBE:       sf = @"globe";               fallback = @"🌐"; break;
-        default: return nil;
-    }
-    @try {
-        UIImageSymbolConfiguration *cfg =
-            [UIImageSymbolConfiguration configurationWithPointSize:size
-                                                            weight:UIImageSymbolWeightRegular];
-        UIImage *img = [UIImage systemImageNamed:sf withConfiguration:cfg];
-        if (img) return img;
-    } @catch (__unused NSException *e) {
-    }
-    return nil;
-}
-
-// —— 增强按钮 ——
-// 1.6.10：按钮行改为独立固定行（见 WXKBEnsureActionBar 注释）——直接挂在键盘
-// 根视图上、钉在「候选文字 ↔ 字母键盘」之间的条带（原生工具栏那条位置），
-// 十个按钮横向均分，不再寄生在微信原生滚动条里（寄生会导致微信把手势抢走，
-// 用户实测「点一下就跳走/退回前台」，也解决了 1.6.4「点一下就没了」同类根因）。
-// 做法：把按钮容器放进原生 WBFunctionToolBar 内部的横向滚动容器，紧跟原生内容；
-// 原生每次刷新（updateFuncs*/layoutSubviews）都可能把我们的容器移除或重置
-// contentSize（1.6.4 时代「点一下就没了」的根因），所以每次都重新补挂、重新定位、
-// 并把 contentSize 往右扩到能滚到我们的按钮。
-// 1.6.7：宿主动作（全选/剪切/粘贴/剪贴板/短语/收起）此前全没反应的真根因：
-// ElleKit 的 Executables 过滤是 strcmp 精确匹配，"*" 通配符匹配不到任何进程，
-// Host dylib 从未被注入。已改 WxkbToolbar10Host.plist 为 Classes=["UIWindow"]。
-
-static UIView *WXKBFindToolbar(UIView *v) {
-    Class cls = objc_getClass("WBFunctionToolBar");
-    if (!cls || !v) return nil;
-    if ([v isKindOfClass:cls]) return v;
-    for (UIView *s in v.subviews) {
-        UIView *r = WXKBFindToolbar(s);
-        if (r) return r;
-    }
-    return nil;
-}
-
-// —— 增强按钮：独立固定行，钉在「候选文字 ↔ 字母键盘」之间的条带上 ——
-// 1.6.10：彻底告别「寄生在微信原生工具栏滚动视图里」的方案。实测副作用太多：
-//   a) 微信对自家滚动条里的触摸有自己的接管逻辑，点我们的按钮会被它当成原生
-//      工具栏项处理，表现成「点一下就跳走 / 退回前台」（用户报的严重 bug）；
-//   b) 原生每次刷新都可能把我们移除（1.6.4「点一下就没了」）。
-// 现在按钮行是我们自己的视图，直接挂在键盘根视图（WBRootInputView）上，
-// 位置对齐原生工具栏所在的条带（候选栏下方、字母键上方），固定不动，
-// 十个按钮横向均分整行宽度。微信的手势再也碰不到它，点按直接生效。
-static void WXKBRemoveStrayBars(UIView *v, UIView *keep) {
-    if (!v) return;
-    if (v != keep && v.tag == kWXKBActionBarTag) {
-        [v removeFromSuperview];
-        return;
-    }
-    for (UIView *s in [v.subviews copy]) WXKBRemoveStrayBars(s, keep);
-}
-
-static void WXKBEnsureActionBar(UIView *root) {
-    if (!root) return;
-    UIView *bar = [root viewWithTag:kWXKBActionBarTag];
-    NSArray *actions = WXKBResolvedActions();
-
-    UIView *tb = WXKBFindToolbar(root);
-    if (WXKBIsEditing(tb)) {
-        if (bar) [bar removeFromSuperview];
-        return;
-    }
-
-    // 屏外预加载布局（不在窗口里 / 不在窗口可视范围）不建行，避免幽灵行
-    UIWindow *win = root.window;
-    BOOL visible = NO;
-    if (win) {
-        CGRect wf = [root convertRect:root.bounds toView:nil];
-        visible = CGRectIntersectsRect(wf, win.bounds);
-    }
-    if (!gEnabled || actions.count == 0 || !visible) {
-        if (bar) [bar removeFromSuperview];
-        return;
-    }
-    CGSize bd = root.bounds.size;
-    if (bd.width < 60 || bd.height < 80) return;
-
-    // 条带位置：优先对齐原生工具栏（它就在候选栏与字母键盘之间）；
-    // 找不到就退回顶部一条（极少触发）
-    CGFloat y = 2, h = 30;
-    @try {
-        if (tb && tb.superview) {
-            CGRect tf = [root convertRect:tb.frame fromView:tb.superview];
-            if (tf.size.width > 60 && tf.size.height >= 20 && tf.size.height <= 64 &&
-                tf.origin.y > -1 && tf.origin.y < bd.height - 20) {
-                y = tf.origin.y;
-                h = tf.size.height;
-            }
-        }
-    } @catch (__unused NSException *e) {
-    }
-
-    BOOL needBuild = NO;
-    if (!bar) {
-        bar = [[UIView alloc] initWithFrame:CGRectMake(0, y, bd.width, h)];
-        bar.tag = kWXKBActionBarTag;
-        bar.userInteractionEnabled = YES;
-        bar.autoresizingMask =
-            UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
-        needBuild = YES;
-    } else {
-        bar.frame = CGRectMake(0, y, bd.width, h);
-    }
-
-    // 按钮行底色：沿用键盘同色，盖住原生工具栏那排图标（我们这排就是替代它）
-    BOOL dark = NO;
-    if (@available(iOS 12.0, *))
-        dark = (root.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark);
-    bar.backgroundColor = dark ? [UIColor colorWithWhite:0.12 alpha:1.0]
-                               : [UIColor colorWithWhite:0.94 alpha:1.0];
-
-    // 动作数量/顺序变化时才重建内部按钮
-    NSMutableArray *have = [NSMutableArray array];
-    for (UIView *b in bar.subviews) {
-        NSNumber *c = objc_getAssociatedObject(b, "wxkbCode");
-        if (c) [have addObject:c];
-    }
-    if (needBuild || ![have isEqualToArray:actions]) needBuild = YES;
-
-    if (needBuild) {
-        for (UIView *b in bar.subviews) [b removeFromSuperview];
-        NSInteger n = actions.count;
-        // 十个按钮横向均分整行宽度（固定行，不再塞滚动条 / 不再左滑）
-        CGFloat slot = bd.width / (CGFloat)n;
-        CGFloat btn = slot;
-        CGFloat by = (h - btn) / 2.0;
-        static WXKBActionTarget *target;
-        static dispatch_once_t onceT;
-        dispatch_once(&onceT, ^{ target = [[WXKBActionTarget alloc] init]; });
-        CGFloat x = 0;
-        for (NSNumber *nm in actions) {
-            int code = nm.intValue;
-            UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
-            b.frame = CGRectMake(x, by, btn, btn);
-            b.tag = code;
-            UIImage *img = WXKBActionImage(code, 17);
-            if (img) {
-                [b setImage:img forState:UIControlStateNormal];
-            } else {
-                [b setTitle:@"?" forState:UIControlStateNormal];
-                b.titleLabel.font = [UIFont systemFontOfSize:13];
-            }
-            b.tintColor = dark ? [UIColor whiteColor]
-                               : [UIColor colorWithWhite:0.13 alpha:1.0];
-            objc_setAssociatedObject(b, "wxkbCode", nm, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            [b addTarget:target action:@selector(fire:)
-        forControlEvents:UIControlEventTouchUpInside];
-            [bar addSubview:b];
-            x += slot;
-        }
-    }
-    if (bar.superview != root) [root addSubview:bar];
-    [root bringSubviewToFront:bar];
-    // 全窗只留这一根行（清理微信预加载屏外布局上的幽灵行）
-    if (root.window) WXKBRemoveStrayBars(root.window, bar);
-}
-
 #pragma mark - Hooks
 
 %hook WBFunctionToolBar
@@ -1715,7 +1467,6 @@ static void WXKBEnsureActionBar(UIView *root) {
         // 兜底：拿不到控制器就把位移压在自己身上
         WXKBApplyOffset(me);
     }
-    WXKBEnsureActionBar(self);
     WXKBScheduleSync();
 }
 
@@ -1749,7 +1500,7 @@ static void WXKBEnsureActionBar(UIView *root) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.12 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.13 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
+          gGradEnabled, gCorner, gKbOffset);
 }
