@@ -481,7 +481,6 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         if (top)   { [top  removeFromSuperlayer];  objc_setAssociatedObject(target, kWXKBCapTopKey,   nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         // 还原：清掉我们加的悬浮阴影
         v.layer.shadowOpacity = 0.0;
-        v.layer.shadowPath    = nil;
         return;
     }
     CGSize sz = v.bounds.size;
@@ -519,16 +518,16 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         cHi    = [UIColor colorWithHue:h saturation:MAX(s * 0.35, 0.0) brightness:MIN(br * 1.30 + 0.30, 1.0) alpha:1.0];
         cLight = [UIColor colorWithHue:h saturation:s brightness:MIN(br * 1.14, 1.0) alpha:1.0];
         cFace  = [UIColor colorWithHue:h saturation:s brightness:br alpha:1.0];
-        cLow   = [UIColor colorWithHue:h saturation:s brightness:br * 0.86 alpha:1.0];
-        cFront = [UIColor colorWithHue:h saturation:MIN(s * 1.12, 1.0) brightness:br * 0.60 alpha:1.0];
+        cLow   = [UIColor colorWithHue:h saturation:s brightness:br * 0.82 alpha:1.0];
+        cFront = [UIColor colorWithHue:h saturation:MIN(s * 1.25, 1.0) brightness:br * 0.46 alpha:1.0];
     } else {
         CGFloat w = (base) ? br : 0.78;
         if (base) { CGFloat a0 = 0; if (![base getWhite:&w alpha:&a0]) w = br; }
         cHi    = [UIColor colorWithWhite:MIN(w * 1.30 + 0.22, 1.0) alpha:1.0];
         cLight = [UIColor colorWithWhite:MIN(w * 1.12, 1.0) alpha:1.0];
         cFace  = [UIColor colorWithWhite:w alpha:1.0];
-        cLow   = [UIColor colorWithWhite:w * 0.86 alpha:1.0];
-        cFront = [UIColor colorWithWhite:w * 0.68 alpha:1.0];
+        cLow   = [UIColor colorWithWhite:w * 0.82 alpha:1.0];
+        cFront = [UIColor colorWithWhite:w * 0.46 alpha:1.0];
     }
 
     // 轮廓按各自坐标系生成：键体/顶面按背景叶尺寸 tbsz（与 layer 坐标一致），
@@ -565,6 +564,20 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
                                   tbsz.height - topY - botY) cornerRadius:rr];
     }
 
+    // 伸出底部的侧壁：整颗键轮廓（sz）下移 kDepth
+    UIBezierPath *silWall = nil;
+    if (gShape == 2) {
+        silWall = WXKBHexagonPath(sz);
+    } else if (gShape == 3) {
+        silWall = WXKBWaterDropPath(sz);
+    } else {
+        CGFloat r2 = rad;
+        if (gShape == 1) r2 = MIN(sz.width, sz.height) / 2.0;
+        silWall = [UIBezierPath bezierPathWithRoundedRect:
+                       CGRectMake(0, 0, sz.width, sz.height) cornerRadius:r2];
+    }
+    if (!silWall) return;
+
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
 
@@ -597,10 +610,8 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     top.mask = tmask;
     top.zPosition = -997;
 
-    // ③ 正下方伸出的侧壁：与背景叶**同轮廓同位置**（不要用整颗键尺寸 sz——
-    //    微信的背景叶常比按键容器小几 pt，用 sz 会让深色侧壁从四周露出一圈，
-    //    看起来就是「圆角处挂灰影」），只在底部向下伸出 kDepth。
-    UIBezierPath *wallPath = [silLeaf copy];
+    // ③ 正下方伸出的侧壁（有空隙/透明键盘时厚度可见）
+    UIBezierPath *wallPath = [silWall copy];
     [wallPath applyTransform:CGAffineTransformMakeTranslation(0, kDepth)];
     if (!wall) {
         wall = [CAShapeLayer layer];
@@ -609,21 +620,15 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         objc_setAssociatedObject(v, kWXKBCapLayerKey, wall, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [v.layer insertSublayer:wall atIndex:0];
     }
-    CGRect lf = target.frame;
-    wall.frame = CGRectMake(lf.origin.x, lf.origin.y, tbsz.width, tbsz.height + kDepth);
+    wall.frame = CGRectMake(0, 0, sz.width, sz.height + kDepth);
     wall.path = wallPath.CGPath;
     wall.fillColor = cFront.CGColor;
 
-    // ④ 整颗键柔和投影（浮在底板上）：显式给 shadowPath，
-    //    让阴影严格贴合键帽轮廓（不设的话由内容 alpha 推导，圆角处会发虚出灰圈）
-    CGPoint o = lf.origin;
-    UIBezierPath *shadowP = [silLeaf copy];
-    [shadowP applyTransform:CGAffineTransformMakeTranslation(o.x, o.y + 1.5)];
+    // ④ 整颗键柔和投影（浮在底板上）
     v.layer.shadowColor  = [UIColor colorWithWhite:0.0 alpha:1.0].CGColor;
-    v.layer.shadowOpacity = 0.20;
-    v.layer.shadowOffset  = CGSizeMake(0.0, 1.5);
-    v.layer.shadowRadius  = 2.5;
-    v.layer.shadowPath    = shadowP.CGPath;
+    v.layer.shadowOpacity = 0.28;
+    v.layer.shadowOffset  = CGSizeMake(0.0, 2.0);
+    v.layer.shadowRadius  = 3.0;
 
     [CATransaction commit];
 }
