@@ -1277,9 +1277,76 @@ static UIColor *WXKBGradientColor(NSInteger idx) {
 //       三段长度 10/9/7 正是 QWERTY 三行的键数 → 字母必须按「行内第几个」取片，
 //       不能按字母表序号（1.7.0 就是按序号取，整片颜色全错位）。
 static const CGFloat kWXKBSkinLetterPitch = 80.0;    // key26a 键帽间距（px）
-static const CGFloat kWXKBSkinLetterCapH  = 109.0;   // key26a 键帽本体高（px，不含投影）
+static const CGFloat kWXKBSkinLetterCapH  = 110.0;   // key26a 键帽本体高（px，含黑描边、不含投影）
 static const CGFloat kWXKBSkinFuncPitch   = 216.0;   // key9a 键帽间距（px）
 static const CGFloat kWXKBSkinFuncCapH    = 122.0;   // key9a 键帽本体高（px，不含投影）
+
+// 把键帽条里的「画布底色」抠成透明（1.7.2 核心修复）。
+// 背景：皮肤条里键帽四周是浅灰画布（实测 (245,247,250)），不抠掉的话贴到键盘上
+// 每颗键周围会有一圈浅色边（暗色键盘上尤其明显——用户截图里的「白边」就是它）。
+// 做法：从条带四边做泛洪填充（BFS），凡与边界连通、且颜色接近画布的像素 → alpha 0。
+// 键帽的黑色描边会天然挡住泛洪，穹顶内部再浅的颜色也不会被误删
+// （顶面色 (245,168,154) 离画布的曼哈顿距离 ≥160，容差 90 非常安全）。
+static UIImage *WXKBKeycapStrip(UIImage *img) {
+    if (!img) return nil;
+    CGImageRef cg = img.CGImage;
+    if (!cg) return nil;
+    size_t W = CGImageGetWidth(cg), H = CGImageGetHeight(cg);
+    if (W < 8 || H < 8) return nil;
+    UInt8 *px = (UInt8 *)malloc(W * H * 4);
+    if (!px) return nil;
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(px, W, H, 8, W * 4, cs,
+                                             kCGImageAlphaPremultipliedLast |
+                                             kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(cs);
+    if (!ctx) { free(px); return nil; }
+    CGContextDrawImage(ctx, CGRectMake(0.0, 0.0, (CGFloat)W, (CGFloat)H), cg);
+    CGContextRelease(ctx);
+    UInt8 *mark = (UInt8 *)calloc(W * H, 1);
+    NSInteger *stk = (NSInteger *)malloc(sizeof(NSInteger) * W * H);
+    if (mark && stk) {
+        const int tol = 90;   // |r-245|+|g-247|+|b-250| 的曼哈顿容差
+        NSInteger top = 0;
+        size_t lastX = W - 1, lastY = H - 1;
+        #define WXKB_SEED(IDX) do { \
+            size_t _i = (size_t)(IDX); \
+            if (!mark[_i]) { \
+                const UInt8 *p = px + _i * 4; \
+                int d = abs(p[0] - 245) + abs(p[1] - 247) + abs(p[2] - 250); \
+                if (d <= tol) { mark[_i] = 1; stk[top++] = (NSInteger)_i; } \
+            } \
+        } while (0)
+        for (size_t x = 0; x < W; x++) { WXKB_SEED(x); WXKB_SEED(lastY * W + x); }
+        for (size_t y = 0; y < H; y++) { WXKB_SEED(y * W); WXKB_SEED(y * W + lastX); }
+        while (top > 0) {
+            NSInteger idx = stk[--top];
+            NSInteger x = idx % (NSInteger)W, y = idx / (NSInteger)W;
+            if (x > 0) WXKB_SEED(idx - 1);
+            if (x < (NSInteger)lastX) WXKB_SEED(idx + 1);
+            if (y > 0) WXKB_SEED(idx - (NSInteger)W);
+            if (y < (NSInteger)lastY) WXKB_SEED(idx + (NSInteger)W);
+        }
+        #undef WXKB_SEED
+        for (size_t i = 0; i < W * H; i++) {
+            if (mark[i]) px[i * 4 + 3] = 0;
+        }
+    }
+    if (mark) free(mark);
+    if (stk) free(stk);
+    CGColorSpaceRef cs2 = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx2 = CGBitmapContextCreate(px, W, H, 8, W * 4, cs2,
+                                              kCGImageAlphaPremultipliedLast |
+                                              kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(cs2);
+    if (!ctx2) { free(px); return nil; }
+    CGImageRef out = CGBitmapContextCreateImage(ctx2);
+    CGContextRelease(ctx2);
+    free(px);
+    return out ? [[UIImage alloc] initWithCGImage:out scale:img.scale
+                                      orientation:UIImageOrientationUp]
+               : nil;
+}
 
 static UIImage *gSkinLetterImg[26];
 static UIImage *gSkinFuncImg[9];
@@ -1368,6 +1435,10 @@ static void WXKBLoadSkin(void) {
     if (!func) {
         func = [UIImage imageWithContentsOfFile:[dir stringByAppendingString:@"key9b.png"]];
     }
+    // 先把画布底色抠成透明（1.7.2），再切片——这样每颗键帽图自带立体造型轮廓，
+    // 贴上去只有穹顶键帽本身，不再带浅灰画布边。
+    letter = WXKBKeycapStrip(letter);
+    func   = WXKBKeycapStrip(func);
     NSArray *la = WXKBSliceStrip(letter, 26, kWXKBSkinLetterPitch, kWXKBSkinLetterCapH);
     NSArray *fa = WXKBSliceStrip(func,    9, kWXKBSkinFuncPitch,   kWXKBSkinFuncCapH);
     for (NSInteger i = 0; i < 26; i++) {
@@ -1991,7 +2062,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.7.1 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 1.7.2 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, gCap3D, gCorner, gKbOffset, gSkinEnabled);
 }
