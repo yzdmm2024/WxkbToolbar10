@@ -1255,15 +1255,36 @@ static UIColor *WXKBGradientColor(NSInteger idx) {
                            alpha:a1 + (a2 - a1) * t];
 }
 
-// 马卡龙粉彩：低饱和、高亮度，接近机械键盘粉彩键帽皮肤的观感
-static UIColor *WXKBRainbowColor(CGFloat hue) {
-    if (gRainbowStyle == 1) {
-        return [UIColor colorWithHue:hue saturation:0.38 brightness:0.99 alpha:1.0];
-    }
+// 马卡龙彩虹：8 个锚点（蜜桃粉→暖橘→浅卡其→奶黄→薄荷绿→浅湖青→雾霾蓝→香芋紫）
+// 在 26 个字母间平滑过渡，低饱和、高亮度，柔和淡雅，相邻字母颜色略有差异。
+static UIColor *WXKBMacaronColor(NSInteger n) {
+    static const CGFloat stops[8][3] = {
+        {0.969, 0.773, 0.753},  // 蜜桃粉
+        {0.973, 0.788, 0.629},  // 暖橘色
+        {0.918, 0.851, 0.690},  // 浅卡其
+        {0.965, 0.906, 0.659},  // 奶黄色
+        {0.749, 0.902, 0.788},  // 薄荷绿
+        {0.710, 0.886, 0.867},  // 浅湖青
+        {0.722, 0.804, 0.878},  // 雾霾蓝
+        {0.824, 0.761, 0.878}   // 香芋紫
+    };
+    CGFloat p = (CGFloat)(n % 26) / 25.0 * 7.0;   // 0 → 7，跨 8 个锚点
+    NSInteger i = (NSInteger)floor(p);
+    if (i < 0) i = 0;
+    if (i > 6) i = 6;
+    CGFloat f = p - (CGFloat)i;
+    CGFloat r = stops[i][0] + (stops[i + 1][0] - stops[i][0]) * f;
+    CGFloat g = stops[i][1] + (stops[i + 1][1] - stops[i][1]) * f;
+    CGFloat b = stops[i][2] + (stops[i + 1][2] - stops[i][2]) * f;
+    return [UIColor colorWithRed:r green:g blue:b alpha:1.0];
+}
+
+// 标准彩虹：高饱和全光谱
+static UIColor *WXKBStandardRainbowColor(CGFloat hue) {
     return [UIColor colorWithHue:hue saturation:0.85 brightness:1.0 alpha:1.0];
 }
 
-// 数字键彩虹：1-9、0 依次取色相（0 当 10 用，刚好铺满一排）
+// 数字键彩虹：1-9、0 依次取色（0 当 10 用，刚好铺满一排）
 static UIColor *WXKBDigitRainbowColor(NSString *ident) {
     if (ident.length != 1) return nil;
     unichar c = [ident characterAtIndex:0];
@@ -1271,14 +1292,16 @@ static UIColor *WXKBDigitRainbowColor(NSString *ident) {
     if (c >= '1' && c <= '9') d = c - '0';
     else if (c == '0') d = 10;
     if (d <= 0) return nil;
-    return WXKBRainbowColor((CGFloat)d / 10.0);
+    if (gRainbowStyle == 1) return WXKBMacaronColor(d - 1);
+    return WXKBStandardRainbowColor((CGFloat)d / 10.0);
 }
 
 static UIColor *WXKBLetterColorFor(NSInteger idx) {
     if (gRainbow) {
-        // 彩虹键盘：A→Z 按色相铺满整个光谱
+        // 彩虹键盘：A→Z 依次取色
+        if (gRainbowStyle == 1) return WXKBMacaronColor(idx);
         CGFloat hue = (CGFloat)(idx % 26) / 26.0;
-        return WXKBRainbowColor(hue);
+        return WXKBStandardRainbowColor(hue);
     }
     if (gLetterMap) {
         id v = gLetterMap[[NSString stringWithFormat:@"%ld", (long)idx]];
