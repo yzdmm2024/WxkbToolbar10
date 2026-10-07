@@ -492,7 +492,8 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     if (v.layer.masksToBounds) v.layer.masksToBounds = NO;
     if (v.layer.shadowOpacity > 0.0 && v.layer.shadowRadius < 0.5) v.layer.shadowOpacity = 0.0;
 
-    static const CGFloat kInset = 2.5;      // 顶面四周内缩 = 露出的侧面厚度
+    static const CGFloat kInset = 3.0;      // 顶面左右/上内缩 = 露出的侧壁厚度
+    static const CGFloat kFront = 5.0;      // 顶面上抬的额外量 = 露出的「前脸」高度（键帽立体的关键）
     CGFloat rad = 5.0;
     if (gShape == 0) {
         rad = target.layer.cornerRadius;
@@ -508,21 +509,22 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         if (cg) base = [UIColor colorWithCGColor:cg];
     }
 
-    // 由底色推导：侧面（同色系加深）+ 顶面（上亮下正常，穹顶感）
+    // 由底色推导：侧面（同色系明显加深 = 键帽的「壁/前脸」）+ 顶面（顶部高光、底部略暗 = 穹顶）
+    // 立体感来自「侧面比顶面明显更暗」的色差，而不是靠外伸的块。
     CGFloat h = 0, s = 0, br = 0, al = 0;
     UIColor *cSide, *cFaceTop, *cFaceBot;
     if (base && [base getHue:&h saturation:&s brightness:&br alpha:&al] && s > 0.02) {
-        cSide    = [UIColor colorWithHue:h saturation:MIN(s * 1.15 + 0.04, 1.0)
-                               brightness:br * 0.80 alpha:1.0];
-        cFaceTop = [UIColor colorWithHue:h saturation:s * 0.92
-                               brightness:MIN(br * 1.10, 1.0) alpha:1.0];
-        cFaceBot = [UIColor colorWithHue:h saturation:s brightness:br alpha:1.0];
+        cSide    = [UIColor colorWithHue:h saturation:MIN(s * 1.20 + 0.06, 1.0)
+                               brightness:br * 0.62 alpha:1.0];
+        cFaceTop = [UIColor colorWithHue:h saturation:s * 0.90
+                               brightness:MIN(br * 1.20, 1.0) alpha:1.0];
+        cFaceBot = [UIColor colorWithHue:h saturation:s brightness:br * 0.93 alpha:1.0];
     } else {
         CGFloat w = 0.78;
         if (base) { CGFloat a0 = 0; if (![base getWhite:&w alpha:&a0]) w = br; }
-        cSide    = [UIColor colorWithWhite:w * 0.82 alpha:1.0];
-        cFaceTop = [UIColor colorWithWhite:MIN(w * 1.08, 1.0) alpha:1.0];
-        cFaceBot = [UIColor colorWithWhite:w alpha:1.0];
+        cSide    = [UIColor colorWithWhite:w * 0.66 alpha:1.0];
+        cFaceTop = [UIColor colorWithWhite:MIN(w * 1.10, 1.0) alpha:1.0];
+        cFaceBot = [UIColor colorWithWhite:w * 0.97 alpha:1.0];
     }
 
     // 全轮廓（侧面）与内缩轮廓（顶面）都按背景叶尺寸生成
@@ -549,9 +551,11 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     } else {
         CGFloat rr = (gShape == 1) ? MAX(MIN(tbsz.width, tbsz.height) / 2.0 - kInset, 1.0)
                                    : MAX(rad - kInset, 1.0);
+        // 顶面上抬 kFront：底面比左右/上多露出一截侧面 = 键帽的「前脸」，
+        // 这是真实键帽看着像 3D 的关键（从正面看得到键帽的前壁）
         topPath = [UIBezierPath bezierPathWithRoundedRect:
-                       CGRectMake(kInset, kInset, tbsz.width - 2 * kInset, tbsz.height - 2 * kInset)
-                                     cornerRadius:rr];
+                       CGRectMake(kInset, kInset, tbsz.width - 2 * kInset,
+                                  tbsz.height - 2 * kInset - kFront) cornerRadius:rr];
     }
 
     [CATransaction begin];
@@ -595,9 +599,9 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     UIBezierPath *shadowP = [sil copy];
     [shadowP applyTransform:CGAffineTransformMakeTranslation(lfC.origin.x, lfC.origin.y + 2.0)];
     v.layer.shadowColor  = [UIColor colorWithWhite:0.0 alpha:1.0].CGColor;
-    v.layer.shadowOpacity = 0.22;
-    v.layer.shadowOffset  = CGSizeMake(0.0, 2.0);
-    v.layer.shadowRadius  = 3.0;
+    v.layer.shadowOpacity = 0.32;
+    v.layer.shadowOffset  = CGSizeMake(0.0, 3.0);
+    v.layer.shadowRadius  = 4.0;
     v.layer.shadowPath    = shadowP.CGPath;
 }
 

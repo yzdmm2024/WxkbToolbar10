@@ -164,7 +164,7 @@
             WXKB_KEY_KEY_TEXT: @"#3A3A3C", // 深色字体（上下分层时均用深色）
             WXKB_KEY_KEY_HIGHLIGHT: @"#E9E9EE",
             WXKB_KEY_BG_ENABLED: @YES,
-            WXKB_KEY_BG_COLOR: @"#FAFAFC"  // 干净浅白背景
+            WXKB_KEY_BG_COLOR: @"#ECE9E4"  // 键盘甲板灰（非纯白，更像实体键盘底板；可在设置里改）
         },
         @"键帽粉彩": @{                    // 仿机械键盘粉彩键帽皮肤（马卡龙彩虹 + 3D 键帽）
             WXKB_KEY_KEY_ENABLED: @YES,
