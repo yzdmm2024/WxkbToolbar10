@@ -2,11 +2,15 @@
 // 目标：iPhone 12 Pro / iOS 16.6 / Relaxin rootless (ElleKit TweakInject)
 // 注入目标：com.tencent.wetype.keyboard (wxkb_plugin.appex)
 //
-// 1.6.1 行为：
-//   1) 修复 1.6.0 的编辑增强按钮点不了：原生工具栏自己接管了触摸，
-//      现在 hook WBFunctionToolBar 的 hitTest:，点在我们按钮条上时优先派给按钮。
-//   2) 单手模式（17）按用户实测移入「需主 App（无反应）」分组。
-//   3) 新增「键盘位置」：设置面板里 ±5pt 整体上移/下移键盘，立即生效（transform 平移）。
+// 1.6.2 行为：
+//   1) 编辑增强按钮点不了二次修复：弃用脆弱的 addTarget + hitTest 方案，改为在
+//      原生滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer，
+//      点在我们按钮范围内就直接触发动作，彻底绕开微信的触摸自管 / 手势拦截。
+//   2) 键盘整体上移/下移：位移作用在最上层「输入视图控制器.view」上（系统决定的
+//      位置，原生 layout 不会反复重置），并在异步同步里二次兜底，确保生效。
+//   3) 未配置清单时改用白名单：只放行已知功能码，未知的（隔空投送/最近使用/
+//      收起键盘/定制表情/拼写检查 等私有码）不再显示，符合「没有就不显示」。
+//   4) 单手模式（17）仍在「需主 App（无反应）」分组。
 //   1) 工具栏功能由「设置 → 微信输入法增强」面板决定：可排序、可隐藏、可增删。
 //      「需主 App」的那几项单独分组并明确标注，避免点了没反应还不知道为什么。
 //   2) 键盘背景：纯色 / 相册图片（按键盘比例横向裁剪，存 NSData）/ 高级路径，支持透明度。
@@ -66,6 +70,9 @@
 @interface NSObject (WXKBEditing)
 - (BOOL)editing;
 @end
+
+// 前向声明：WXKBInputController 定义位置靠后，但多处（位移、按钮动作）提前用到。
+static UIInputViewController *WXKBInputController(void);
 
 #pragma mark - 配置
 
@@ -156,14 +163,6 @@ static NSDictionary *WXKBLoadPrefs(void) {
     NSUserDefaults *ud = [[NSUserDefaults alloc] initWithSuiteName:WXKB_PREFS_DOMAIN];
     NSDictionary *d = [ud persistentDomainForName:WXKB_PREFS_DOMAIN];
     return ([d isKindOfClass:[NSDictionary class]] && d.count > 0) ? d : nil;
-}
-
-static NSArray *WXKBDefaultFuncList(void) {
-    NSMutableArray *a = [NSMutableArray array];
-    for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
-        [a addObject:@(kWXKBFuncWorksInKb[i])];
-    }
-    return a;
 }
 
 // 编辑增强按钮最终清单：用户排序 + 用户显隐，缺项按默认补齐。
@@ -567,6 +566,9 @@ static void WXKBScheduleSync(void) {
             } else {
                 WXKBRestoreKeyboardWindows();
             }
+            // 二次兜底：原生 layout 可能把位移写回，异步再压一次
+            UIView *iv = [WXKBInputController() view];
+            if (iv) WXKBApplyOffset(iv);
         } @catch (__unused NSException *e) {
         }
     });
@@ -610,20 +612,24 @@ static NSArray *WXKBApplyFuncList(NSArray *in) {
         return out;
     }
 
+    // 默认（用户没在面板里配过）：只允许「已知功能码」通过，未知的（如隔空投送 /
+    // 最近使用 / 收起键盘 / 定制表情 / 拼写检查 这些私有码）一律不显示，
+    // 避免塞进去渲染出空白图标，也符合「没有就不显示」。
+    NSMutableSet *known = [NSMutableSet set];
+    for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
+        [known addObject:@(kWXKBFuncWorksInKb[i])];
+    }
+    for (int i = 0; i < kWXKBFuncNeedsHostAppCount; i++) {
+        [known addObject:@(kWXKBFuncNeedsHostApp[i])];
+    }
     for (id o in in) {
         if (![o respondsToSelector:@selector(intValue)]) {
             continue;
         }
         NSNumber *n = @([o intValue]);
-        if (![seen containsObject:n]) {
+        if (![seen containsObject:n] && [known containsObject:n]) {
             [out addObject:n];
             [seen addObject:n];
-        }
-    }
-    for (id o in WXKBDefaultFuncList()) {
-        if (![seen containsObject:o]) {
-            [out addObject:o];
-            [seen addObject:o];
         }
     }
     return out;
@@ -1047,14 +1053,13 @@ static void WXKBActDeleteAllLocal(void) {
     }
 }
 
-// —— 按钮宿主 ——
-@interface WXKBActionTarget : NSObject
-@end
-
-@implementation WXKBActionTarget
-- (void)fire:(id)sender {
-    NSNumber *code = objc_getAssociatedObject(sender, "wxkbCode");
-    int c = code ? code.intValue : 0;
+// —— 按钮动作触发 ——
+// 由于我们把按钮塞进了微信原生滚动视图，且微信可能在工具栏层自管触摸 / 挂手势，
+// 单纯给按钮 addTarget 经常收不到事件。这里统一用 WXKBFireAction 派发，
+// 并在滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer
+// 来触发（见下方 WXKBInstallTap）。
+static const NSInteger kWXKBActionBarTag = 0x57584142;   // "WXAB" 自定义按钮条 tag
+static void WXKBFireAction(int c) {
     @try {
         switch (c) {
             case WXKB_ACT_CURSOR_LEFT:  WXKBActCursorMove(-1); break;
@@ -1075,9 +1080,44 @@ static void WXKBActDeleteAllLocal(void) {
     } @catch (__unused NSException *e) {
     }
 }
+
+// 触摸命中识别：点在我们按钮范围内就直接触发动作；点别处则放行给微信原生处理。
+@interface WXKBActionTapRecognizer : UITapGestureRecognizer
+@end
+@implementation WXKBActionTapRecognizer
+- (void)wxkbHandle:(UIGestureRecognizer *)g {
+    if (g.state != UIGestureRecognizerStateEnded) return;
+    UIView *sv = g.view;
+    if (!sv) return;
+    CGPoint p = [self locationInView:sv];
+    for (UIView *strip in sv.subviews) {
+        if (strip.tag != kWXKBActionBarTag) continue;
+        for (UIView *b in strip.subviews) {
+            NSNumber *code = objc_getAssociatedObject(b, "wxkbCode");
+            if (!code) continue;
+            CGRect abs = CGRectMake(strip.frame.origin.x + b.frame.origin.x,
+                                   strip.frame.origin.y + b.frame.origin.y,
+                                   b.frame.size.width, b.frame.size.height);
+            if (CGRectContainsPoint(abs, p)) {
+                WXKBFireAction((int)code.integerValue);
+                return;
+            }
+        }
+    }
+}
 @end
 
-static const NSInteger kWXKBActionBarTag = 0x57584142;   // "WXAB"
+static const void *kWXKBTapInstalled = &kWXKBTapInstalled;
+
+static void WXKBInstallTap(UIScrollView *sv) {
+    if (!sv || objc_getAssociatedObject(sv, kWXKBTapInstalled)) return;
+    WXKBActionTapRecognizer *tg = [[WXKBActionTapRecognizer alloc] init];
+    [tg addTarget:tg action:@selector(wxkbHandle:)];
+    tg.cancelsTouchesInView = NO;   // 不拦截：原生图标照常可用
+    tg.delaysTouchesBegan = NO;
+    [sv addGestureRecognizer:tg];
+    objc_setAssociatedObject(sv, kWXKBTapInstalled, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
 static UIImage *WXKBActionImage(int code, CGFloat size) {
     NSString *sf = nil, *fallback = nil;
@@ -1113,6 +1153,8 @@ static void WXKBRebuildActionBar(UIView *bar) {
     for (UIView *v in bar.subviews) {
         if ([v isKindOfClass:[UIScrollView class]]) { sv = (UIScrollView *)v; break; }
     }
+    if (!sv) return;
+    WXKBInstallTap(sv);   // 触摸识别靠它，所以无论是否重建都要确保装上
 
     UIView *old = [bar viewWithTag:kWXKBActionBarTag];
     if (old) {
@@ -1132,7 +1174,7 @@ static void WXKBRebuildActionBar(UIView *bar) {
 
     if (!gEnabled) return;
     NSArray *actions = WXKBResolvedActions();
-    if (actions.count == 0 || !sv) return;
+    if (actions.count == 0) return;
 
     CGSize bd = bar.bounds.size;
     if (bd.height < 10) return;
@@ -1150,17 +1192,13 @@ static void WXKBRebuildActionBar(UIView *bar) {
 
     CGFloat btn = MIN(30.0, bd.height * 0.62);
     CGFloat gap = 3.0;
-    CGFloat y = (bd.height - btn) / 2.0;
 
+    CGFloat totalW = actions.count * btn + (actions.count - 1) * gap;
     UIView *strip = [[UIView alloc] initWithFrame:
-                        CGRectMake(startX, 0, actions.count * (btn + gap), btn)];
+                        CGRectMake(startX, 0, totalW, btn)];
     strip.tag = kWXKBActionBarTag;
     strip.userInteractionEnabled = YES;
     strip.backgroundColor = [UIColor clearColor];
-
-    static WXKBActionTarget *target;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ target = [[WXKBActionTarget alloc] init]; });
 
     CGFloat x = 0;
     for (NSNumber *n in actions) {
@@ -1178,17 +1216,18 @@ static void WXKBRebuildActionBar(UIView *bar) {
         // 透明键盘上按键文字保持黑色，按钮图标跟着黑
         b.tintColor = gKeyEnabled && gTextColor ? gTextColor : [UIColor blackColor];
         [b setTitleColor:b.tintColor forState:UIControlStateNormal];
-        b.adjustsImageWhenHighlighted = NO;
+        b.adjustsImageWhenHighlighted = YES;
         objc_setAssociatedObject(b, "wxkbCode", n, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [b addTarget:target action:@selector(fire:) forControlEvents:UIControlEventTouchUpInside];
+        // 不再用 addTarget：触摸完全交给 sv 上的 UITapGestureRecognizer 处理，
+        // 这样即便微信在工具栏层自管触摸 / 挂手势，点按也能稳定触发。
         [strip addSubview:b];
         x += btn + gap;
     }
-    strip.frame = CGRectMake(startX, y, x, btn);
+    strip.frame = CGRectMake(startX, (bd.height - btn) / 2.0, totalW, btn);
     [sv addSubview:strip];
 
     CGFloat right = CGRectGetMaxX(strip.frame) + 12;
-    if (sv.contentSize.width < right || sv.contentSize.width < x) {
+    if (sv.contentSize.width < right) {
         sv.contentSize = CGSizeMake(MAX(right, x), bd.height);
     }
     if (sv.contentSize.width > sv.bounds.size.width + 0.5) {
@@ -1381,7 +1420,14 @@ static void WXKBEnsureActionBar(UIView *bar) {
     %orig;
     WXKBApplyBackground(self);
     WXKBApplyTransparency(self);
-    WXKBApplyOffset(self);
+    // 位移优先作用在最上层「输入视图控制器.view」上（它的位置由系统决定、
+    // 不会在原生 layout 里被反复重置）；拿不到时再退回自身。
+    UIView *iv = [WXKBInputController() view];
+    if (iv && iv != (UIView *)self) {
+        WXKBApplyOffset(iv);
+    } else {
+        WXKBApplyOffset(self);
+    }
     WXKBScheduleSync();
 }
 
@@ -1415,7 +1461,7 @@ static void WXKBEnsureActionBar(UIView *bar) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.1 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.2 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
 }
