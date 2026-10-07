@@ -1338,8 +1338,18 @@ static UIImage *WXKBKeycapStrip(UIImage *img) {
             if (y < (NSInteger)lastY) WXKB_SEED(idx + (NSInteger)W);
         }
         #undef WXKB_SEED
+        // 1.7.4 致命修复：只置 alpha=0 而保留 RGB(245,247,250) 会产出「RGB > alpha」
+        // 的非法 premultiplied 数据 —— GPU 对这种图片的渲染结果是未定义的，
+        // 实测整张贴图在真机上渲染成空白（1.7.2/1.7.3 穹顶从未显示的真正根因，
+        // 1.7.1 不透明切片能显示恰好反证了这一点）。premultiplied 语义要求
+        // alpha=0 的像素 RGB 必须也是 0。
         for (size_t i = 0; i < W * H; i++) {
-            if (mark[i]) px[i * 4 + 3] = 0;
+            if (mark[i]) {
+                px[i * 4]     = 0;
+                px[i * 4 + 1] = 0;
+                px[i * 4 + 2] = 0;
+                px[i * 4 + 3] = 0;
+            }
         }
     }
     if (mark) free(mark);
@@ -1525,16 +1535,11 @@ static UIImage *WXKBSkinImageFor(WBKeyView *v) {
     return nil;
 }
 
-// 皮肤键帽贴图的「画布底色」——键帽图四角/边缘过渡色就是对着它设计的，
-// 底色涂成它，键帽边缘的抗锯齿过渡才能无缝（百度原版键盘底就是画布色）。
-static UIColor *WXKBSkinCanvasColor(void) {
-    return [UIColor colorWithRed:245.0 / 255.0 green:247.0 / 255.0 blue:250.0 / 255.0 alpha:1.0];
-}
-
 // 皮肤配色（走原生按键底色通道）。
-// 1.7.3：这颗键的键帽贴图可用时返回画布色（键帽穹顶自带颜色，底色只负责
-// 填充贴图透明区，让键帽「浮」在画布上——四角无白点、和百度原版一致）；
-// 贴图缺失时退回键面代表色（至少键盘还是彩色的）。
+// 1.7.4：恒返回键面代表色（彩虹平涂，像切换主题一样给键盘上色）。
+// 1.7.3 曾在贴图可用时返回画布色——结果贴图因 premultiplied 非法渲染成空白，
+// 键盘就变成一片惨白；改回面色后即使贴图再出问题，键盘也仍是正确彩虹配色，
+// 而贴图正常时穹顶会盖在面色之上，透明边缘露出的也是同色系，视觉无缝。
 static UIColor *WXKBSkinColorFor(WBKeyView *v) {
     if (!gEnabled || !gSkinEnabled || !v) return nil;
     WXKBLoadSkin();
@@ -1549,8 +1554,7 @@ static UIColor *WXKBSkinColorFor(WBKeyView *v) {
         NSInteger j = WXKBSkinFuncSlot(WXKBIdentifier(v));
         if (j >= 0 && j < 9) face = gSkinFuncCol[j];
     }
-    if (!face) return nil;
-    return WXKBSkinImageFor(v) ? WXKBSkinCanvasColor() : face;
+    return face;
 }
 
 static const void *kWXKBSkinKey      = &kWXKBSkinKey;       // 已贴图片（去重，避免重复赋值）
@@ -2103,7 +2107,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.7.3 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 1.7.4 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, gCap3D, gCorner, gKbOffset, gSkinEnabled);
 }
