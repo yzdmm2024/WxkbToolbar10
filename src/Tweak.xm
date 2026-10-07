@@ -1369,36 +1369,49 @@ static UIImage *WXKBSkinImageFor(WBKeyView *v) {
     return nil;
 }
 
-static const void *kWXKBSkinKey = &kWXKBSkinKey;
+static const void *kWXKBSkinKey      = &kWXKBSkinKey;       // 已贴图片（去重，避免重复赋值）
+static const void *kWXKBSkinLayerKey = &kWXKBSkinLayerKey;  // 皮肤图层（子图层方式）
 
-// 把皮肤键帽图贴到键的背景叶上（contents 在 backgroundColor 之上、在文字之下）。
+// 把皮肤键帽图「叠加」成背景叶的子图层。
+// ⚠️ 不能用 leaf.layer.contents：contents 在层的 backgroundColor **之下**，
+//    会被原生白键帽底整体盖住（1.7.0 的 bug：彩边只从键顶边露出一条）。
+//    与 WXKBApplyCap 同一套做法——insertSublayer，子图层恒在底色之上、文字之下。
 static void WXKBApplySkin(UIView *v, UIView *leaf) {
     if (!v) return;
     UIView *target = leaf ?: v;
-    UIImage *prev = objc_getAssociatedObject(v, kWXKBSkinKey);
-    if (!gEnabled || !gSkinEnabled) {
-        if (prev) {
-            target.layer.contents = nil;
-            objc_setAssociatedObject(v, kWXKBSkinKey, nil,
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    CALayer *skin = objc_getAssociatedObject(target, kWXKBSkinLayerKey);
+    UIImage *img = (!gEnabled || !gSkinEnabled) ? nil : WXKBSkinImageFor((WBKeyView *)v);
+    if (!img) {                                    // 关闭 / 图缺失：移除皮肤层，键回到普通配色
+        if (skin) {
+            [skin removeFromSuperlayer];
+            objc_setAssociatedObject(target, kWXKBSkinLayerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(target, kWXKBSkinKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         return;
     }
-    UIImage *img = WXKBSkinImageFor((WBKeyView *)v);
-    if (!img) {                                    // 图片缺失：不动（键保持普通配色）
-        if (prev) {
-            target.layer.contents = nil;
-            objc_setAssociatedObject(v, kWXKBSkinKey, nil,
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
-        return;
+    if (!skin) {
+        skin = [CALayer layer];
+        skin.name = @"wxkb_skin";
+        skin.contentsGravity = kCAGravityResize;   // 铺满整颗键
+        skin.masksToBounds = YES;
+        skin.zPosition = -999;                     // 盖底色、居其它子图层之下
+        [target.layer insertSublayer:skin atIndex:0];
+        objc_setAssociatedObject(target, kWXKBSkinLayerKey, skin, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    CGRect b = target.bounds;
+    if (!CGRectEqualToRect(skin.frame, b)) skin.frame = b;
+    CGFloat rad = target.layer.cornerRadius;
+    if (gShape == 0 && gCorner > 0.01) rad = gCorner;
+    rad = MIN(rad, MIN(b.size.width, b.size.height) / 2.0);
+    if (fabs(skin.cornerRadius - rad) > 0.01) skin.cornerRadius = rad;
+    UIImage *prev = objc_getAssociatedObject(target, kWXKBSkinKey);
     if (prev != img) {
-        target.layer.contents = (__bridge id)img.CGImage;
-        target.layer.contentsGravity = kCAGravityResizeAspectFill;
-        objc_setAssociatedObject(v, kWXKBSkinKey, img,
-                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        skin.contents = (__bridge id)img.CGImage;
+        objc_setAssociatedObject(target, kWXKBSkinKey, img, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
+    [CATransaction commit];
 }
 
 static UIColor *WXKBLetterColorFor(NSInteger idx) {
