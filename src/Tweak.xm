@@ -2,6 +2,18 @@
 // 目标：iPhone 12 Pro / iOS 16.6 / Relaxin rootless (ElleKit TweakInject)
 // 注入目标：com.tencent.wetype.keyboard (wxkb_plugin.appex)
 //
+// 1.6.3 行为（frida 真机诊断后的三处根治）：
+//   1) 总根因：键盘扩展沙盒读不到全局偏好 —— NSUserDefaults persistentDomain
+//      与 CFPreferences 在 wxkb_plugin 里全返回 null，导致 1.5.x 以来
+//      圆角/透明/背景/位移/功能排序/按钮排序在键盘进程里全部用内置默认值。
+//      修复：从自身 dylib 路径反推 jbroot，直接读
+//      <jbroot>/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist
+//      （frida 实测该路径可读且键值齐全）。
+//   2) 按钮条与「收起键盘」chevron 重叠：chevron 固定在 bar 上不随滚动
+//      （frida 实测占 bar 坐标 298~332 / 宽 344）。现在动态预留右侧固定区，
+//      滚到头时按钮条右缘正好停在 chevron 左边。
+//   3) 按钮点按双保险：sv 级手势（1.6.2）+ strip 级手势（新增，命中优先级
+//      更高）+ 恢复 addTarget（1.6.2 移除）。三路任一通即可触发，动作幂等。
 // 1.6.2 行为：
 //   1) 编辑增强按钮点不了二次修复：弃用脆弱的 addTarget + hitTest 方案，改为在
 //      原生滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer，
@@ -33,6 +45,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <dlfcn.h>
 #import "WXKBShared.h"
 
 #pragma mark - 私有类声明（实现由原 App 提供）
@@ -129,12 +142,39 @@ static UIColor *WXKBColor(NSString *hex, CGFloat alpha) {
                            alpha:a];
 }
 
+// roothide 的 jbroot：从我们自己的 dylib 路径反推（…/.jbroot-XXXX/usr/lib/TweakInject/WxkbToolbar10.dylib）。
+// 关键：键盘扩展沙盒会遮蔽 /var/mobile/...，但 jbroot 前缀的真实路径可读
+// （frida 实测 wxkb_plugin 里读 <jbroot>/var/mobile/Library/Preferences/
+//   com.yzdmm.wxkbtoolbar10.plist 成功，NSUserDefaults persistentDomain 反而全 null）。
+// 这是 1.6.2 及以前「设置面板改什么键盘都没反应」的总根因。
+static NSString *WXKBJbrootPath(NSString *rel) {
+    static NSString *jb = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Dl_info info;
+        if (dladdr((const void *)&WXKBJbrootPath, &info) && info.dli_fname) {
+            NSString *p = [NSString stringWithUTF8String:info.dli_fname];
+            NSRange r = [p rangeOfString:@"/usr/lib/TweakInject"];
+            if (r.location != NSNotFound) {
+                jb = [p substringToIndex:r.location];
+            }
+        }
+    });
+    if (jb.length == 0) return nil;
+    return [jb stringByAppendingString:rel];
+}
+
 // 键盘扩展是沙盒进程，读偏好要多种途径兜底。
 static NSDictionary *WXKBLoadPrefs(void) {
-    NSArray *paths = @[
+    NSMutableArray *paths = [NSMutableArray array];
+    NSString *j1 = WXKBJbrootPath(@"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist");
+    NSString *j2 = WXKBJbrootPath(@"/var/jb/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist");
+    if (j1) [paths addObject:j1];
+    if (j2) [paths addObject:j2];
+    [paths addObjectsFromArray:@[
         @"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist",
         @"/var/jb/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist",
-    ];
+    ]];
     for (NSString *p in paths) {
         NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:p];
         if ([d isKindOfClass:[NSDictionary class]] && d.count > 0) {
@@ -1082,28 +1122,53 @@ static void WXKBFireAction(int c) {
 }
 
 // 触摸命中识别：点在我们按钮范围内就直接触发动作；点别处则放行给微信原生处理。
+// g.view 可能是 sv（按钮条是它的子视图）也可能是 strip 本身（1.6.3 起两个都挂）。
 @interface WXKBActionTapRecognizer : UITapGestureRecognizer
 @end
 @implementation WXKBActionTapRecognizer
 - (void)wxkbHandle:(UIGestureRecognizer *)g {
     if (g.state != UIGestureRecognizerStateEnded) return;
-    UIView *sv = g.view;
-    if (!sv) return;
-    CGPoint p = [self locationInView:sv];
-    for (UIView *strip in sv.subviews) {
+    UIView *container = g.view;
+    if (!container) return;
+    CGPoint p = [self locationInView:container];
+
+    // 挂在 strip 上：p 已是 strip 内坐标，按钮 frame 直接比
+    if (container.tag == kWXKBActionBarTag) {
+        for (UIView *b in container.subviews) {
+            NSNumber *code = objc_getAssociatedObject(b, "wxkbCode");
+            if (!code) continue;
+            if (CGRectContainsPoint(b.frame, p)) {
+                WXKBFireAction((int)code.intValue);
+                return;
+            }
+        }
+        return;
+    }
+
+    // 挂在 sv 上：按钮条是子视图，先换算到各 strip 内
+    for (UIView *strip in container.subviews) {
         if (strip.tag != kWXKBActionBarTag) continue;
+        CGPoint lp = CGPointMake(p.x - strip.frame.origin.x, p.y - strip.frame.origin.y);
         for (UIView *b in strip.subviews) {
             NSNumber *code = objc_getAssociatedObject(b, "wxkbCode");
             if (!code) continue;
-            CGRect abs = CGRectMake(strip.frame.origin.x + b.frame.origin.x,
-                                   strip.frame.origin.y + b.frame.origin.y,
-                                   b.frame.size.width, b.frame.size.height);
-            if (CGRectContainsPoint(abs, p)) {
-                WXKBFireAction((int)code.integerValue);
+            if (CGRectContainsPoint(b.frame, lp)) {
+                WXKBFireAction((int)code.intValue);
                 return;
             }
         }
     }
+}
+@end
+
+// addTarget 兜底：手势万一被微信的某个手势抢走，按钮自己的 TouchUpInside
+// 还能接住；反之亦然。两路都通时 WXKBFireAction 幂等（各动作自身无状态）。
+@interface WXKBActionTarget : NSObject
+@end
+@implementation WXKBActionTarget
+- (void)fire:(id)sender {
+    NSNumber *code = objc_getAssociatedObject(sender, "wxkbCode");
+    if (code) WXKBFireAction((int)code.intValue);
 }
 @end
 
@@ -1201,6 +1266,9 @@ static void WXKBRebuildActionBar(UIView *bar) {
     strip.backgroundColor = [UIColor clearColor];
 
     CGFloat x = 0;
+    static WXKBActionTarget *target;
+    static dispatch_once_t onceT;
+    dispatch_once(&onceT, ^{ target = [[WXKBActionTarget alloc] init]; });
     for (NSNumber *n in actions) {
         int code = n.intValue;
         UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -1218,18 +1286,37 @@ static void WXKBRebuildActionBar(UIView *bar) {
         [b setTitleColor:b.tintColor forState:UIControlStateNormal];
         b.adjustsImageWhenHighlighted = YES;
         objc_setAssociatedObject(b, "wxkbCode", n, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        // 不再用 addTarget：触摸完全交给 sv 上的 UITapGestureRecognizer 处理，
-        // 这样即便微信在工具栏层自管触摸 / 挂手势，点按也能稳定触发。
+        // 双保险：addTarget（按钮自己收得到就用它）+ strip 上的点按手势（见下）
+        [b addTarget:target action:@selector(fire:)
+    forControlEvents:UIControlEventTouchUpInside];
         [strip addSubview:b];
         x += btn + gap;
     }
     strip.frame = CGRectMake(startX, (bd.height - btn) / 2.0, totalW, btn);
     [sv addSubview:strip];
 
-    CGFloat right = CGRectGetMaxX(strip.frame) + 12;
-    if (sv.contentSize.width < right) {
-        sv.contentSize = CGSizeMake(MAX(right, x), bd.height);
+    // 手势也挂一份在 strip 上：触摸命中 strip 子树时它先于 sv 看到事件，
+    // 不依赖 sv 级手势在微信自家手势堆里的优先级。
+    WXKBActionTapRecognizer *tg2 = [[WXKBActionTapRecognizer alloc] init];
+    [tg2 addTarget:tg2 action:@selector(wxkbHandle:)];
+    tg2.cancelsTouchesInView = NO;
+    tg2.delaysTouchesBegan = NO;
+    [strip addGestureRecognizer:tg2];
+
+    // 固定在 bar 上、不随滚动的按钮（右侧「收起键盘」chevron，frida 实测它占
+    // bar 坐标 298~332 / bar 宽 344）要预留：否则滚到头按钮条压在它下面。
+    // 预留后，滚动到最右时按钮条右缘正好停在 chevron 左边 —— 用户要求的
+    // 「显示边界移到收起键盘的左边」。
+    CGFloat reserve = 54.0;   // 兜底 46 + 8pt 缝
+    for (UIView *v in bar.subviews) {
+        if (v == sv || v == strip || v.hidden) continue;
+        if (![v isKindOfClass:[UIButton class]]) continue;
+        CGFloat minX = CGRectGetMinX(v.frame);
+        if (minX <= 0 || CGRectGetMaxX(v.frame) > bd.width + 0.5) continue;
+        CGFloat r = bd.width - minX + 8.0;
+        if (r > 20.0 && r < 160.0 && r > reserve) reserve = r;
     }
+    sv.contentSize = CGSizeMake(CGRectGetMaxX(strip.frame) + reserve, bd.height);
     if (sv.contentSize.width > sv.bounds.size.width + 0.5) {
         sv.scrollEnabled = YES;
     }
@@ -1425,6 +1512,11 @@ static void WXKBEnsureActionBar(UIView *bar) {
     UIView *iv = [WXKBInputController() view];
     if (iv && iv != (UIView *)self) {
         WXKBApplyOffset(iv);
+        // 清掉 1.6.1 时代直接加在 root 上的位移残留，避免双重位移
+        CGAffineTransform rt = ((UIView *)self).transform;
+        if (rt.tx != 0.0 || rt.ty != 0.0) {
+            ((UIView *)self).transform = CGAffineTransformIdentity;
+        }
     } else {
         WXKBApplyOffset(self);
     }
@@ -1461,7 +1553,7 @@ static void WXKBEnsureActionBar(UIView *bar) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.2 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.3 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
 }

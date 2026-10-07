@@ -80,6 +80,11 @@ python build/check.py   # 需要 LLVM 18 + iPhoneOS16.5 SDK
 
 ## 版本
 
+- 1.6.3 — frida 真机诊断后的三处根治：① 总根因——键盘扩展沙盒读不到全局偏好
+  （NSUserDefaults/CFPreferences 在 wxkb_plugin 里全 null，1.5.x 以来圆角/透明/背景/
+  位移/排序在键盘进程里全部用内置默认值），现在从 dylib 路径反推 jbroot 直读
+  plist；② 按钮条避开固定的「收起键盘」chevron（动态预留右侧固定区，滚到头
+  右缘停在 chevron 左边）；③ 点按三路保险（sv 手势 + strip 手势 + addTarget）
 - 1.6.2 — 编辑增强按钮点不了二次修复：弃用脆弱的 addTarget + hitTest 方案，改为在
   原生滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer，点在我们
   按钮范围内就直接触发，彻底绕开微信自管触摸 / 手势拦截；键盘整体上移/下移改为作用在
