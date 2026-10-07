@@ -51,6 +51,9 @@
 // 按键圆角（pt，0 ~ 22）
 #define WXKB_KEY_CORNER        @"keyCornerRadius"
 
+// 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
+#define WXKB_KEY_OFFSET        @"kbOffset"
+
 // 编辑增强按钮（渲染在宿主 App 的键盘底栏一带）
 #define WXKB_KEY_ACTION_ORDER  @"actionOrder"    // NSNumber 数组，用户排序后的顺序
 #define WXKB_KEY_ACTION_SHOW   @"actionShow"     // NSDictionary { code(NSNumber) -> BOOL(NSNumber) }
@@ -73,11 +76,12 @@
 #pragma mark - 微信原生工具栏功能 id（tag）
 
 // 键盘扩展内确认可用
-static const int kWXKBFuncWorksInKb[] = {1, 2, 3, 5, 16, 17, 18, 20, 27, 28, 31};
+// （单手模式 17 移到需主 App：1.6.0 用户实测点了没反应）
+static const int kWXKBFuncWorksInKb[] = {1, 2, 3, 5, 16, 18, 20, 27, 28, 31};
 #define kWXKBFuncWorksInKbCount ((int)(sizeof(kWXKBFuncWorksInKb) / sizeof(kWXKBFuncWorksInKb[0])))
 
 // 点了没反应：需要微信主 App 才能处理，键盘扩展里必然无响应
-static const int kWXKBFuncNeedsHostApp[] = {14, 29, 32, 33, 35, 36};
+static const int kWXKBFuncNeedsHostApp[] = {14, 17, 29, 32, 33, 35, 36};
 #define kWXKBFuncNeedsHostAppCount ((int)(sizeof(kWXKBFuncNeedsHostApp) / sizeof(kWXKBFuncNeedsHostApp[0])))
 
 // 面板里展示的全部条目 = 可用 + 需主 App

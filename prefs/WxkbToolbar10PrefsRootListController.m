@@ -90,8 +90,42 @@
     [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
                               min:0.0 max:22.0]];
 
+    // ---- 键盘位置 ----
+    g = [PSSpecifier groupSpecifierWithName:@"键盘位置"];
+    [g setProperty:[NSString stringWithFormat:
+                        @"整体上移 / 下移键盘（正在输入的这块），改动立即生效。"
+                        @"当前偏移：%.0fpt（正数 = 下移，范围 ±80）。",
+                        [self kbOffsetValue]]
+            forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbButton:@"上移 5pt" action:@selector(kbUp:)]];
+    [s addObject:[self wxkbButton:@"下移 5pt" action:@selector(kbDown:)]];
+    [s addObject:[self wxkbButton:@"重置为 0" action:@selector(kbReset:)]];
+
     _specifiers = s;
     return _specifiers;
 }
+
+#pragma mark - 键盘位置
+
+- (double)kbOffsetValue {
+    id v = WXKBGetPref(WXKB_KEY_OFFSET);
+    double d = [v respondsToSelector:@selector(doubleValue)] ? [v doubleValue] : 0.0;
+    if (d < -80.0 || d > 80.0) d = 0.0;
+    return d;
+}
+
+- (void)setKbOffset:(double)off {
+    if (off < -80.0) off = -80.0;
+    if (off > 80.0) off = 80.0;
+    WXKBSetPref(WXKB_KEY_OFFSET, @(off));
+    [[self class] wxkbNotifyChanged];
+    _specifiers = nil;               // 刷新 footer 里的当前值
+    [self reloadSpecifiers];
+}
+
+- (void)kbUp:(id)sender   { [self setKbOffset:[self kbOffsetValue] - 5]; }
+- (void)kbDown:(id)sender { [self setKbOffset:[self kbOffsetValue] + 5]; }
+- (void)kbReset:(id)sender{ [self setKbOffset:0]; }
 
 @end

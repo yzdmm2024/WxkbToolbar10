@@ -2,7 +2,11 @@
 // 目标：iPhone 12 Pro / iOS 16.6 / Relaxin rootless (ElleKit TweakInject)
 // 注入目标：com.tencent.wetype.keyboard (wxkb_plugin.appex)
 //
-// 1.6.0 行为：
+// 1.6.1 行为：
+//   1) 修复 1.6.0 的编辑增强按钮点不了：原生工具栏自己接管了触摸，
+//      现在 hook WBFunctionToolBar 的 hitTest:，点在我们按钮条上时优先派给按钮。
+//   2) 单手模式（17）按用户实测移入「需主 App（无反应）」分组。
+//   3) 新增「键盘位置」：设置面板里 ±5pt 整体上移/下移键盘，立即生效（transform 平移）。
 //   1) 工具栏功能由「设置 → 微信输入法增强」面板决定：可排序、可隐藏、可增删。
 //      「需主 App」的那几项单独分组并明确标注，避免点了没反应还不知道为什么。
 //   2) 键盘背景：纯色 / 相册图片（按键盘比例横向裁剪，存 NSData）/ 高级路径，支持透明度。
@@ -86,6 +90,7 @@ static UIColor  *gGradFrom     = nil;
 static UIColor  *gGradTo       = nil;
 static NSDictionary *gLetterMap = nil;
 static CGFloat   gCorner       = 0.0;
+static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
 static NSArray  *gActionOrder  = nil;
 static NSDictionary *gActionShow = nil;
 static double    gLastLoad     = -1;
@@ -263,6 +268,13 @@ static void WXKBReload(BOOL force) {
         gCorner = 0.0;
     }
 
+    // ---- 键盘位置 ----
+    id of2 = d[WXKB_KEY_OFFSET];
+    gKbOffset = of2 ? [of2 doubleValue] : 0.0;
+    if (gKbOffset < -80.0 || gKbOffset > 80.0) {
+        gKbOffset = 0.0;
+    }
+
     // ---- 编辑增强 ----
     id ao = d[WXKB_KEY_ACTION_ORDER];
     gActionOrder = [ao isKindOfClass:[NSArray class]] ? ao : nil;
@@ -431,6 +443,54 @@ static void WXKBApplyTransparency(UIView *host) {
     WXKBClearBgTree(host);
 }
 
+// —— 键盘整体位移 ——
+// 用 transform 平移，原生布局不会把它重置回 identity。
+static void WXKBApplyOffset(UIView *root) {
+    if (!root) return;
+    @try {
+        CGAffineTransform t =
+            (gEnabled && fabs(gKbOffset) > 0.5)
+                ? CGAffineTransformMakeTranslation(0, (CGFloat)gKbOffset)
+                : CGAffineTransformIdentity;
+        if (!CGAffineTransformEqualToTransform(root.transform, t)) {
+            root.transform = t;
+        }
+    } @catch (__unused NSException *e) {
+    }
+}
+
+// 偏好变化后让已存在的键盘立刻重排（位置类改动不触发原生 layout）。
+static void WXKBRelayoutTree(UIView *v) {
+    if (!v) return;
+    Class rootCls = objc_getClass("WBRootInputView");
+    if (rootCls && [v isKindOfClass:rootCls]) {
+        [v setNeedsLayout];
+        return;
+    }
+    for (UIView *s in v.subviews) {
+        WXKBRelayoutTree(s);
+    }
+}
+
+static void WXKBForceRelayout(void) {
+    @try {
+        UIApplication *app = [UIApplication sharedApplication];
+        NSMutableArray *wins = [NSMutableArray array];
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *s in app.connectedScenes) {
+                if ([s isKindOfClass:[UIWindowScene class]]) {
+                    [wins addObjectsFromArray:((UIWindowScene *)s).windows];
+                }
+            }
+        }
+        if (wins.count == 0) [wins addObjectsFromArray:app.windows];
+        for (UIWindow *w in wins) {
+            WXKBRelayoutTree(w);
+        }
+    } @catch (__unused NSException *e) {
+    }
+}
+
 // 键盘窗口自身也要透明，否则整棵树的透明会被窗口底色吃掉
 static void WXKBClearKeyboardWindows(void) {
     @try {
@@ -517,6 +577,7 @@ static void WXKBOnPrefsChanged(CFNotificationCenterRef center, void *observer,
                                CFDictionaryRef userInfo) {
     WXKBReload(YES);
     WXKBScheduleSync();
+    WXKBForceRelayout();
 }
 
 #pragma mark - 工具栏功能列表
@@ -1173,6 +1234,28 @@ static void WXKBEnsureActionBar(UIView *bar) {
     %orig(NO, animated, completion);
 }
 
+// 1.6.1 修复：自定义按钮条点不了。
+// 原生工具栏自己接管了触摸（滚动视图或工具栏层的 hitTest 不认我们的子视图），
+// 所以在工具栏的 hitTest 入口优先问一遍我们的按钮条：点在按钮上就把事件
+// 直接交给按钮，其余情况照常走原生逻辑。
+- (UIView *)hitTest:(CGPoint)p withEvent:(UIEvent *)e {
+    @try {
+        if (!WXKBIsEditing(self)) {
+            UIView *strip = [self viewWithTag:kWXKBActionBarTag];
+            if (strip && !strip.hidden && strip.userInteractionEnabled &&
+                strip.alpha > 0.01) {
+                CGPoint local = [strip convertPoint:p fromView:self];
+                if ([strip pointInside:local withEvent:e]) {
+                    UIView *hit = [strip hitTest:local withEvent:e];
+                    if (hit) return hit;
+                }
+            }
+        }
+    } @catch (__unused NSException *e) {
+    }
+    return %orig;
+}
+
 - (void)layoutSubviews {
     %orig;
     WXKBFixScroll(self);
@@ -1298,6 +1381,7 @@ static void WXKBEnsureActionBar(UIView *bar) {
     %orig;
     WXKBApplyBackground(self);
     WXKBApplyTransparency(self);
+    WXKBApplyOffset(self);
     WXKBScheduleSync();
 }
 
@@ -1331,7 +1415,7 @@ static void WXKBEnsureActionBar(UIView *bar) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.0 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.1 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gCorner, (unsigned long)WXKBResolvedActions().count);
+          gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
 }
