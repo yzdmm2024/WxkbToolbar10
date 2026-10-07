@@ -1277,9 +1277,9 @@ static UIColor *WXKBGradientColor(NSInteger idx) {
 //       三段长度 10/9/7 正是 QWERTY 三行的键数 → 字母必须按「行内第几个」取片，
 //       不能按字母表序号（1.7.0 就是按序号取，整片颜色全错位）。
 static const CGFloat kWXKBSkinLetterPitch = 80.0;    // key26a 键帽间距（px）
-static const CGFloat kWXKBSkinLetterCapH  = 110.0;   // key26a 键帽本体高（px，含黑描边、不含投影）
+static const CGFloat kWXKBSkinLetterCapH  = 132.0;   // key26a 全高（含键帽+下方柔和投影，投影叠在画布底色上更立体）
 static const CGFloat kWXKBSkinFuncPitch   = 216.0;   // key9a 键帽间距（px）
-static const CGFloat kWXKBSkinFuncCapH    = 122.0;   // key9a 键帽本体高（px，不含投影）
+static const CGFloat kWXKBSkinFuncCapH    = 144.0;   // key9a 全高
 
 // 把键帽条里的「画布底色」抠成透明（1.7.2 核心修复）。
 // 背景：皮肤条里键帽四周是浅灰画布（实测 (245,247,250)），不抠掉的话贴到键盘上
@@ -1289,6 +1289,10 @@ static const CGFloat kWXKBSkinFuncCapH    = 122.0;   // key9a 键帽本体高（
 // 而键帽顶面再淡也有色偏(实测 26+9 颗全部 max-min>=15，最淡的 V 键只有 15/23)，
 // 若按距离(容差需>=90 才能吃掉投影边缘)会把淡色顶面一起误删——模拟验证踩过这个坑。
 // 键帽黑描边(暗)与穹顶内部(有色偏)都不满足判据，泛洪天然被挡在键帽轮廓之外。
+static void WXKBReleasePx(void *info, void *data, size_t size) {
+    free(data);
+}
+
 static UIImage *WXKBKeycapStrip(UIImage *img) {
     if (!img) return nil;
     CGImageRef cg = img.CGImage;
@@ -1340,18 +1344,27 @@ static UIImage *WXKBKeycapStrip(UIImage *img) {
     }
     if (mark) free(mark);
     if (stk) free(stk);
+    // 1.7.3 致命修复：1.7.2 用「第二个 CGBitmapContext + CGBitmapContextCreateImage」
+    // 之后又 free(px) —— CGBitmapContextCreateImage 对手工 malloc 的缓冲是写时复制，
+    // 只跟踪「通过 context 的写入」，不管手动 free()；free 之后图片数据悬空，
+    // 真机上整张图渲染成空白 → 穹顶贴图完全消失（用户看到「还是平涂」的根因）。
+    // 现在改为 CGDataProviderCreateWithData 持有缓冲，图片对象释放时才回收内存。
     CGColorSpaceRef cs2 = CGColorSpaceCreateDeviceRGB();
-    CGContextRef ctx2 = CGBitmapContextCreate(px, W, H, 8, W * 4, cs2,
-                                              kCGImageAlphaPremultipliedLast |
-                                              kCGBitmapByteOrder32Big);
+    CGDataProviderRef prov = CGDataProviderCreateWithData(NULL, px, W * H * 4,
+                                                          &WXKBReleasePx);
+    CGImageRef out = prov ? CGImageCreate(W, H, 8, 32, W * 4, cs2,
+                                          kCGImageAlphaPremultipliedLast |
+                                          kCGBitmapByteOrder32Big,
+                                          prov, NULL, false,
+                                          kCGRenderingIntentDefault)
+                          : NULL;
+    CGDataProviderRelease(prov);          // CGImage 已 retain，安全
     CGColorSpaceRelease(cs2);
-    if (!ctx2) { free(px); return nil; }
-    CGImageRef out = CGBitmapContextCreateImage(ctx2);
-    CGContextRelease(ctx2);
-    free(px);
-    return out ? [[UIImage alloc] initWithCGImage:out scale:img.scale
-                                      orientation:UIImageOrientationUp]
-               : nil;
+    if (!out) { free(px); return nil; }
+    UIImage *res = [[UIImage alloc] initWithCGImage:out scale:img.scale
+                                        orientation:UIImageOrientationUp];
+    CGImageRelease(out);
+    return res;
 }
 
 static UIImage *gSkinLetterImg[26];
@@ -1445,8 +1458,12 @@ static void WXKBLoadSkin(void) {
     // 贴上去只有穹顶键帽本身，不再带浅灰画布边。
     letter = WXKBKeycapStrip(letter);
     func   = WXKBKeycapStrip(func);
-    NSArray *la = WXKBSliceStrip(letter, 26, kWXKBSkinLetterPitch, kWXKBSkinLetterCapH);
+    // key26a 实际有 27 格：0-25 是彩色字母键帽，第 27 格是白色功能键帽
+    // （百度原版 QWERTY 的功能键——123/中英/句号/回车——用的就是它，实测确认）。
+    NSArray *la = WXKBSliceStrip(letter, 27, kWXKBSkinLetterPitch, kWXKBSkinLetterCapH);
     NSArray *fa = WXKBSliceStrip(func,    9, kWXKBSkinFuncPitch,   kWXKBSkinFuncCapH);
+    UIImage *whiteTile = nil;
+    if (la.count >= 27 && [la[26] isKindOfClass:[UIImage class]]) whiteTile = la[26];
     for (NSInteger i = 0; i < 26; i++) {
         id o = la ? la[i] : nil;
         if ([o isKindOfClass:[UIImage class]]) {
@@ -1455,8 +1472,14 @@ static void WXKBLoadSkin(void) {
         }
     }
     for (NSInteger i = 0; i < 9; i++) {
-        id o = fa ? fa[i] : nil;
-        if ([o isKindOfClass:[UIImage class]]) {
+        // 1.7.3：功能键统一用白色键帽（第 27 格），与百度原版一致；
+        // 白格缺失时退回 key9a 的彩色键帽。
+        UIImage *o = whiteTile;
+        if (!o) {
+            id f = fa ? fa[i] : nil;
+            if ([f isKindOfClass:[UIImage class]]) o = f;
+        }
+        if (o) {
             gSkinFuncImg[i] = o;
             gSkinFuncCol[i] = WXKBFaceColor(o);
         }
@@ -1502,20 +1525,32 @@ static UIImage *WXKBSkinImageFor(WBKeyView *v) {
     return nil;
 }
 
-// 皮肤配色（走原生按键底色通道：让整颗键——包括原生白键框——都被皮肤染色，位置天然对齐）
+// 皮肤键帽贴图的「画布底色」——键帽图四角/边缘过渡色就是对着它设计的，
+// 底色涂成它，键帽边缘的抗锯齿过渡才能无缝（百度原版键盘底就是画布色）。
+static UIColor *WXKBSkinCanvasColor(void) {
+    return [UIColor colorWithRed:245.0 / 255.0 green:247.0 / 255.0 blue:250.0 / 255.0 alpha:1.0];
+}
+
+// 皮肤配色（走原生按键底色通道）。
+// 1.7.3：这颗键的键帽贴图可用时返回画布色（键帽穹顶自带颜色，底色只负责
+// 填充贴图透明区，让键帽「浮」在画布上——四角无白点、和百度原版一致）；
+// 贴图缺失时退回键面代表色（至少键盘还是彩色的）。
 static UIColor *WXKBSkinColorFor(WBKeyView *v) {
     if (!gEnabled || !gSkinEnabled || !v) return nil;
     WXKBLoadSkin();
+    if (!gSkinLoaded) return nil;
+    UIColor *face = nil;
     NSInteger li = WXKBLetterIndex(v);
     if (li != NSNotFound) {
         NSInteger slot = WXKBSkinSlotForLetter(li);
-        if (slot != NSNotFound && slot < 26 && gSkinLetterCol[slot]) {
-            return gSkinLetterCol[slot];
-        }
+        if (slot != NSNotFound && slot < 26) face = gSkinLetterCol[slot];
     }
-    NSInteger j = WXKBSkinFuncSlot(WXKBIdentifier(v));
-    if (j >= 0 && j < 9 && gSkinFuncCol[j]) return gSkinFuncCol[j];
-    return nil;
+    if (!face) {
+        NSInteger j = WXKBSkinFuncSlot(WXKBIdentifier(v));
+        if (j >= 0 && j < 9) face = gSkinFuncCol[j];
+    }
+    if (!face) return nil;
+    return WXKBSkinImageFor(v) ? WXKBSkinCanvasColor() : face;
 }
 
 static const void *kWXKBSkinKey      = &kWXKBSkinKey;       // 已贴图片（去重，避免重复赋值）
@@ -2068,7 +2103,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.7.2 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 1.7.3 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, gCap3D, gCorner, gKbOffset, gSkinEnabled);
 }
