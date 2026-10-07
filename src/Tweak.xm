@@ -668,6 +668,8 @@ static void WXKBApplyCornerInner(UIView *v) {
     }
 }
 
+static void WXKBApplySkin(UIView *v, UIView *leaf);  // 前向声明（定义见下方皮肤块）
+
 static void WXKBApplyCorner(UIView *v) {
     WXKBApplyCornerInner(v);
     if (!v) return;
@@ -1307,7 +1309,7 @@ static UIColor *WXKBAverageColor(UIImage *img) {
     if (!dp) return nil;
     NSData *data = (__bridge_transfer NSData *)CGDataProviderCopyData(dp);
     if (!data || data.length < 4) return nil;
-    const unsigned char *p = data.bytes;
+    const unsigned char *p = (const unsigned char *)data.bytes;
     NSUInteger n = 8 * 8, r = 0, g = 0, b = 0;
     for (NSUInteger i = 0; i < n; i++) {
         r += p[i * 4 + 0]; g += p[i * 4 + 1]; b += p[i * 4 + 2];
