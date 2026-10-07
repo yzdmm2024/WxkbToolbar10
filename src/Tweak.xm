@@ -1359,6 +1359,123 @@ static void WXKBFireAction(int c) {
     }
 }
 
+#pragma mark - 工具栏自定义顺序（微信排版后重排按钮）
+
+// 微信对 updateFuncs: 传入的数组只决定「显示哪些」，左右位置由微信内部按自身
+// 逻辑（功能码）排序。要让「设置里拖出来的顺序」真正生效，只能在微信 layout
+// 完成后，把 WBToolBarButton 按我们 gFuncList 的顺序重新排列它们的 x 位置。
+
+static NSArray *kWXKBFuncCodeKeys = nil;
+static NSString *kWXKBFuncCodeKeyFound = nil;   // 运行时探测到的可用 KVC 键
+static BOOL gWXKBReorderLogged = NO;
+
+// 从 WBToolBarButton 读出它对应的功能码。微信未把码放在 tag 上，只能试 KVC。
+static int WXKBFuncCodeForButton(UIView *btn) {
+    if (!kWXKBFuncCodeKeys) {
+        kWXKBFuncCodeKeys = @[@"funcType", @"type", @"funcCode", @"code",
+                              @"_funcType", @"funcId", @"funcKind",
+                              @"functionType", @"func", @"_func", @"funcInfo",
+                              @"itemType", @"functionCode"];
+    }
+    if (kWXKBFuncCodeKeyFound) {
+        @try {
+            id v = [btn valueForKey:kWXKBFuncCodeKeyFound];
+            if ([v isKindOfClass:[NSNumber class]]) return (int)[v integerValue];
+        } @catch (__unused NSException *e) {}
+    }
+    for (NSString *k in kWXKBFuncCodeKeys) {
+        @try {
+            id v = [btn valueForKey:k];
+            if ([v isKindOfClass:[NSNumber class]] && [v integerValue] > 0) {
+                kWXKBFuncCodeKeyFound = k;
+                return (int)[v integerValue];
+            }
+        } @catch (__unused NSException *e) {}
+    }
+    return -1;
+}
+
+static void WXKBReorderToolBar(UIView *tb) {
+    if (!gEnabled) return;
+    // 目标顺序 = 启用且键盘内可用的功能码（已是用户自定义顺序）
+    NSArray *target = gFuncList;
+    if (![target isKindOfClass:[NSArray class]] || [target count] == 0) return;
+
+    Class btnCls = objc_getClass("WBToolBarButton");
+    if (!btnCls) return;
+
+    NSMutableArray *btns = [NSMutableArray array];
+    void (^collect)(UIView *) = nil;
+    collect = ^(UIView *v) {
+        for (UIView *s in v.subviews) {
+            if ([s isKindOfClass:btnCls]) [btns addObject:s];
+            else collect(s);
+        }
+    };
+    collect(tb);
+
+    if ([btns count] != [target count]) {
+        if (!gWXKBReorderLogged) {
+            NSLog(@"[WxkbToolbar10] reorder skip: btnCount=%lu targetCount=%lu",
+                  (unsigned long)[btns count], (unsigned long)[target count]);
+            gWXKBReorderLogged = YES;
+        }
+        return;
+    }
+
+    // 读出每个按钮的功能码
+    NSMutableArray *codes = [NSMutableArray array];
+    for (UIView *b in btns) {
+        int c = WXKBFuncCodeForButton(b);
+        if (c < 0) {
+            if (!gWXKBReorderLogged) {
+                NSLog(@"[WxkbToolbar10] reorder skip: code mapping failed (key=%@)",
+                      kWXKBFuncCodeKeyFound ?: @"none");
+                gWXKBReorderLogged = YES;
+            }
+            return;
+        }
+        [codes addObject:@(c)];
+    }
+
+    // 校验：检测到的码必须恰好等于目标码集合，防止误用错误的 KVC 键导致乱序。
+    NSSet *det = [NSSet setWithArray:codes];
+    NSSet *exp = [NSSet setWithArray:target];
+    if (![det isEqualToSet:exp]) {
+        if (!gWXKBReorderLogged) {
+            NSLog(@"[WxkbToolbar10] reorder skip: code mismatch det=%@ exp=%@",
+                  det, exp);
+            gWXKBReorderLogged = YES;
+        }
+        return;
+    }
+
+    // 记录微信排好的原始 x 槽位（左→右排序），把目标顺序映射到这些槽位上。
+    // 各按钮宽度不变，仅交换所在槽位，不撑高、不重叠。
+    NSMutableArray *xs = [NSMutableArray array];
+    for (UIView *b in btns) [xs addObject:@(b.frame.origin.x)];
+    [xs sortUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"self"
+                                                            ascending:YES]]];
+
+    for (NSUInteger i = 0; i < [target count]; i++) {
+        int want = [target[i] intValue];
+        for (NSUInteger j = 0; j < [btns count]; j++) {
+            if ([codes[j] intValue] == want) {
+                UIView *b = btns[j];
+                CGRect fr = b.frame;
+                fr.origin.x = [xs[i] floatValue];
+                b.frame = fr;
+                break;
+            }
+        }
+    }
+    if (!gWXKBReorderLogged) {
+        NSLog(@"[WxkbToolbar10] reorder applied key=%@ target=%@",
+              kWXKBFuncCodeKeyFound ?: @"?", target);
+        gWXKBReorderLogged = YES;
+    }
+}
+
 #pragma mark - Hooks
 
 %hook WBFunctionToolBar
@@ -1388,6 +1505,7 @@ static void WXKBFireAction(int c) {
 - (void)layoutSubviews {
     %orig;
     WXKBFixScroll(self);
+    WXKBReorderToolBar(self);
     WXKBScheduleSync();
 }
 
@@ -1571,7 +1689,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.15 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
+    NSLog(@"[WxkbToolbar10] 1.6.16 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset);
 }
