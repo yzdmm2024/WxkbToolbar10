@@ -155,7 +155,6 @@ static UIInputViewController *WXKBInputController(void);
 #pragma mark - 配置
 
 static BOOL      gEnabled      = YES;
-static NSArray  *gFuncList     = nil;    // NSNumber 数组，用户配置的顺序
 static BOOL      gBgEnabled    = NO;
 static int       gBgMode       = 1;      // 1 纯色 2 图片
 static CGFloat   gBgAlpha      = 1.0;
@@ -283,79 +282,6 @@ static void WXKBReload(BOOL force) {
     id v = d[WXKB_KEY_ENABLED];
     gEnabled = v ? [v boolValue] : YES;
 
-    // ---- 功能显隐 ----
-    // 新版：每个功能一个独立开关键 funcOn_<code>（iOS 设置原生开关）。
-    // 旧版：单个 funcList 数组。兼容策略：
-    //   1) 任一 funcOn_<code> 键存在 → 以开关键为准；
-    //   2) 否则若旧 funcList 数组存在 → 直接复用（保留用户之前的显隐，过滤掉需主 App 的码）；
-    //   3) 都没有 → 键盘内可用功能默认全开。
-    NSMutableArray *funcEnabled = [NSMutableArray array];
-    BOOL haveKeys = NO;
-    for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
-        if (d[WXKB_FUNC_ON_KEY(kWXKBFuncWorksInKb[i])] != nil) {
-            haveKeys = YES;
-            break;
-        }
-    }
-    if (haveKeys) {
-        // 按用户自定义顺序（funcOrder）排列键盘内可用的功能；
-        // 没有 funcOrder 时退回内置默认顺序。这决定微信工具栏从左到右的排列。
-        NSArray *order = d[WXKB_KEY_FUNC_ORDER];
-        NSMutableArray *ord = [NSMutableArray array];
-        if ([order isKindOfClass:[NSArray class]]) {
-            NSMutableSet *seen = [NSMutableSet set];
-            for (id x in order) {
-                NSNumber *n = [x isKindOfClass:[NSNumber class]] ? x
-                    : ([x respondsToSelector:@selector(intValue)] ? @([x intValue]) : nil);
-                if (!n) continue;
-                BOOL known = NO;
-                for (int k = 0; k < kWXKBFuncWorksInKbCount; k++) {
-                    if (kWXKBFuncWorksInKb[k] == [n intValue]) { known = YES; break; }
-                }
-                if (!known || [seen containsObject:n]) continue;
-                [ord addObject:n];
-                [seen addObject:n];
-            }
-        }
-        // 补齐全内置功能，保证不漏任何一个
-        for (int k = 0; k < kWXKBFuncWorksInKbCount; k++) {
-            NSNumber *n = @(kWXKBFuncWorksInKb[k]);
-            if (![ord containsObject:n]) [ord addObject:n];
-        }
-        for (NSNumber *n in ord) {
-            int code = [n intValue];
-            id onv = d[WXKB_FUNC_ON_KEY(code)];
-            BOOL on = onv ? [onv boolValue] : YES;
-            if (on) {
-                [funcEnabled addObject:n];
-            }
-        }
-    } else {
-        id oldList = d[WXKB_KEY_FUNCLIST];
-        if ([oldList isKindOfClass:[NSArray class]] && [oldList count] > 0) {
-            NSMutableSet *hostOnly = [NSMutableSet set];
-            for (int i = 0; i < kWXKBFuncNeedsHostAppCount; i++) {
-                [hostOnly addObject:@(kWXKBFuncNeedsHostApp[i])];
-            }
-            for (id o in oldList) {
-                if (![o respondsToSelector:@selector(intValue)]) {
-                    continue;
-                }
-                NSNumber *n = @([o intValue]);
-                if ([hostOnly containsObject:n]) {
-                    continue;   // 需主 App 的码键盘侧永不显示
-                }
-                if (![funcEnabled containsObject:n]) {
-                    [funcEnabled addObject:n];
-                }
-            }
-        } else {
-            for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
-                [funcEnabled addObject:@(kWXKBFuncWorksInKb[i])];
-            }
-        }
-    }
-    gFuncList = funcEnabled;
 
     // ---- 背景 ----
     gBgEnabled = [d[WXKB_KEY_BG_ENABLED] boolValue];
@@ -824,63 +750,6 @@ static BOOL WXKBIsEditing(id bar) {
     return [bar respondsToSelector:@selector(editing)] ? [bar editing] : NO;
 }
 
-// 用户配置了清单就严格照办（顺序 + 显隐都由用户说了算）；
-// 未配置时用 App 原始列表 + 默认可用功能的并集。
-static NSArray *WXKBApplyFuncList(NSArray *in) {
-    WXKBReload(NO);
-    if (!gEnabled) {
-        return in;
-    }
-
-    NSMutableArray *out = [NSMutableArray array];
-    NSMutableSet *seen = [NSMutableSet set];
-    if ([gFuncList isKindOfClass:[NSArray class]] && gFuncList.count > 0) {
-        // 1.6.9（真机 frida 实锤）：「需微信主 App」的功能码（文字整理/单手模式/小程序/
-        // 灵动表达/问AI/字体滤镜/排版成图）即使躺在用户清单里也要拦掉 —— 它们在键盘
-        // 扩展进程里点了永远没有反应，面板上也写着「无反应」。1.6.8 原样放行导致
-        // 用户以为已关闭的 8 个图标仍然画在工具栏上（funcList 与截图图标一一对应）。
-        NSMutableSet *hostOnly = [NSMutableSet set];
-        for (int i = 0; i < kWXKBFuncNeedsHostAppCount; i++) {
-            [hostOnly addObject:@(kWXKBFuncNeedsHostApp[i])];
-        }
-        for (id o in gFuncList) {
-            if (![o respondsToSelector:@selector(intValue)]) {
-                continue;
-            }
-            NSNumber *n = @([o intValue]);
-            if ([hostOnly containsObject:n]) {
-                continue;
-            }
-            if (![seen containsObject:n]) {
-                [out addObject:n];
-                [seen addObject:n];
-            }
-        }
-        return out;
-    }
-
-    // 默认（用户没在面板里配过）：只允许「已知功能码」通过，未知的（如隔空投送 /
-    // 最近使用 / 收起键盘 / 定制表情 / 拼写检查 这些私有码）一律不显示，
-    // 避免塞进去渲染出空白图标，也符合「没有就不显示」。
-    NSMutableSet *known = [NSMutableSet set];
-    for (int i = 0; i < kWXKBFuncWorksInKbCount; i++) {
-        [known addObject:@(kWXKBFuncWorksInKb[i])];
-    }
-    for (int i = 0; i < kWXKBFuncNeedsHostAppCount; i++) {
-        [known addObject:@(kWXKBFuncNeedsHostApp[i])];
-    }
-    for (id o in in) {
-        if (![o respondsToSelector:@selector(intValue)]) {
-            continue;
-        }
-        NSNumber *n = @([o intValue]);
-        if (![seen containsObject:n] && [known containsObject:n]) {
-            [out addObject:n];
-            [seen addObject:n];
-        }
-    }
-    return out;
-}
 
 #pragma mark - 布局
 
@@ -1364,19 +1233,19 @@ static void WXKBFireAction(int c) {
 %hook WBFunctionToolBar
 
 - (BOOL)updateFuncs:(NSArray *)funcs suggestedTypes:(NSArray *)types prefersRecent:(BOOL)prefersRecent {
-    // 过滤原生功能码（去掉空白私有图标）。增强按钮行已改挂在键盘根视图上
-    //（见 WXKBEnsureActionBar 1.6.10 注释），工具栏不再负责建行。
-    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
+    // 工具栏功能（增删 / 排序）交由微信原生「定制工具栏」处理：原样透传，
+    // 不拦截、不重排，避免与微信自身布局冲突（1.6.16 强改按钮位置曾导致键盘扩展崩溃）。
+    NSArray *f = funcs;
     return %orig(f, types, prefersRecent);
 }
 
 - (BOOL)updateViewWithFuncs:(NSArray *)funcs {
-    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
+    NSArray *f = funcs;
     return %orig(f);
 }
 
 - (BOOL)updateFuncs:(NSArray *)funcs {
-    NSArray *f = WXKBIsEditing(self) ? funcs : WXKBApplyFuncList(funcs);
+    NSArray *f = funcs;
     return %orig(f);
 }
 
@@ -1571,7 +1440,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.17 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
-          gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
+    NSLog(@"[WxkbToolbar10] 1.6.18 loaded enabled=%d bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
+          gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset);
 }

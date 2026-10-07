@@ -25,14 +25,6 @@
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用增强" key:WXKB_KEY_ENABLED def:YES]];
 
-    // ---- 工具栏功能 ----
-    g = [PSSpecifier groupSpecifierWithName:@"工具栏功能"];
-    [g setProperty:@"可拖动排序、左滑隐藏；移除的功能会从键盘工具栏上消失。"
-                  @"「需微信主 App」那组在键盘里点了不会有反应，默认不显示。"
-            forKey:@"footerText"];
-    [s addObject:g];
-    [s addObject:[self wxkbLink:@"功能显隐" detailClass:@"WXKBFuncListController"]];
-
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];
     [g setProperty:@"「整键盘透明」会清掉键盘自带的背景层，透出后面的内容；"

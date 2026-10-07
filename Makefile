@@ -23,7 +23,6 @@ BUNDLE_NAME = WxkbToolbar10Prefs
 WxkbToolbar10Prefs_FILES = \
 	prefs/WXKBCommon.m \
 	prefs/WxkbToolbar10PrefsRootListController.m \
-	prefs/WXKBFuncListController.m \
 	prefs/WXKBPickerControllers.m \
 	prefs/WXKBLetterColors.m \
 	prefs/WXKBPhotoPicker.m

@@ -15,9 +15,6 @@
 #pragma mark - 偏好键
 
 #define WXKB_KEY_ENABLED       @"enabled"
-#define WXKB_KEY_FUNCLIST      @"funcList"
-// 键盘内可用功能的自定义顺序（NSNumber 数组，决定微信工具栏从左到右的排列）
-#define WXKB_KEY_FUNC_ORDER    @"funcOrder"
 
 // 背景
 #define WXKB_KEY_BG_ENABLED    @"bgEnabled"
@@ -70,24 +67,6 @@
 // 键盘背景裁剪比例（微信键盘：宽 390pt / 高约 260pt）
 #define WXKB_KB_ASPECT_W       390.0
 #define WXKB_KB_ASPECT_H       260.0
-
-#pragma mark - 微信原生工具栏功能 id（tag）
-
-// 键盘扩展内确认可用
-// （单手模式 17 移到需主 App：1.6.0 用户实测点了没反应）
-static const int kWXKBFuncWorksInKb[] = {1, 2, 3, 5, 16, 18, 20, 27, 28, 31};
-#define kWXKBFuncWorksInKbCount ((int)(sizeof(kWXKBFuncWorksInKb) / sizeof(kWXKBFuncWorksInKb[0])))
-
-// 点了没反应：需要微信主 App 才能处理，键盘扩展里必然无响应
-static const int kWXKBFuncNeedsHostApp[] = {14, 17, 29, 32, 33, 35, 36};
-#define kWXKBFuncNeedsHostAppCount ((int)(sizeof(kWXKBFuncNeedsHostApp) / sizeof(kWXKBFuncNeedsHostApp[0])))
-
-// 面板里展示的全部条目 = 可用 + 需主 App
-#define kWXKBFuncAllCount (kWXKBFuncWorksInKbCount + kWXKBFuncNeedsHostAppCount)
-
-// 功能显隐：每个功能一个独立开关键（iOS 设置原生开关按钮）。
-// 取代旧版单个 funcList 数组，方便用「按钮/开关」逐个开关。
-#define WXKB_FUNC_ON_KEY(code) [NSString stringWithFormat:@"funcOn_%d", (int)(code)]
 
 #pragma mark - 编辑增强按钮 id
 
