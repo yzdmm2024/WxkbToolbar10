@@ -440,6 +440,27 @@ static void WXKBHostSelectAllCB(CFNotificationCenterRef c, void *o, CFStringRef 
 
 %ctor {
     @autoreleasepool {
+        // 1.6.7：plist 用 Classes=["UIWindow"] 意味着所有带界面的进程都会加载本
+        // dylib（ElleKit 无 Exclude 键、Executables 不支持通配符，见 plist 注释），
+        // 这里运行时把不该工作的进程排除掉：
+        //   - SpringBoard：系统界面，绝不能碰；
+        //   - 键盘扩展自身（wxkb_plugin）：Darwin 通知会广播回自己，避免它对
+        //     WeType 内部视图执行编辑动作；
+        //   - 无主 bundle 的守护进程：没有 UI，无意义。
+        @try {
+            NSString *bid = nil;
+            CFBundleRef mb = CFBundleGetMainBundle();
+            if (mb) {
+                CFStringRef i = CFBundleGetIdentifier(mb);
+                if (i) bid = [(__bridge NSString *)i copy];
+            }
+            if (!bid) return;
+            if ([bid isEqualToString:@"com.apple.springboard"]) return;
+            if ([bid isEqualToString:@"com.tencent.wetype.keyboard"]) return;
+        } @catch (__unused NSException *e) {
+            return;
+        }
+
         WXKBInitClipObserver();
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(), NULL,

@@ -8,30 +8,23 @@
 		  宿主 App 侧 dylib：执行全选/剪切/粘贴/全删/收起键盘这类必须作用于宿主
 		  firstResponder 的动作（键盘扩展在独立沙盒进程里够不到宿主输入框）。
 
-		  注意：ElleKit/TweakInject 要求 Filter 里至少有「一条正向匹配规则」
-		  （Bundles / Classes / Executables），否则该 tweak 不会被注入任何进程。
-		  所以这里用 Executables=["*"] 匹配全部进程，再用 Exclude 把系统界面和
-		  键盘扩展自身排除掉。
+		  1.6.7 真根因修复（读了 ElleKit injector.c 源码逐条确认）：
+		    a) Executables 是 strcmp 精确匹配（对可执行文件名最后一段），
+		       "*" 通配符匹配不到任何进程 —— 之前 Executables=["*"] 等于
+		       一条正向规则都没写，Host dylib 从未被注入任何 App，
+		       剪切/粘贴/快捷短语/收起键盘/粘贴历史从 1.0 起全没反应；
+		    b) ElleKit 根本没有 Exclude 键，写了也被无视；
+		    c) 没有 plist 文件时 tweak_needinject 直接 return false，也不注入。
 
-		  以前把 Exclude 放在顶层、没有 Filter，导致 Host 从未被注入 —— 剪切/粘贴/
-		  快捷短语/收起键盘/粘贴历史 等宿主动作从 1.0 起就永远没反应，根因在此。
+		    所以唯一可靠的「注入所有带界面的 App」写法是 Classes 过滤：
+		    objc_getClass 命中即注入。任何跑得起 UIKit 界面的 App 必有 UIWindow 类。
+		    SpringBoard / 键盘扩展自身的排除改在 Host.xm 的 %ctor 里运行时做
+		    （读主 bundle id，命中黑名单直接不注册观察者）。
 		-->
-		<key>Executables</key>
+		<key>Classes</key>
 		<array>
-			<string>*</string>
+			<string>UIWindow</string>
 		</array>
-		<key>Exclude</key>
-		<dict>
-			<key>Bundles</key>
-			<array>
-				<string>com.apple.springboard</string>
-				<string>com.apple.Preferences</string>
-			</array>
-			<key>Executables</key>
-			<array>
-				<string>wxkb_plugin</string>
-			</array>
-		</dict>
 	</dict>
 </dict>
 </plist>
