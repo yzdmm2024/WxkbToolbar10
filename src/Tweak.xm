@@ -1289,8 +1289,8 @@ static const CGFloat kWXKBSkinFuncCapH    = 144.0;   // key9a 全高
 // 而键帽顶面再淡也有色偏(实测 26+9 颗全部 max-min>=15，最淡的 V 键只有 15/23)，
 // 若按距离(容差需>=90 才能吃掉投影边缘)会把淡色顶面一起误删——模拟验证踩过这个坑。
 // 键帽黑描边(暗)与穹顶内部(有色偏)都不满足判据，泛洪天然被挡在键帽轮廓之外。
-static void WXKBReleasePx(void *info, void *data, size_t size) {
-    free(data);
+static void WXKBReleasePx(void *info, const void *data, size_t size) {
+    free((void *)data);
 }
 
 static UIImage *WXKBKeycapStrip(UIImage *img) {
