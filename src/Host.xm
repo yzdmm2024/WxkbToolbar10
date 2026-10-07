@@ -379,6 +379,25 @@ static void WXKBRunOnHost(int code) {
                 WXKBToast(@"无法切换输入法");
                 break;
             }
+            case WXKB_ACT_CURSOR_LEFT:
+            case WXKB_ACT_CURSOR_RIGHT: {
+                // 键盘扩展里若 textDocumentProxy 取不到（极少），兜底到宿主移动光标
+                UIResponder *fr = WXKBFirstResponder();
+                if (!fr || ![fr conformsToProtocol:@protocol(UITextInput)]) {
+                    WXKBToast(@"请先点进输入框");
+                    break;
+                }
+                id<UITextInput> ti = (id<UITextInput>)fr;
+                UITextPosition *cur = ti.selectedTextRange.start;
+                if (!cur) break;
+                NSInteger delta = (code == WXKB_ACT_CURSOR_LEFT) ? -1 : 1;
+                UITextPosition *np = [ti positionFromPosition:cur offset:delta];
+                if (np) {
+                    UITextRange *rng = [ti textRangeFromPosition:np toPosition:np];
+                    if (rng) [ti setSelectedTextRange:rng];
+                }
+                break;
+            }
             default:
                 break;
         }

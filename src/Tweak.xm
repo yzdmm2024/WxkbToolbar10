@@ -14,6 +14,18 @@
 //      滚到头时按钮条右缘正好停在 chevron 左边。
 //   3) 按钮点按双保险：sv 级手势（1.6.2）+ strip 级手势（新增，命中优先级
 //      更高）+ 恢复 addTarget（1.6.2 移除）。三路任一通即可触发，动作幂等。
+// 1.6.4 行为（针对「上移/下移与增强按钮都没反应」）：
+//   1) 总根因之二：键盘扩展进程里没有「window.rootViewController 是
+//      UIInputViewController」这种结构（frida 实测 UIInputViewController count==0），
+//      所以 WXKBInputController() 一直返回 nil —— 光标左右 / 切换输入法 / 全删
+//      全得绕到宿主 App，而宿主又没实现「光标左右」，于是这两个按钮彻底无反应；
+//      位移也找不到正确的目标视图。修复：沿 WBRootInputView 的 nextResponder 链
+//      上行到真正的输入控制器（它就是键盘扩展的主 UIInputViewController）。
+//   2) 位移真正生效：1.6.3 把位移作用在内部 WBRootInputView 上，被它的容器裁掉，
+//      所以「没效果」。现在作用在输入控制器.view（视图树顶点，无裁剪容器），
+//      整块键盘才会跟着上下移动。
+//   3) 宿主 bridge 补上「光标左右」两个动作，键盘扩展取不到 textDocumentProxy 时
+//      也能在宿主侧移动光标，双保险。
 // 1.6.2 行为：
 //   1) 编辑增强按钮点不了二次修复：弃用脆弱的 addTarget + hitTest 方案，改为在
 //      原生滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer，
@@ -1017,8 +1029,17 @@ static void WXKBAskHost(int code) {
 
 // —— 扩展内能自己做的 ——
 
-static UIInputViewController *WXKBInputController(void) {
+// 键盘扩展进程里没有「window.rootViewController == UIInputViewController」这种结构
+// （frida 实测 UIInputViewController count == 0），所以老写法永远返回 nil。
+// 真正的输入控制器挂在 WBRootInputView 的 nextResponder 链上，它就是键盘扩展的
+// 主 UIInputViewController。沿这条链找到它，才能拿到 textDocumentProxy 与 .view；
+// 否则光标左右 / 切换输入法 / 全删 全都得绕到宿主 App，而宿主又没实现光标左右
+// （1.6.3 的坑：WXKBInputController 返回 nil → 光标按钮彻底无反应）。
+static __weak UIInputViewController *gInputVC = nil;
+
+static UIInputViewController *WXKBResolveInputVC(void) {
     @try {
+        Class rootCls = objc_getClass("WBRootInputView");
         UIApplication *app = [UIApplication sharedApplication];
         NSMutableArray *wins = [NSMutableArray array];
         if (@available(iOS 13.0, *)) {
@@ -1030,21 +1051,35 @@ static UIInputViewController *WXKBInputController(void) {
         }
         if (wins.count == 0) [wins addObjectsFromArray:app.windows];
         for (UIWindow *w in wins) {
-            UIViewController *vc = w.rootViewController;
-            while (vc) {
-                if ([vc isKindOfClass:[UIInputViewController class]]) {
-                    return (UIInputViewController *)vc;
+            __block UIInputViewController *hit = nil;
+            __block void (^walk)(UIView *);
+            walk = ^(UIView *v) {
+                if (hit || !v) return;
+                if (rootCls && [v isKindOfClass:rootCls]) {
+                    UIResponder *r = v.nextResponder;
+                    while (r) {
+                        if ([r isKindOfClass:[UIInputViewController class]]) {
+                            hit = (UIInputViewController *)r;
+                            return;
+                        }
+                        r = r.nextResponder;
+                    }
                 }
-                if ([vc isKindOfClass:[UINavigationController class]]) {
-                    UIViewController *c = [(UINavigationController *)vc visibleViewController];
-                    if (c && c != vc) { vc = c; continue; }
-                }
-                vc = vc.presentedViewController;
-            }
+                for (UIView *s in v.subviews) walk(s);
+            };
+            walk(w);
+            if (hit) return hit;
         }
     } @catch (__unused NSException *e) {
     }
     return nil;
+}
+
+static UIInputViewController *WXKBInputController(void) {
+    if (gInputVC && [gInputVC view]) return gInputVC;
+    UIInputViewController *vc = WXKBResolveInputVC();
+    if (vc) gInputVC = vc;
+    return vc;
 }
 
 static id<UITextDocumentProxy> WXKBProxy(void) {
@@ -1507,18 +1542,33 @@ static void WXKBEnsureActionBar(UIView *bar) {
     %orig;
     WXKBApplyBackground(self);
     WXKBApplyTransparency(self);
-    // 位移优先作用在最上层「输入视图控制器.view」上（它的位置由系统决定、
-    // 不会在原生 layout 里被反复重置）；拿不到时再退回自身。
-    UIView *iv = [WXKBInputController() view];
-    if (iv && iv != (UIView *)self) {
-        WXKBApplyOffset(iv);
-        // 清掉 1.6.1 时代直接加在 root 上的位移残留，避免双重位移
-        CGAffineTransform rt = ((UIView *)self).transform;
-        if (rt.tx != 0.0 || rt.ty != 0.0) {
-            ((UIView *)self).transform = CGAffineTransformIdentity;
+
+    // 位移作用在最上层「输入视图控制器.view」上：它是键盘扩展视图树的顶点，
+    // 没有裁剪容器，整体平移后整块键盘都会跟着动（1.6.3 作用在内部
+    // WBRootInputView，被它的容器裁掉，所以「没效果」）。
+    // 真正的输入控制器就挂在 self 的 nextResponder 链上，直接取最快也最准。
+    UIView *me = (UIView *)self;
+    UIInputViewController *ivc = nil;
+    UIResponder *nr = me.nextResponder;
+    while (nr) {
+        if ([nr isKindOfClass:[UIInputViewController class]]) {
+            ivc = (UIInputViewController *)nr;
+            break;
+        }
+        nr = nr.nextResponder;
+    }
+    if (ivc) {
+        gInputVC = ivc;
+        if (ivc.view) {
+            WXKBApplyOffset(ivc.view);
+            // 清掉作用在自身上的位移残留，避免双重位移
+            if (me.transform.tx != 0.0 || me.transform.ty != 0.0) {
+                me.transform = CGAffineTransformIdentity;
+            }
         }
     } else {
-        WXKBApplyOffset(self);
+        // 兜底：拿不到控制器就把位移压在自己身上
+        WXKBApplyOffset(me);
     }
     WXKBScheduleSync();
 }
@@ -1553,7 +1603,7 @@ static void WXKBEnsureActionBar(UIView *bar) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.3 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.4 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
 }
