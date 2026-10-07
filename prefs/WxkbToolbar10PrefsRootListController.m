@@ -63,19 +63,6 @@
     [s addObject:[self wxkbColorRow:@"按下高亮色" key:WXKB_KEY_KEY_HIGHLIGHT
                                  def:WXKB_DEF_HIGHLIGHT]];
 
-    // ---- 深色模式适配 ----
-    g = [PSSpecifier groupSpecifierWithName:@"深色模式适配"];
-    [g setProperty:@"系统进入深色模式时，自动把键盘背景换成深色、功能键换成深灰，"
-                  @"字母键（马卡龙等彩虹配色）保持粉彩不变。"
-                  @"下面单独设置过的深色颜色优先生效；切回浅色模式自动还原。"
-            forKey:@"footerText"];
-    [s addObject:g];
-    [s addObject:[self wxkbSwitch:@"跟随系统深色模式" key:WXKB_KEY_DARK_ADAPT def:YES]];
-    [s addObject:[self wxkbColorRow:@"深色背景颜色" key:WXKB_KEY_BG_COLOR_DARK
-                                 def:@"#1C1C1E"]];
-    [s addObject:[self wxkbColorRow:@"深色功能键底色" key:WXKB_KEY_FUNC_BG_DARK
-                                 def:@"#4A4A4E"]];
-
     // ---- 字母渐变 / 逐个 ----
     g = [PSSpecifier groupSpecifierWithName:@"字母键进阶"];
     [g setProperty:@"彩虹键盘：A→Z 每个字母一种颜色（优先级最高，覆盖下面的渐变与逐个配色）；"
@@ -99,7 +86,7 @@
     [g setProperty:@"点一下即套用整套配色，之后仍可在上方逐项微调。开启「启用自定义配色」后预设才会显示。"
             forKey:@"footerText"];
     [s addObject:g];
-    for (NSString *nm in @[@"马卡龙键盘", @"键帽粉彩", @"彩虹", @"极光", @"莫兰迪", @"暗夜", @"清新"]) {
+    for (NSString *nm in @[@"键帽粉彩", @"彩虹", @"极光", @"莫兰迪", @"暗夜", @"清新"]) {
         PSSpecifier *b = [self wxkbButton:[NSString stringWithFormat:@"应用「%@」", nm]
                                       action:@selector(applyPreset:)];
         [b setProperty:nm forKey:@"wxkbPreset"];
@@ -163,25 +150,6 @@
 // 预设名 -> 一套偏好。每行：键 -> 值（颜色用 #RRGGBB，开关用 @YES/@NO）
 - (NSDictionary *)wxkbPresetTable {
     return @{
-        @"马卡龙键盘": @{                  // 设计稿：马卡龙彩虹字母键 + 纯白功能键 + 深色字 + 浅白背景 + 凸起键帽
-            WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_RAINBOW: @YES,
-            WXKB_KEY_RAINBOW_STYLE: @1,    // 马卡龙（8 锚点插值：蜜桃粉→暖橘→浅卡其→奶黄→薄荷绿→浅湖青→雾霾蓝→香芋紫）
-            WXKB_KEY_KEYCAP3D: @YES,       // 凸起键帽 + 柔和阴影
-            WXKB_KEY_SHAPE: @0,
-            WXKB_KEY_CORNER: @9.0,         // 圆角矩形，圆润顺滑
-            WXKB_KEY_DIGIT_BG: @"#FFFFFF",
-            WXKB_KEY_FUNC_L_BG: @"#FFFFFF",
-            WXKB_KEY_FUNC_R_BG: @"#FFFFFF",
-            WXKB_KEY_SPACE_BG: @"#FFFFFF",
-            WXKB_KEY_KEY_TEXT: @"#3A3A3C", // 深色字体（上下分层时均用深色）
-            WXKB_KEY_KEY_HIGHLIGHT: @"#E9E9EE",
-            WXKB_KEY_BG_ENABLED: @YES,
-            WXKB_KEY_BG_COLOR: @"#ECE9E4", // 键盘甲板灰（非纯白，更像实体键盘底板；可在设置里改）
-            WXKB_KEY_DARK_ADAPT: @YES,     // 系统深色模式自动换深色甲板
-            WXKB_KEY_BG_COLOR_DARK: @"#1C1C1E",
-            WXKB_KEY_FUNC_BG_DARK: @"#4A4A4E"
-        },
         @"键帽粉彩": @{                    // 仿机械键盘粉彩键帽皮肤（马卡龙彩虹 + 3D 键帽）
             WXKB_KEY_KEY_ENABLED: @YES,
             WXKB_KEY_RAINBOW: @YES,

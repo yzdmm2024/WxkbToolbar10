@@ -24,12 +24,6 @@
 #define WXKB_KEY_BG_IMAGE_DATA @"bgImageData"   // 浅色模式背景图数据
 #define WXKB_KEY_BG_ALPHA      @"bgAlpha"       // 0.05 ~ 1.0
 
-// 深色模式适配：系统进入深色模式时自动把背景 / 功能键换成深色，
-// 字母键（马卡龙粉彩等彩虹配色）保持不变；单独设置的深色颜色优先。
-#define WXKB_KEY_DARK_ADAPT    @"darkAdapt"
-#define WXKB_KEY_BG_COLOR_DARK @"bgColorDark"   // 深色模式键盘背景色（缺省=由浅色背景色自动压暗）
-#define WXKB_KEY_FUNC_BG_DARK  @"keyFuncBgDark" // 深色模式功能键底色（缺省=由浅色功能键底色自动压暗）
-
 // 整键盘透明：把键盘自身所有不透明背景层清掉，透出后面的内容。
 // 按键本身（含按键文字色）不受影响。
 #define WXKB_KEY_TRANSPARENT   @"keyboardTransparent"
