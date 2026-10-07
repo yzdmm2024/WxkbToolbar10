@@ -1263,8 +1263,24 @@ static UIColor *WXKBGradientColor(NSInteger idx) {
 #pragma mark - 内置皮肤（百度「彩虹按键」真实键帽）
 
 // 从 jbroot 下的皮肤目录加载真实键帽 PNG（key26a = 26 字母键帽横排；key9a = 9 功能键帽横排），
-// 按索引切片成单颗键帽图。皮肤由「彩虹按键」指令从百度输入法导出，
-// 路径 = WXKB_SKIN_DIR/<皮肤名>/res/。图片缺失时由下方「平均色」兜底成彩虹配色。
+// 按图片里的**真实键距**切片成单颗键帽图。皮肤由「彩虹按键」指令从百度输入法导出，
+// 路径 = WXKB_SKIN_DIR/<皮肤名>/res/。
+//
+// ⚠️ 下面这几个数字是对 PNG 逐像素量出来的，别凭直觉改：
+//   key26a.png 2160x132 → 26 颗键帽、间距(pitch)恰好 80px，尾部还有 80px 留白(27*80=2160)。
+//       若按 2160/26≈83 等分，每片会多带 3px 隔壁键帽 → 键上出现一条错色竖纹（1.7.0 的 bug）。
+//       纵向 0..108 是键帽本体，109 之后是键帽下方的柔和投影，必须裁掉，
+//       否则投影会被压到键底、看起来就是「贴图没对齐 / 往下偏了」。
+//   key9a.png 1944x144 → 9 颗键帽、间距恰好 216px（正好等分）；纵向 0..121 是本体，122 起是投影。
+//   配色分三段：片 0..9 / 10..18 / 19..25，每段自成一条从左到右的彩虹
+//       （实测色相在片 9→10、18→19 处复位，且饱和度逐段变淡），
+//       三段长度 10/9/7 正是 QWERTY 三行的键数 → 字母必须按「行内第几个」取片，
+//       不能按字母表序号（1.7.0 就是按序号取，整片颜色全错位）。
+static const CGFloat kWXKBSkinLetterPitch = 80.0;    // key26a 键帽间距（px）
+static const CGFloat kWXKBSkinLetterCapH  = 109.0;   // key26a 键帽本体高（px，不含投影）
+static const CGFloat kWXKBSkinFuncPitch   = 216.0;   // key9a 键帽间距（px）
+static const CGFloat kWXKBSkinFuncCapH    = 122.0;   // key9a 键帽本体高（px，不含投影）
+
 static UIImage *gSkinLetterImg[26];
 static UIImage *gSkinFuncImg[9];
 static UIColor *gSkinLetterCol[26];
@@ -1272,21 +1288,27 @@ static UIColor *gSkinFuncCol[9];
 static BOOL      gSkinLoaded = NO;
 static BOOL      gSkinTried  = NO;
 
-// 把一张横排键帽条切成 count 片
-static NSArray<UIImage *> *WXKBSliceStrip(UIImage *img, NSInteger count) {
-    if (!img || count <= 0) return nil;
+// 把一张横排键帽条按「真实键距 pitch」切成 count 片，每片只取键帽本体（0..capH，丢掉投影）
+static NSArray<UIImage *> *WXKBSliceStrip(UIImage *img, NSInteger count,
+                                          CGFloat pitch, CGFloat capH) {
+    if (!img || count <= 0 || pitch <= 0.0) return nil;
     CGImageRef base = img.CGImage;
     if (!base) return nil;
     size_t W = CGImageGetWidth(base), H = CGImageGetHeight(base);
     if (W == 0 || H == 0) return nil;
-    CGFloat sliceW = (CGFloat)W / (CGFloat)count;
-    CGFloat scale = img.scale > 0 ? img.scale : 1.0;
-    NSMutableArray *arr = [NSMutableArray arrayWithCapacity:count];
+    CGFloat sc = (img.scale > 0) ? img.scale : 1.0;
+    CGFloat pw = pitch * sc, ph = capH * sc;
+    if (pw <= 0.0) return nil;
+    if (pw * (CGFloat)count > (CGFloat)W + 1.0) {     // 键距对不上（换了皮）：退回等分
+        pw = (CGFloat)W / (CGFloat)count;
+    }
+    if (ph <= 0.0 || ph > (CGFloat)H) ph = (CGFloat)H;
+    NSMutableArray *arr = [NSMutableArray arrayWithCapacity:(NSUInteger)count];
     for (NSInteger i = 0; i < count; i++) {
-        CGRect r = CGRectMake((CGFloat)i * sliceW, 0.0, sliceW, (CGFloat)H);
+        CGRect r = CGRectMake((CGFloat)i * pw, 0.0, pw, ph);
         CGImageRef cg = CGImageCreateWithImageInRect(base, r);
         if (!cg) { [arr addObject:[NSNull null]]; continue; }
-        UIImage *u = [UIImage imageWithCGImage:cg scale:scale
+        UIImage *u = [UIImage imageWithCGImage:cg scale:sc
                                   orientation:UIImageOrientationUp];
         CGImageRelease(cg);
         [arr addObject:u ? u : [NSNull null]];
@@ -1294,25 +1316,36 @@ static NSArray<UIImage *> *WXKBSliceStrip(UIImage *img, NSInteger count) {
     return arr;
 }
 
-// 取一张小图的平均色（图片加载失败时的兜底配色）
-static UIColor *WXKBAverageColor(UIImage *img) {
+// 取键帽「顶面」代表色：只采中上部键面（x 30~70%、y 18~50%），避开顶部高光、
+// 左右侧壁和底部投影。实测这份皮肤（key9a）这个区域的颜色与官方 demo.png 里
+// 每颗键的键面颜色**逐字节相同**，所以它就是「这颗键该用什么色」的标准答案。
+// 取像素用固定 RGBA 的位图上下文（UIGraphics* 是 BGRA 字节序，会把红蓝取反）。
+static UIColor *WXKBFaceColor(UIImage *img) {
     if (!img) return nil;
-    CGSize s = CGSizeMake(8, 8);
-    UIGraphicsBeginImageContextWithOptions(s, YES, 1.0);
-    [img drawInRect:CGRectMake(0, 0, s.width, s.height)];
-    UIImage *small = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    if (!small) return nil;
-    CGImageRef cg = small.CGImage;
+    CGImageRef cg = img.CGImage;
     if (!cg) return nil;
-    CGDataProviderRef dp = CGImageGetDataProvider(cg);
-    if (!dp) return nil;
-    NSData *data = (__bridge_transfer NSData *)CGDataProviderCopyData(dp);
-    if (!data || data.length < 4) return nil;
-    const unsigned char *p = (const unsigned char *)data.bytes;
-    NSUInteger n = 8 * 8, r = 0, g = 0, b = 0;
+    size_t W = CGImageGetWidth(cg), H = CGImageGetHeight(cg);
+    if (W < 4 || H < 4) return nil;
+    CGRect src = CGRectMake((CGFloat)W * 0.30, (CGFloat)H * 0.18,
+                            MAX((CGFloat)W * 0.40, 2.0), MAX((CGFloat)H * 0.32, 2.0));
+    CGImageRef sub = CGImageCreateWithImageInRect(cg, src);
+    if (!sub) return nil;
+    const size_t tw = 12, th = 12;
+    unsigned char buf[tw * th * 4];
+    memset(buf, 0, sizeof(buf));
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(buf, tw, th, 8, tw * 4, cs,
+                                             kCGImageAlphaPremultipliedLast |
+                                             kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(cs);
+    if (ctx) {
+        CGContextDrawImage(ctx, CGRectMake(0, 0, (CGFloat)tw, (CGFloat)th), sub);
+        CGContextRelease(ctx);
+    }
+    CGImageRelease(sub);
+    NSUInteger n = (NSUInteger)(tw * th), r = 0, g = 0, b = 0;
     for (NSUInteger i = 0; i < n; i++) {
-        r += p[i * 4 + 0]; g += p[i * 4 + 1]; b += p[i * 4 + 2];
+        r += buf[i * 4 + 0]; g += buf[i * 4 + 1]; b += buf[i * 4 + 2];
     }
     return [UIColor colorWithRed:(r / (CGFloat)n) / 255.0
                            green:(g / (CGFloat)n) / 255.0
@@ -1329,43 +1362,82 @@ static void WXKBLoadSkin(void) {
     if (!dir) return;
     UIImage *letter = [UIImage imageWithContentsOfFile:[dir stringByAppendingString:@"key26a.png"]];
     UIImage *func   = [UIImage imageWithContentsOfFile:[dir stringByAppendingString:@"key9a.png"]];
-    NSArray *la = WXKBSliceStrip(letter, 26);
-    NSArray *fa = WXKBSliceStrip(func, 9);
+    if (!letter) {   // a/b 两版键帽图配色一致，只差键面明暗，互为备份
+        letter = [UIImage imageWithContentsOfFile:[dir stringByAppendingString:@"key26b.png"]];
+    }
+    if (!func) {
+        func = [UIImage imageWithContentsOfFile:[dir stringByAppendingString:@"key9b.png"]];
+    }
+    NSArray *la = WXKBSliceStrip(letter, 26, kWXKBSkinLetterPitch, kWXKBSkinLetterCapH);
+    NSArray *fa = WXKBSliceStrip(func,    9, kWXKBSkinFuncPitch,   kWXKBSkinFuncCapH);
     for (NSInteger i = 0; i < 26; i++) {
         id o = la ? la[i] : nil;
         if ([o isKindOfClass:[UIImage class]]) {
             gSkinLetterImg[i] = o;
-            gSkinLetterCol[i] = WXKBAverageColor(o);
+            gSkinLetterCol[i] = WXKBFaceColor(o);
         }
     }
     for (NSInteger i = 0; i < 9; i++) {
         id o = fa ? fa[i] : nil;
         if ([o isKindOfClass:[UIImage class]]) {
             gSkinFuncImg[i] = o;
-            gSkinFuncCol[i] = WXKBAverageColor(o);
+            gSkinFuncCol[i] = WXKBFaceColor(o);
         }
     }
     if (gSkinLetterImg[0]) gSkinLoaded = YES; else gSkinTried = NO;  // 没读到则下次再试
 }
 
-// 取一颗键对应的皮肤键帽图。字母键按 alphabetIndex；其余按 identifier 哈希稳定取 9 片之一。
+// 字母 → 皮肤片号。皮肤条按键盘行排版：26 片分 10/9/7 三段（正好 QWERTY 三行的键数，
+// 每段自成一条从左到右的彩虹），所以取片必须按「行内第几个」，而不是字母表序号。
+static NSInteger WXKBSkinSlotForLetter(NSInteger letterIdx) {   // 0=A … 25=Z
+    static const char *rows[3] = { "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM" };
+    static const NSInteger off[3] = { 0, 10, 19 };
+    if (letterIdx < 0 || letterIdx >= 26) return NSNotFound;
+    char want = (char)('A' + letterIdx);
+    for (NSInteger r = 0; r < 3; r++) {
+        const char *s = rows[r];
+        for (NSInteger k = 0; s[k] != '\0'; k++) {
+            if (s[k] == want) return off[r] + k;
+        }
+    }
+    return NSNotFound;
+}
+
+// 非字母键 → key9a 的哪一片（按 identifier 稳定哈希：同一颗键每次都是同一色）
+static NSInteger WXKBSkinFuncSlot(NSString *ident) {
+    if (!ident.length) return 0;
+    NSInteger j = (NSInteger)([ident hash] % 9);
+    return (j < 0) ? (j + 9) : j;
+}
+
+// 取一颗键对应的皮肤键帽图
 static UIImage *WXKBSkinImageFor(WBKeyView *v) {
     WXKBLoadSkin();
     NSInteger li = WXKBLetterIndex(v);
-    if (li != NSNotFound && gSkinLetterImg[li]) {
-        return gSkinLetterImg[li];
+    NSInteger slot = (li != NSNotFound) ? WXKBSkinSlotForLetter(li) : NSNotFound;
+    BOOL isLetter = (slot != NSNotFound);
+    if (isLetter && slot < 26 && gSkinLetterImg[slot]) {   // 字母键 → 字母条对应那片
+        return gSkinLetterImg[slot];
     }
-    NSString *ident = WXKBIdentifier(v) ?: @"";
-    NSInteger j = 0;
-    if (ident.length) {
-        j = (NSInteger)([ident hash] % 9);
-        if (j < 0) j += 9;
-    }
+    NSInteger j = WXKBSkinFuncSlot(WXKBIdentifier(v));
     if (gSkinFuncImg[j]) return gSkinFuncImg[j];
-    if (gSkinLetterImg[0]) {                       // 功能图也缺失：退回字母条循环取色
-        NSInteger k = (li != NSNotFound) ? li : (j % 26);
-        return gSkinLetterImg[k];
+    if (isLetter && slot < 26) return gSkinLetterImg[slot];  // 功能条缺失：退回字母条
+    return nil;
+}
+
+// 皮肤配色（走原生按键底色通道：让整颗键——包括原生白键框——都被皮肤染色，位置天然对齐）
+static UIColor *WXKBSkinColorFor(WBKeyView *v) {
+    if (!gEnabled || !gSkinEnabled || !v) return nil;
+    WXKBLoadSkin();
+    NSInteger li = WXKBLetterIndex(v);
+    if (li != NSNotFound) {
+        NSInteger slot = WXKBSkinSlotForLetter(li);
+        if (slot != NSNotFound && slot < 26 && gSkinLetterCol[slot]) {
+            return gSkinLetterCol[slot];
+        }
     }
+    NSInteger j = WXKBSkinFuncSlot(WXKBIdentifier(v));
+    if (j >= 0 && j < 9 && gSkinFuncCol[j]) return gSkinFuncCol[j];
     return nil;
 }
 
@@ -1434,7 +1506,16 @@ static UIColor *WXKBLetterColorFor(NSInteger idx) {
 }
 
 static UIColor *WXKBKeyBackground(WBKeyView *v) {
-    if (!gEnabled || !gKeyEnabled) {
+    if (!gEnabled) {
+        return nil;
+    }
+    // 内置皮肤优先：直接用皮肤自己那颗键的颜色（不受「键帽颜色」开关影响），
+    // 这样连原生键框一起染色，键帽图只需负责立体明暗，位置天然对齐。
+    UIColor *skin = WXKBSkinColorFor(v);
+    if (skin) {
+        return skin;
+    }
+    if (!gKeyEnabled) {
         return nil;
     }
     switch (WXKBKindOf(v)) {
@@ -1910,7 +1991,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.7.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 1.7.1 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, gCap3D, gCorner, gKbOffset, gSkinEnabled);
 }
