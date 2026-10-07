@@ -63,6 +63,19 @@
     [s addObject:[self wxkbColorRow:@"按下高亮色" key:WXKB_KEY_KEY_HIGHLIGHT
                                  def:WXKB_DEF_HIGHLIGHT]];
 
+    // ---- 深色模式适配 ----
+    g = [PSSpecifier groupSpecifierWithName:@"深色模式适配"];
+    [g setProperty:@"系统进入深色模式时，自动把键盘背景换成深色、功能键换成深灰，"
+                  @"字母键（马卡龙等彩虹配色）保持粉彩不变。"
+                  @"下面单独设置过的深色颜色优先生效；切回浅色模式自动还原。"
+            forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbSwitch:@"跟随系统深色模式" key:WXKB_KEY_DARK_ADAPT def:YES]];
+    [s addObject:[self wxkbColorRow:@"深色背景颜色" key:WXKB_KEY_BG_COLOR_DARK
+                                 def:@"#1C1C1E"]];
+    [s addObject:[self wxkbColorRow:@"深色功能键底色" key:WXKB_KEY_FUNC_BG_DARK
+                                 def:@"#4A4A4E"]];
+
     // ---- 字母渐变 / 逐个 ----
     g = [PSSpecifier groupSpecifierWithName:@"字母键进阶"];
     [g setProperty:@"彩虹键盘：A→Z 每个字母一种颜色（优先级最高，覆盖下面的渐变与逐个配色）；"
@@ -164,7 +177,10 @@
             WXKB_KEY_KEY_TEXT: @"#3A3A3C", // 深色字体（上下分层时均用深色）
             WXKB_KEY_KEY_HIGHLIGHT: @"#E9E9EE",
             WXKB_KEY_BG_ENABLED: @YES,
-            WXKB_KEY_BG_COLOR: @"#ECE9E4"  // 键盘甲板灰（非纯白，更像实体键盘底板；可在设置里改）
+            WXKB_KEY_BG_COLOR: @"#ECE9E4", // 键盘甲板灰（非纯白，更像实体键盘底板；可在设置里改）
+            WXKB_KEY_DARK_ADAPT: @YES,     // 系统深色模式自动换深色甲板
+            WXKB_KEY_BG_COLOR_DARK: @"#1C1C1E",
+            WXKB_KEY_FUNC_BG_DARK: @"#4A4A4E"
         },
         @"键帽粉彩": @{                    // 仿机械键盘粉彩键帽皮肤（马卡龙彩虹 + 3D 键帽）
             WXKB_KEY_KEY_ENABLED: @YES,

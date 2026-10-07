@@ -172,6 +172,9 @@ static UIColor  *gTextColor    = nil;
 static UIColor  *gTextColorDark = nil;
 static UIColor  *gHighlight    = nil;
 static UIColor  *gHighlightDark = nil;
+static BOOL      gDarkAdapt    = YES;    // 系统深色模式时自动换深色背景/功能键
+static UIColor  *gBgColorDark  = nil;    // 深色模式背景色（nil = 自动压暗浅色背景）
+static UIColor  *gFuncBgDark   = nil;    // 深色模式功能键底色（nil = 自动压暗）
 static BOOL      gGradEnabled  = NO;
 static UIColor  *gGradFrom     = nil;
 static UIColor  *gGradTo       = nil;
@@ -330,6 +333,12 @@ static void WXKBReload(BOOL force) {
     gTextColorDark = WXKBColor(d[WXKB_KEY_KEY_TEXT_DARK], 1.0);
     gHighlightDark = WXKBColor(d[WXKB_KEY_KEY_HIGHLIGHT_DARK], 1.0);
 
+    // ---- 深色模式适配 ----
+    id da = d[WXKB_KEY_DARK_ADAPT];
+    gDarkAdapt = da ? [da boolValue] : YES;
+    gBgColorDark = WXKBColor(d[WXKB_KEY_BG_COLOR_DARK], gBgAlpha);
+    gFuncBgDark  = WXKBColor(d[WXKB_KEY_FUNC_BG_DARK], 1.0);
+
     // ---- 渐变 / 逐个 ----
     gGradEnabled = [d[WXKB_KEY_GRAD_ENABLED] boolValue];
     gGradFrom = WXKBColor(d[WXKB_KEY_GRAD_FROM], 1.0) ?: [UIColor colorWithRed:0.35 green:0.78 blue:0.98 alpha:1.0];
@@ -459,6 +468,9 @@ static void WXKBApplyShapeMask(UIView *target, NSInteger shape, CGSize sz) {
 
 static void WXKBApplyCorner(UIView *v);
 static UIColor *WXKBKeyBackground(WBKeyView *v);
+static BOOL WXKBDarkMode(void);
+static UIColor *WXKBDarken(UIColor *c, CGFloat brightnessFactor, CGFloat saturationFactor);
+static UIColor *WXKBEffFuncBg(UIColor *light);
 
 // —— 立体键帽（真实键盘风，对齐参考图：细边均匀绕键一周 + 下方柔投影）——
 // 观感来自两层：① 全轮廓「键帽侧面」（底色加深 20%）；② 四周内缩 2.5pt 的「顶面」
@@ -1302,6 +1314,7 @@ static UIColor *WXKBKeyBackground(WBKeyView *v) {
     if (!gEnabled || !gKeyEnabled) {
         return nil;
     }
+    BOOL darkOn = WXKBDarkMode() && gDarkAdapt;
     switch (WXKBKindOf(v)) {
         case WXKBKeyKindLetter: {
             NSInteger idx = WXKBLetterIndex(v);
@@ -1312,23 +1325,66 @@ static UIColor *WXKBKeyBackground(WBKeyView *v) {
                 UIColor *c = WXKBDigitRainbowColor(WXKBIdentifier(v));
                 if (c) return c;
             }
-            if (gDigitBg) return gDigitBg;
+            if (gDigitBg) {
+                if (!darkOn) return gDigitBg;
+                return gFuncBgDark ?: WXKBDarken(gDigitBg, 0.30, 0.55);
+            }
             // 未单独设置数字/符号键底色时沿用旧行为：按左右半区归功能键组
             UIView *win = v.window;
             CGFloat mid = win ? (win.bounds.size.width / 2.0) : 195.0;
             CGFloat cx = [v.superview convertPoint:CGPointMake(CGRectGetMidX(v.bounds),
                                                                CGRectGetMidY(v.bounds))
                                             toView:win].x;
-            return (cx < mid) ? gFuncLBg : gFuncRBg;
+            return (cx < mid) ? WXKBEffFuncBg(gFuncLBg) : WXKBEffFuncBg(gFuncRBg);
         }
         case WXKBKeyKindFuncLeft:
-            return gFuncLBg;
+            return WXKBEffFuncBg(gFuncLBg);
         case WXKBKeyKindFuncRight:
-            return gFuncRBg;
+            return WXKBEffFuncBg(gFuncRBg);
         case WXKBKeyKindSpace:
-            return gSpaceBg;
+            return WXKBEffFuncBg(gSpaceBg);
     }
     return nil;
+}
+
+// 把一个浅色压成深色（保色相，压亮度、降饱和），用于深色模式自动适配。
+static UIColor *WXKBDarken(UIColor *c, CGFloat brightnessFactor, CGFloat saturationFactor) {
+    if (!c) {
+        return nil;
+    }
+    CGFloat h, s, b, a;
+    if ([c getHue:&h saturation:&s brightness:&b alpha:&a]) {
+        return [UIColor colorWithHue:h
+                          saturation:(s * saturationFactor)
+                          brightness:(b * brightnessFactor)
+                               alpha:a];
+    }
+    CGFloat w, al;
+    if ([c getWhite:&w alpha:&al]) {
+        return [UIColor colorWithWhite:(w * brightnessFactor) alpha:al];
+    }
+    return c;
+}
+
+// 深色模式适配是否正在生效（系统深色 + 用户开了「跟随系统深色模式」）
+static BOOL WXKBDarkOn(void) {
+    return WXKBDarkMode() && gDarkAdapt;
+}
+
+// 键盘背景的实际颜色：深色模式下用显式深色，否则由浅色背景自动压暗
+static UIColor *WXKBEffBgColor(void) {
+    if (WXKBDarkOn()) {
+        return gBgColorDark ?: WXKBDarken(gBgColor, 0.22, 0.60);
+    }
+    return gBgColor;
+}
+
+// 功能键（左右功能键 / 空格 / 数字·符号主键）的实际底色
+static UIColor *WXKBEffFuncBg(UIColor *light) {
+    if (WXKBDarkOn()) {
+        return gFuncBgDark ?: WXKBDarken(light, 0.30, 0.55);
+    }
+    return light;
 }
 
 static BOOL WXKBDarkMode(void) {
@@ -1339,9 +1395,18 @@ static BOOL WXKBDarkMode(void) {
     return NO;
 }
 
-static UIColor *WXKBKeyText(void) {
+static UIColor *WXKBKeyTextFor(WBKeyView *v) {
     if (!(gEnabled && gKeyEnabled)) return nil;
-    return WXKBDarkMode() ? (gTextColorDark ?: gTextColor) : gTextColor;
+    if (WXKBDarkMode()) {
+        if (gTextColorDark) return gTextColorDark;
+        if (gDarkAdapt) {
+            // 字母键保持马卡龙粉彩底 → 深色字依然可读；
+            // 功能键被自动换成深色底 → 换浅色字，否则看不清。
+            if (WXKBKindOf(v) == WXKBKeyKindLetter) return gTextColor;
+            return [UIColor colorWithWhite:0.94 alpha:1.0];
+        }
+    }
+    return gTextColor;
 }
 
 static UIColor *WXKBKeyHighlight(void) {
@@ -1395,7 +1460,7 @@ static void WXKBApplyBackground(UIView *host) {
         bg.layer.contents = (__bridge id)img.CGImage;
     } else if (gBgEnabled) {
         bg.layer.contents = nil;
-        bg.backgroundColor = gBgColor;
+        bg.backgroundColor = WXKBEffBgColor();
     } else {
         // 只开了整键盘透明：这一层保持全透
         bg.layer.contents = nil;
@@ -1637,19 +1702,19 @@ static void WXKBFireAction(int c) {
 }
 
 - (UIColor *)tintColorForCurrentState {
-    UIColor *c = WXKBKeyText();
+    UIColor *c = WXKBKeyTextFor(self);
     if (c) return c;
     return %orig;
 }
 
 - (UIColor *)normalTintColorForCurrentState {
-    UIColor *c = WXKBKeyText();
+    UIColor *c = WXKBKeyTextFor(self);
     if (c) return c;
     return %orig;
 }
 
 - (UIColor *)subTintColorForCurrentState {
-    UIColor *c = WXKBKeyText();
+    UIColor *c = WXKBKeyTextFor(self);
     if (c) return c;
     return %orig;
 }
@@ -1697,13 +1762,13 @@ static void WXKBFireAction(int c) {
 }
 
 - (UIColor *)normalTintColorForCurrentState {
-    UIColor *c = WXKBKeyText();
+    UIColor *c = WXKBKeyTextFor((WBKeyView *)self);
     if (c) return c;
     return %orig;
 }
 
 - (UIColor *)highlightedTintColorForCurrentState {
-    UIColor *c = WXKBKeyText();
+    UIColor *c = WXKBKeyTextFor((WBKeyView *)self);
     if (c) return c;
     return %orig;
 }
