@@ -63,6 +63,15 @@
 //   3) 按钮条定位改为精确覆盖原生工具栏那一行：1.6.5 的「顶部一小条」被
 //      WXKBClearBgTree 误清了深色底（白图标和原生图标叠影成一团乱像）。
 //      现在 ClearBgTree 按 tag 跳过按钮条，条子精确盖住工具栏行、深色圆角底。
+// 1.6.9 行为（用户实测 1.6.8 截图：按钮前一段空白 / 关掉的功能还显示一排圆圈图标）：
+//   1) 空白根治：增强按钮原来被放在「视口宽度」之后（nx 兜底到 contentSize/视口宽），
+//      原生图标被隐藏后按钮和 logo 之间隔一条大空白。改为紧跟原生内容 maxX 排布；
+//      contentSize 同时往回收（旧版只扩不收，残留滑不到头的空白区）。
+//   2) 「关了还显示」根治（frida 真机实锤）：手机上 funcList=(36,17,14,29,32,33,35,5)，
+//      与截图 8 个圆圈图标一一对应 —— 「需微信主 App」组的功能码（文字整理/单手模式/
+//      小程序/灵动表达/问AI/字体滤镜/排版成图）躺在清单里被原样放行绘制。它们在键盘
+//      扩展进程里点了永远无反应，现在工具栏一律拦截不显示，面板同步改为「不会显示」
+//      纯信息组、禁止加回、落盘时清理。
 // 1.6.8 行为（用户实测 1.6.7 截图：下移后顶部露灰块 / 图标太大 / 点击后要滚回）：
 //   1) 下移后顶部灰块：整体平移后，顶部露出的是键盘窗口/容器（UIInputView 等）
 //      的背景色。位移非零时清祖先链背景（透明开启时窗口整树已由透明逻辑清理，
@@ -799,11 +808,22 @@ static NSArray *WXKBApplyFuncList(NSArray *in) {
     NSMutableArray *out = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
     if ([gFuncList isKindOfClass:[NSArray class]] && gFuncList.count > 0) {
+        // 1.6.9（真机 frida 实锤）：「需微信主 App」的功能码（文字整理/单手模式/小程序/
+        // 灵动表达/问AI/字体滤镜/排版成图）即使躺在用户清单里也要拦掉 —— 它们在键盘
+        // 扩展进程里点了永远没有反应，面板上也写着「无反应」。1.6.8 原样放行导致
+        // 用户以为已关闭的 8 个图标仍然画在工具栏上（funcList 与截图图标一一对应）。
+        NSMutableSet *hostOnly = [NSMutableSet set];
+        for (int i = 0; i < kWXKBFuncNeedsHostAppCount; i++) {
+            [hostOnly addObject:@(kWXKBFuncNeedsHostApp[i])];
+        }
         for (id o in gFuncList) {
             if (![o respondsToSelector:@selector(intValue)]) {
                 continue;
             }
             NSNumber *n = @([o intValue]);
+            if ([hostOnly containsObject:n]) {
+                continue;
+            }
             if (![seen containsObject:n]) {
                 [out addObject:n];
                 [seen addObject:n];
@@ -1411,14 +1431,16 @@ static void WXKBEnsureActionBar(UIView *root) {
     CGSize svb = sv.bounds.size;
     if (svb.width < 60 || svb.height < 20) return;
 
-    // 原生内容的右边界：取 contentSize 与所有非我们子视图的 maxX 的较大者
-    CGFloat nx = sv.contentSize.width;
+    // 原生内容的右边界：所有非我们子视图的 maxX。
+    // 1.6.9：不再用 contentSize.width / 视口宽度兜底 —— 那会让按钮和原生内容之间
+    // 隔出一条大空白（用户实测截图：logo 后面一大段空白才是我们的按钮）。
+    // 现在紧跟原生内容排布；原生图标被隐藏后按钮直接贴在 logo 后面，无空白。
+    CGFloat nx = 0;
     for (UIView *v in sv.subviews) {
         if (v == bar) continue;
         CGFloat mx = CGRectGetMaxX(v.frame);
         if (mx > nx) nx = mx;
     }
-    if (nx < svb.width - 0.5) nx = svb.width;   // contentSize 偏小时退化为视口宽
 
     BOOL needRebuild = NO;
     if (!bar) {
@@ -1484,12 +1506,14 @@ static void WXKBEnsureActionBar(UIView *root) {
         }
     }
 
-    // contentSize 往右扩到能滚到我们的按钮（原生刷新会重置，这里每次都补）
+    // contentSize 收敛到「刚好能滚到我们按钮」：原生刷新会重置，这里每次都补；
+    // 1.6.9 起也会往回收（旧版只扩不收，按钮左移后残留一段滑不到头的空白）
     CGFloat wantW = CGRectGetMaxX(bar.frame) + 4;
-    if (sv.contentSize.width < wantW - 0.5) {
+    if (wantW < svb.width) wantW = svb.width;
+    if (fabs(sv.contentSize.width - wantW) > 0.5) {
         sv.contentSize = CGSizeMake(wantW, sv.contentSize.height);
     }
-    sv.scrollEnabled = YES;
+    sv.scrollEnabled = wantW > svb.width + 0.5;
 }
 
 #pragma mark - Hooks
@@ -1712,7 +1736,7 @@ static void WXKBEnsureActionBar(UIView *root) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.8 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.9 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
 }

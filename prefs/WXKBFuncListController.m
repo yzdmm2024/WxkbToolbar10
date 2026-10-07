@@ -135,24 +135,17 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
         [s addObject:sp];
     }
 
-    // ---- 分组二：需主 App（键盘里点了没反应） ----
-    NSMutableArray *hostOn = [NSMutableArray array];
-    NSMutableArray *hostHidden = [NSMutableArray array];
-    for (NSNumber *n in enabled) {
-        if (WXKBFuncNeedsHostApp(n.intValue)) [hostOn addObject:n];
-    }
-    for (NSNumber *n in all) {
-        if (!WXKBFuncNeedsHostApp(n.intValue)) continue;
-        if ([hostOn containsObject:n]) continue;
-        [hostHidden addObject:n];
-    }
-
-    g = [PSSpecifier groupSpecifierWithName:@"需微信主 App（键盘里点了没反应）"];
-    [g setProperty:@"这几项由微信主 App 处理，键盘扩展进程里点了不会有任何反应，"
-                  @"所以默认不显示。确认要用再自己加回来。"
+    // ---- 分组二：需主 App（永不显示） ----
+    // 1.6.9：这组改为纯信息展示。之前它们躺在启用清单里就会画到工具栏上（用户截图
+    // 实锤：8 个「无反应」图标全来自清单残留），且面板分组样式让用户以为「单独分组
+    // = 已关闭」。现在键盘侧统一拦截，面板明确标注「不会显示」。
+    g = [PSSpecifier groupSpecifierWithName:@"需微信主 App（不会显示）"];
+    [g setProperty:@"这几项必须由微信主 App 处理，键盘扩展进程里点了没有任何反应，"
+                  @"工具栏永远不显示（清单里残留的也会被自动忽略）。"
             forKey:@"footerText"];
     [s addObject:g];
-    for (NSNumber *n in hostOn) {
+    for (NSNumber *n in all) {
+        if (!WXKBFuncNeedsHostApp(n.intValue)) continue;
         PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:
                               [WXKBFuncName(n.intValue) stringByAppendingString:@"（无反应）"]
                                                          target:self
@@ -161,31 +154,16 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
                                                          detail:nil
                                                            cell:PSStaticTextCell
                                                            edit:nil];
-        [sp setProperty:n forKey:@"funcCode"];
-        [sp setProperty:@YES forKey:@"wxkbHostOnly"];
         [s addObject:sp];
     }
 
     // ---- 分组三：已隐藏 ----
-    if (kbHidden.count > 0 || hostHidden.count > 0) {
+    if (kbHidden.count > 0) {
         g = [PSSpecifier groupSpecifierWithName:@"已隐藏（点击加回工具栏）"];
         [g setProperty:@"点击任意一项即可重新加回工具栏。" forKey:@"footerText"];
         [s addObject:g];
         for (NSNumber *n in kbHidden) {
             PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:WXKBFuncName(n.intValue)
-                                                             target:self
-                                                                set:nil
-                                                                get:nil
-                                                             detail:nil
-                                                               cell:PSButtonCell
-                                                               edit:nil];
-            [sp setProperty:n forKey:@"funcCode"];
-            sp->action = @selector(addFunc:);
-            [s addObject:sp];
-        }
-        for (NSNumber *n in hostHidden) {
-            PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:
-                                  [WXKBFuncName(n.intValue) stringByAppendingString:@"（无反应）"]
                                                              target:self
                                                                 set:nil
                                                                 get:nil
@@ -207,14 +185,10 @@ static NSArray<NSNumber *> *WXKBAllFuncs(void) {
     return 1;
 }
 
-// specifiers 里「已显示」区的顺序：先键盘内可用，再需主 App
+// specifiers 里「已显示」区的顺序：只含键盘内可用的启用项
+// （1.6.9 起需主 App 的项永不进工具栏，也不再算可见行）
 static NSArray<NSNumber *> *WXKBOrderedVisible(void) {
-    NSMutableArray *a = [NSMutableArray array];
-    for (NSNumber *n in WXKBDefaultEnabledSplit()) [a addObject:n];
-    for (NSNumber *n in WXKBEnabledFuncs()) {
-        if (WXKBFuncNeedsHostApp(n.intValue)) [a addObject:n];
-    }
-    return a;
+    return WXKBDefaultEnabledSplit();
 }
 
 - (NSUInteger)visibleCount {
@@ -222,7 +196,14 @@ static NSArray<NSNumber *> *WXKBOrderedVisible(void) {
 }
 
 - (void)saveEnabled:(NSArray<NSNumber *> *)list {
-    WXKBSetPref(WXKB_KEY_FUNCLIST, list);
+    // 1.6.9：需主 App 的码不落盘（键盘侧也会拦截，这里从源头清理）
+    NSMutableArray *clean = [NSMutableArray array];
+    for (NSNumber *n in list) {
+        if (![n respondsToSelector:@selector(intValue)]) continue;
+        if (WXKBFuncNeedsHostApp(n.intValue)) continue;
+        if (![clean containsObject:n]) [clean addObject:n];
+    }
+    WXKBSetPref(WXKB_KEY_FUNCLIST, clean);
     [[self class] wxkbNotifyChanged];
     [self reloadSpecifiers];
 }
@@ -230,6 +211,10 @@ static NSArray<NSNumber *> *WXKBOrderedVisible(void) {
 - (void)addFunc:(PSSpecifier *)specifier {
     NSNumber *code = [specifier propertyForKey:@"funcCode"];
     if (!code) {
+        return;
+    }
+    // 1.6.9：需主 App 的项点了永远没反应，不再允许加回工具栏
+    if (WXKBFuncNeedsHostApp(code.intValue)) {
         return;
     }
     NSMutableArray *list = [WXKBEnabledFuncs() mutableCopy];
