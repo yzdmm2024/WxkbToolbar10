@@ -63,6 +63,13 @@
 //   3) 按钮条定位改为精确覆盖原生工具栏那一行：1.6.5 的「顶部一小条」被
 //      WXKBClearBgTree 误清了深色底（白图标和原生图标叠影成一团乱像）。
 //      现在 ClearBgTree 按 tag 跳过按钮条，条子精确盖住工具栏行、深色圆角底。
+// 1.6.8 行为（用户实测 1.6.7 截图：下移后顶部露灰块 / 图标太大 / 点击后要滚回）：
+//   1) 下移后顶部灰块：整体平移后，顶部露出的是键盘窗口/容器（UIInputView 等）
+//      的背景色。位移非零时清祖先链背景（透明开启时窗口整树已由透明逻辑清理，
+//      不重复）；位移归零时精确还原。
+//   2) 增强按钮图标改小：pointSize 固定 17（与原生工具栏图标观感一致，不再跟随
+//      容器高度放大），颜色不再用微信蓝色 tint，改为跟随深浅模式的深灰黑/白。
+//   3) 点击增强按钮后，原生工具栏滚动条自动动画滚回最左（回到原生功能区）。
 // 1.6.2 行为：
 //   1) 编辑增强按钮点不了二次修复：弃用脆弱的 addTarget + hitTest 方案，改为在
 //      原生滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer，
@@ -574,6 +581,58 @@ static void WXKBApplyTransparency(UIView *host) {
 // 屏幕底边以下物理上无法显示（hook 不到「被吃掉」的部分），所以下移上限 =
 // 底部安全区（键盘正常悬停在它上方，往下平移刚好填满这条空当、贴到屏幕底），
 // 超过就会把最底下一排裁出屏幕。safeAreaInsets 读不到时兜底 46pt（覆盖小黑条区）。
+// 1.6.8：位移非零时清祖先链背景 —— 整体平移后顶部露出的灰白块就是键盘容器
+// （UIInputView / hosted 容器 / 窗口）画的背景；清掉后露出的是 App 内容，观感即
+// 「键盘贴底、上方无空洞」。透明开启时窗口整树已被 WXKBApplyTransparency 清掉，
+// 无需重复；位移归零时精确还原祖先链。
+static void WXKBClearAncestorBg(UIView *root) {
+    UIView *p = root.superview;
+    while (p) {
+        if ([p isKindOfClass:[UIVisualEffectView class]]) {
+            UIVisualEffectView *ve = (UIVisualEffectView *)p;
+            if (!objc_getAssociatedObject(ve, kWXKBOrigEffectKey)) {
+                objc_setAssociatedObject(ve, kWXKBOrigEffectKey,
+                                         ve.effect, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            ve.effect = nil;
+        }
+        if (!objc_getAssociatedObject(p, kWXKBOrigBgKey)) {
+            objc_setAssociatedObject(p, kWXKBOrigBgKey,
+                                     p.backgroundColor ?: [UIColor clearColor],
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(p, kWXKBOrigOpaqueKey,
+                                     @(p.opaque), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        p.backgroundColor = [UIColor clearColor];
+        p.opaque = NO;
+        p.layer.opaque = NO;
+        if ([p isKindOfClass:[UIWindow class]]) break;
+        p = p.superview;
+    }
+}
+
+static void WXKBRestoreAncestorBg(UIView *root) {
+    UIView *p = root.superview;
+    while (p) {
+        UIVisualEffect *e = objc_getAssociatedObject(p, kWXKBOrigEffectKey);
+        if (e && [p isKindOfClass:[UIVisualEffectView class]]) {
+            ((UIVisualEffectView *)p).effect = e;
+            objc_setAssociatedObject(p, kWXKBOrigEffectKey, nil,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        UIColor *bg = objc_getAssociatedObject(p, kWXKBOrigBgKey);
+        if (bg) {
+            p.backgroundColor = (bg == [UIColor clearColor]) ? nil : bg;
+            NSNumber *op = objc_getAssociatedObject(p, kWXKBOrigOpaqueKey);
+            p.opaque = op ? op.boolValue : YES;
+            objc_setAssociatedObject(p, kWXKBOrigBgKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(p, kWXKBOrigOpaqueKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        if ([p isKindOfClass:[UIWindow class]]) break;
+        p = p.superview;
+    }
+}
+
 static void WXKBApplyOffset(UIView *root) {
     if (!root) return;
     @try {
@@ -590,6 +649,10 @@ static void WXKBApplyOffset(UIView *root) {
                 : CGAffineTransformIdentity;
         if (!CGAffineTransformEqualToTransform(root.transform, t)) {
             root.transform = t;
+        }
+        if (!gTransparent) {
+            if (fabs(off) > 0.5) WXKBClearAncestorBg(root);
+            else                 WXKBRestoreAncestorBg(root);
         }
     } @catch (__unused NSException *e) {
     }
@@ -1260,6 +1323,20 @@ static void WXKBFireAction(int c) {
 - (void)fire:(id)sender {
     NSNumber *code = objc_getAssociatedObject(sender, "wxkbCode");
     if (code) WXKBFireAction((int)code.intValue);
+    // 1.6.8：点完增强按钮后，原生工具栏自动动画滚回最左（回到原生功能区）——
+    // 我们的按钮在队尾，用户左滑过来点一下，不应停在队尾。
+    UIScrollView *sv = nil;
+    UIView *p = [sender superview];
+    while (p && !sv) {
+        if ([p isKindOfClass:[UIScrollView class]]) sv = (UIScrollView *)p;
+        else p = [p superview];
+    }
+    if (sv) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [sv setContentOffset:CGPointZero animated:YES];
+        });
+    }
 }
 @end
 
@@ -1356,11 +1433,12 @@ static void WXKBEnsureActionBar(UIView *root) {
         needRebuild = YES;
     }
 
-    // 按钮尺寸跟随滚动容器高度，方形，与原生图标观感一致
+    // 按钮尺寸：触控区 24~30，图标 pointSize 固定 17 —— 与原生工具栏图标观感一致
+    // （1.6.7 用 btn*0.55 跟随容器高度放大，用户实测「图标太大了」）。
     NSInteger n = actions.count;
     CGFloat h = svb.height - 8;
-    if (h > 34) h = 34;
-    if (h < 22) h = 22;
+    if (h > 30) h = 30;
+    if (h < 24) h = 24;
     CGFloat btn = h, gap = 6;
     CGFloat w = n * btn + (n - 1) * gap;
     bar.frame = CGRectMake(nx + 4, (svb.height - h) / 2.0, w, h);
@@ -1379,18 +1457,25 @@ static void WXKBEnsureActionBar(UIView *root) {
         CGFloat x = 0;
         for (NSNumber *nm in actions) {
             int code = nm.intValue;
-            // UIButtonTypeSystem：SF Symbol 模板图自动跟随工具栏 tint，
-            // 与原生图标同色（浅色键盘黑、深色键盘白），不再用反差大的深色底
             UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
             b.frame = CGRectMake(x, 0, btn, btn);
             b.tag = code;
-            UIImage *img = WXKBActionImage(code, btn * 0.55);
+            UIImage *img = WXKBActionImage(code, 17);
             if (img) {
                 [b setImage:img forState:UIControlStateNormal];
             } else {
                 [b setTitle:@"?" forState:UIControlStateNormal];
                 b.titleLabel.font = [UIFont systemFontOfSize:13];
             }
+            // 颜色跟随深浅模式（浅色=深灰黑、深色=白），与原生图标一致；
+            // 不再用 UIButtonTypeSystem 默认蓝 tint（用户实测「颜色突兀」）
+            BOOL dark = NO;
+            if (@available(iOS 12.0, *)) {
+                dark = (sv.traitCollection.userInterfaceStyle ==
+                        UIUserInterfaceStyleDark);
+            }
+            b.tintColor = dark ? [UIColor whiteColor]
+                               : [UIColor colorWithWhite:0.13 alpha:1.0];
             objc_setAssociatedObject(b, "wxkbCode", nm, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             [b addTarget:target action:@selector(fire:)
         forControlEvents:UIControlEventTouchUpInside];
@@ -1627,7 +1712,7 @@ static void WXKBEnsureActionBar(UIView *root) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.7 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.8 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
 }
