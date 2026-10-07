@@ -22,7 +22,6 @@
 #define WXKB_KEY_BG_COLOR      @"bgColor"       // #RRGGBB 或 #RRGGBBAA
 #define WXKB_KEY_BG_IMAGE      @"bgImage"       // 高级：绝对路径（浅色）
 #define WXKB_KEY_BG_IMAGE_DATA @"bgImageData"   // 浅色模式背景图数据
-#define WXKB_KEY_BG_IMAGE_DATA_DARK @"bgImageDataDark" // 深色模式背景图数据
 #define WXKB_KEY_BG_ALPHA      @"bgAlpha"       // 0.05 ~ 1.0
 
 // 整键盘透明：把键盘自身所有不透明背景层清掉，透出后面的内容。
@@ -50,8 +49,14 @@
 // 26 字母逐个上色：NSDictionary { "0".."25" -> "#RRGGBB" }
 #define WXKB_KEY_LETTER_MAP    @"letterColorMap"
 
-// 按键圆角（pt，0 ~ 22）
+// 按键圆角（pt，0 ~ 22）—— 仅在「按键形状 = 默认圆角」时生效
 #define WXKB_KEY_CORNER        @"keyCornerRadius"
+
+// 按键形状：0 默认圆角（由 keyCornerRadius 决定）/ 1 圆形 / 2 六边形 / 3 水珠
+#define WXKB_KEY_SHAPE         @"keyShape"
+
+// 彩虹键盘：开启后 A→Z 每个字母一种颜色（覆盖渐变与逐个配色）
+#define WXKB_KEY_RAINBOW       @"rainbow"
 
 // 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
 #define WXKB_KEY_OFFSET        @"kbOffset"

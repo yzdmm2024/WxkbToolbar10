@@ -161,7 +161,6 @@ static CGFloat   gBgAlpha      = 1.0;
 static UIColor  *gBgColor      = nil;
 static NSString *gBgImage      = nil;
 static NSData   *gBgImageData  = nil;
-static NSData   *gBgImageDataDark = nil;
 static BOOL      gTransparent  = NO;
 static BOOL      gKeyEnabled   = NO;
 static UIColor  *gLetterBg     = nil;
@@ -177,6 +176,8 @@ static UIColor  *gGradFrom     = nil;
 static UIColor  *gGradTo       = nil;
 static NSDictionary *gLetterMap = nil;
 static CGFloat   gCorner       = 0.0;
+static int       gShape        = 0;      // 0 默认圆角 1 圆形 2 六边形 3 水珠
+static BOOL      gRainbow      = NO;     // 彩虹键盘
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
 static double    gLastLoad     = -1;
 
@@ -299,8 +300,6 @@ static void WXKBReload(BOOL force) {
     gBgImage = [img isKindOfClass:[NSString class]] ? img : nil;
     id imgData = d[WXKB_KEY_BG_IMAGE_DATA];
     gBgImageData = [imgData isKindOfClass:[NSData class]] ? imgData : nil;
-    id imgDataDark = d[WXKB_KEY_BG_IMAGE_DATA_DARK];
-    gBgImageDataDark = [imgDataDark isKindOfClass:[NSData class]] ? imgDataDark : nil;
 
     gBgColor = WXKBColor(d[WXKB_KEY_BG_COLOR], gBgAlpha)
                    ?: [UIColor colorWithWhite:0.11 alpha:gBgAlpha];
@@ -341,6 +340,13 @@ static void WXKBReload(BOOL force) {
         gCorner = 0.0;
     }
 
+    id sh = d[WXKB_KEY_SHAPE];
+    int s = sh ? [sh intValue] : 0;
+    if (s < 0 || s > 3) s = 0;
+    gShape = s;
+
+    gRainbow = [d[WXKB_KEY_RAINBOW] boolValue];
+
     // ---- 键盘位置 ----
     id of2 = d[WXKB_KEY_OFFSET];
     gKbOffset = of2 ? [of2 doubleValue] : 0.0;
@@ -375,28 +381,105 @@ static UIView *WXKBFindBgLeaf(UIView *v, NSInteger depth) {
     return v;
 }
 
+static const void *kWXKBMaskLayerKey = &kWXKBMaskLayerKey;
+
+// 六边形路径（正多边形，可拉伸到按键矩形）
+static UIBezierPath *WXKBHexagonPath(CGSize s) {
+    CGFloat w = s.width, h = s.height;
+    if (w <= 0 || h <= 0) return nil;
+    CGFloat cx = w / 2.0, cy = h / 2.0;
+    UIBezierPath *p = [UIBezierPath bezierPath];
+    for (int i = 0; i < 6; i++) {
+        CGFloat a = (3.141592653589793 / 180.0) * (60.0 * i - 90.0);
+        CGFloat x = cx + (w / 2.0) * cos(a);
+        CGFloat y = cy + (h / 2.0) * sin(a);
+        if (i == 0) [p moveToPoint:CGPointMake(x, y)];
+        else [p addLineToPoint:CGPointMake(x, y)];
+    }
+    [p closePath];
+    return p;
+}
+
+// 水珠（水滴）路径：上方尖、下方圆
+static UIBezierPath *WXKBWaterDropPath(CGSize s) {
+    CGFloat w = s.width, h = s.height;
+    if (w <= 0 || h <= 0) return nil;
+    CGFloat cx = w / 2.0;
+    CGFloat tipY = h * 0.10;
+    CGFloat r = w / 2.0;
+    CGFloat bottomCy = h - r;
+    UIBezierPath *p = [UIBezierPath bezierPath];
+    [p moveToPoint:CGPointMake(cx, tipY)];
+    [p addCurveToPoint:CGPointMake(cx + r, bottomCy)
+         controlPoint1:CGPointMake(cx + r * 0.55, tipY + h * 0.28)
+         controlPoint2:CGPointMake(cx + r, bottomCy - r * 0.55)];
+    [p addArcWithCenter:CGPointMake(cx, bottomCy) radius:r
+             startAngle:0 endAngle:3.141592653589793 clockwise:YES];
+    [p addCurveToPoint:CGPointMake(cx, tipY)
+         controlPoint1:CGPointMake(cx - r, bottomCy - r * 0.55)
+         controlPoint2:CGPointMake(cx - r * 0.55, tipY + h * 0.28)];
+    [p closePath];
+    return p;
+}
+
+// 仅对「真正画背景的叶子视图」应用形状（不动布局，纯视觉裁剪）
+static void WXKBApplyShapeMask(UIView *target, NSInteger shape, CGSize sz) {
+    if (!target || sz.width <= 0 || sz.height <= 0) return;
+    if (shape == 1) {                       // 圆形
+        target.layer.mask = nil;
+        objc_setAssociatedObject(target, kWXKBMaskLayerKey, nil,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        CGFloat r = MIN(sz.width, sz.height) / 2.0;
+        if (fabs(target.layer.cornerRadius - r) > 0.01) target.layer.cornerRadius = r;
+        target.layer.masksToBounds = YES;
+    } else {                                // 六边形 / 水珠
+        target.layer.cornerRadius = 0;
+        CAShapeLayer *mask = objc_getAssociatedObject(target, kWXKBMaskLayerKey);
+        if (!mask) {
+            mask = [CAShapeLayer layer];
+            objc_setAssociatedObject(target, kWXKBMaskLayerKey, mask,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            target.layer.mask = mask;
+        }
+        UIBezierPath *path = (shape == 2) ? WXKBHexagonPath(sz) : WXKBWaterDropPath(sz);
+        mask.path = path.CGPath;
+    }
+}
+
 static void WXKBApplyCorner(UIView *v) {
-    if (!v || !gEnabled || gCorner <= 0.01) {
+    if (!v || !gEnabled) {
         return;
     }
-    CGFloat r = MIN(gCorner, MIN(v.bounds.size.height, v.bounds.size.width) / 2.0);
-    if (r <= 0.01) {
+    UIView *leaf = WXKBFindBgLeaf(v, 0);
+    UIView *target = leaf ?: v;
+
+    if (gShape == 0) {
+        // 还原：清掉任何旧形状，仅按 keyCornerRadius 做圆角
+        target.layer.mask = nil;
+        objc_setAssociatedObject(target, kWXKBMaskLayerKey, nil,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (gCorner <= 0.01) {
+            if (target.layer.cornerRadius != 0) target.layer.cornerRadius = 0;
+            if (target != v && v.layer.cornerRadius != 0) v.layer.cornerRadius = 0;
+            return;
+        }
+        CGFloat r = MIN(gCorner, MIN(v.bounds.size.height, v.bounds.size.width) / 2.0);
+        if (r <= 0.01) return;
+        NSMutableArray *arr = [NSMutableArray arrayWithObject:target];
+        if (target != v) [arr addObject:v];
+        for (UIView *t in arr) {
+            if (fabs(t.layer.cornerRadius - r) > 0.01) t.layer.cornerRadius = r;
+            t.layer.masksToBounds = YES;
+        }
         return;
     }
 
-    UIView *leaf = WXKBFindBgLeaf(v, 0);
-    NSMutableArray *targets = [NSMutableArray arrayWithObject:(leaf ?: v)];
-    if (leaf != v) {
-        [targets addObject:v];
-    }
-    for (UIView *t in targets) {
-        if (!t) continue;
-        if (fabs(t.layer.cornerRadius - r) > 0.01) {
-            t.layer.cornerRadius = r;
-        }
-        if (!t.layer.masksToBounds) {
-            t.layer.masksToBounds = YES;
-        }
+    // shape 1/2/3：忽略 keyCornerRadius，用形状（蒙版只加在背景叶子，不裁文字）
+    WXKBApplyShapeMask(target, gShape, target.bounds.size);
+    if (target != v) {
+        // key 自身不再额外圆角/蒙版，避免双重裁剪
+        v.layer.mask = nil;
+        v.layer.cornerRadius = 0;
     }
 }
 
@@ -972,6 +1055,11 @@ static UIColor *WXKBGradientColor(NSInteger idx) {
 }
 
 static UIColor *WXKBLetterColorFor(NSInteger idx) {
+    if (gRainbow) {
+        // 彩虹键盘：A→Z 按色相铺满整个光谱
+        CGFloat hue = (CGFloat)(idx % 26) / 26.0;
+        return [UIColor colorWithHue:hue saturation:0.85 brightness:1.0 alpha:1.0];
+    }
     if (gLetterMap) {
         id v = gLetterMap[[NSString stringWithFormat:@"%ld", (long)idx]];
         if ([v isKindOfClass:[NSString class]] && [v length]) {
@@ -1056,16 +1144,8 @@ static void WXKBApplyBackground(UIView *host) {
     bg.layer.contentsGravity = kCAGravityResizeAspectFill;
 
     UIImage *img = nil;
-    BOOL dark = NO;
-    if (@available(iOS 13.0, *)) {
-        dark = (host.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark);
-    }
     if (gBgEnabled && gBgMode == 2) {
-        // 深色模式优先用深色背景图，没有则回退浅色图
-        if (dark && gBgImageDataDark.length) {
-            img = [UIImage imageWithData:gBgImageDataDark];
-        }
-        if (!img && gBgImageData.length) {
+        if (gBgImageData.length) {
             img = [UIImage imageWithData:gBgImageData];
         }
         if (!img && gBgImage.length) {
@@ -1465,7 +1545,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.19 loaded enabled=%d bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f",
+    NSLog(@"[WxkbToolbar10] 1.6.20 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d rainbow=%d corner=%.1f offset=%.1f",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gCorner, gKbOffset);
+          gGradEnabled, gShape, gRainbow, gCorner, gKbOffset);
 }

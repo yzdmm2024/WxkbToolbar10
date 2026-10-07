@@ -25,8 +25,7 @@ WxkbToolbar10Prefs_FILES = \
 	prefs/WxkbToolbar10PrefsRootListController.m \
 	prefs/WXKBPickerControllers.m \
 	prefs/WXKBLetterColors.m \
-	prefs/WXKBPhotoPicker.m \
-	prefs/WXKBSkinImport.m
+	prefs/WXKBPhotoPicker.m
 WxkbToolbar10Prefs_BUNDLE_RESOURCE_DIRS = prefs/Resources
 WxkbToolbar10Prefs_INSTALL_PATH = /Library/PreferenceBundles
 WxkbToolbar10Prefs_FRAMEWORKS = UIKit Foundation PhotosUI
