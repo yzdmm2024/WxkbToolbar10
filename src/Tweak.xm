@@ -39,6 +39,17 @@
 //      少 Filter，导致 Host dylib 从未注入任何 App，于是「剪切/粘贴/快捷短语/收起键盘/
 //      粘贴历史」等需宿主执行的动作从 1.0 起全死。已改为 Filter{Executables:["*"],
 //      Exclude:{Bundles:[SpringBoard,Preferences], Executables:[wxkb_plugin]}}。
+// 1.6.6 行为（用户实测 1.6.5 截图：仍有灰底 + 按钮重叠/换位）：
+//   1) 灰底根治加码：1.6.5 只清微信子树 + 直系祖先链，但系统 backdrop 很可能是
+//      WBRootInputView 的「兄弟视图」，直系链够不着。现在直接从键盘窗口整棵树清，
+//      并按类名识别 _UIBackdropEffectView / UIKBBackdropView 等不走 backgroundColor
+//      API 的私有 backdrop 直接隐藏（原值存关联对象，关透明时精确还原）。
+//   2) 幽灵按钮条根治：微信会预加载屏外的下一套键盘布局，屏外根视图也会走到
+//      WXKBEnsureActionBar，它的条正好露在可见键盘下方（截图底部那排按钮）。
+//      现在屏外根不建条，且每次全窗只保留可见根这一根条，其余拆除。
+//   3) 按钮条定位改为精确覆盖原生工具栏那一行：1.6.5 的「顶部一小条」被
+//      WXKBClearBgTree 误清了深色底（白图标和原生图标叠影成一团乱像）。
+//      现在 ClearBgTree 按 tag 跳过按钮条，条子精确盖住工具栏行、深色圆角底。
 // 1.6.2 行为：
 //   1) 编辑增强按钮点不了二次修复：弃用脆弱的 addTarget + hitTest 方案，改为在
 //      原生滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer，
@@ -416,6 +427,10 @@ static const void *kWXKBOrigBgKey   = &kWXKBOrigBgKey;
 static const void *kWXKBOrigOpaqueKey = &kWXKBOrigOpaqueKey;
 static const void *kWXKBOrigEffectKey = &kWXKBOrigEffectKey;
 static const void *kWXKBOrigImgKey  = &kWXKBOrigImgKey;
+static const void *kWXKBOrigHiddenKey = &kWXKBOrigHiddenKey;
+
+// 增强按钮条 tag（"WXAB"）。声明提前：WXKBClearBgTree 需要按它跳过清理。
+static const NSInteger kWXKBActionBarTag = 0x57584142;
 
 static void WXKBClearBgTree(UIView *v) {
     if (!v) return;
@@ -427,6 +442,26 @@ static void WXKBClearBgTree(UIView *v) {
     if (v.tag == 0x57584247) {
         for (UIView *s in v.subviews) WXKBClearBgTree(s);
         return;
+    }
+
+    // 增强按钮条不参与清理：深色底 + 白图标必须常驻可见（透明模式下尤其）
+    if (v.tag == kWXKBActionBarTag) return;
+
+    // 1.6.6：系统键盘 backdrop（_UIBackdropEffectView / UIKBBackdropView 等私有类）
+    // 不走 backgroundColor / UIVisualEffectView API，probe 里 backgroundColor 全透明
+    // 却仍有灰底就是它画的 —— 直接隐藏才能透。
+    @try {
+        NSString *cn = NSStringFromClass([v class]);
+        if ([cn containsString:@"BackdropEffectView"] ||
+            [cn containsString:@"UIKBBackdrop"]) {
+            if (!objc_getAssociatedObject(v, kWXKBOrigHiddenKey)) {
+                objc_setAssociatedObject(v, kWXKBOrigHiddenKey,
+                                         @([v isHidden]), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            }
+            v.hidden = YES;
+            return;
+        }
+    } @catch (__unused NSException *e) {
     }
 
     if (!objc_getAssociatedObject(v, kWXKBOrigBgKey)) {
@@ -474,6 +509,13 @@ static void WXKBRestoreBgTree(UIView *v) {
     if (!v) return;
     if (WXKBIsKeyView(v)) return;
 
+    NSNumber *hid = objc_getAssociatedObject(v, kWXKBOrigHiddenKey);
+    if (hid) {
+        v.hidden = [hid boolValue];
+        objc_setAssociatedObject(v, kWXKBOrigHiddenKey, nil,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
     UIColor *bg = objc_getAssociatedObject(v, kWXKBOrigBgKey);
     if (bg) {
         v.backgroundColor = (bg == [UIColor clearColor]) ? nil : bg;
@@ -498,62 +540,19 @@ static void WXKBRestoreBgTree(UIView *v) {
     }
 }
 
-// 微信子树再透明也盖不住「系统键盘宿主视图」自带的毛玻璃背景
-// （UIInputView 内的 UIVisualEffectView backdrop）。frida 实测微信整棵子树
-// backgroundColor 全是透明，但整体键盘仍有灰底 —— 灰底就来自这层系统 backdrop。
-// 因此要从 WBRootInputView 往上把祖先链（含系统 UIInputView 及其 backdrop）的
-// 背景与视觉特效一并清掉，整体透明才真正生效。仅在键盘扩展进程内生效，只影响微信键盘。
-static void WXKBClearAncestorBg(UIView *v) {
-    UIView *p = v.superview;
-    while (p && ![p isKindOfClass:[UIWindow class]]) {
-        if ([p isKindOfClass:[UIVisualEffectView class]]) {
-            UIVisualEffectView *ve = (UIVisualEffectView *)p;
-            if (!objc_getAssociatedObject(ve, kWXKBOrigEffectKey)) {
-                objc_setAssociatedObject(ve, kWXKBOrigEffectKey,
-                                         ve.effect, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            }
-            ve.effect = nil;
-        }
-        if (!objc_getAssociatedObject(p, kWXKBOrigBgKey)) {
-            objc_setAssociatedObject(p, kWXKBOrigBgKey,
-                                     p.backgroundColor ?: [UIColor clearColor],
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
-        p.backgroundColor = [UIColor clearColor];
-        p.opaque = NO;
-        p.layer.opaque = NO;
-        p = p.superview;
-    }
-}
-
-static void WXKBRestoreAncestorBg(UIView *v) {
-    UIView *p = v.superview;
-    while (p && ![p isKindOfClass:[UIWindow class]]) {
-        UIVisualEffect *e = objc_getAssociatedObject(p, kWXKBOrigEffectKey);
-        if (e && [p isKindOfClass:[UIVisualEffectView class]]) {
-            ((UIVisualEffectView *)p).effect = e;
-            objc_setAssociatedObject(p, kWXKBOrigEffectKey, nil,
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
-        UIColor *bg = objc_getAssociatedObject(p, kWXKBOrigBgKey);
-        if (bg) {
-            p.backgroundColor = (bg == [UIColor clearColor]) ? nil : bg;
-            objc_setAssociatedObject(p, kWXKBOrigBgKey, nil,
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
-        p = p.superview;
-    }
-}
-
+// 1.6.6：透明直接从「键盘窗口」整棵树清。
+// 1.6.5 只清微信子树 + 直系祖先链，但系统 backdrop 很可能是 WBRootInputView 的
+// 兄弟视图（宿主容器里和键盘并排），直系链根本够不着 —— 用户实测灰底仍在。
+// 整窗清能覆盖：兄弟 backdrop、系统宿主 UIInputView、窗口自身背景。
+// 按键子树 / 增强按钮条 / 自绘背景层在 WXKBClearBgTree 里照常跳过。
 static void WXKBApplyTransparency(UIView *host) {
     if (!host) return;
+    UIView *top = host.window ?: host;
     if (!gEnabled || !gTransparent) {
-        WXKBRestoreBgTree(host);
-        WXKBRestoreAncestorBg(host);
+        WXKBRestoreBgTree(top);
         return;
     }
-    WXKBClearBgTree(host);
-    WXKBClearAncestorBg(host);
+    WXKBClearBgTree(top);
 }
 
 // —— 键盘整体位移 ——
@@ -1212,7 +1211,6 @@ static void WXKBActDeleteAllLocal(void) {
 // 单纯给按钮 addTarget 经常收不到事件。这里统一用 WXKBFireAction 派发，
 // 并在滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer
 // 来触发（见下方 WXKBInstallTap）。
-static const NSInteger kWXKBActionBarTag = 0x57584142;   // "WXAB" 自定义按钮条 tag
 static void WXKBFireAction(int c) {
     @try {
         switch (c) {
@@ -1278,32 +1276,87 @@ static UIImage *WXKBActionImage(int code, CGFloat size) {
 // —— 常驻增强按钮条 ——
 // 1.6.5 起彻底重写：不再把按钮塞进微信原生滚动工具栏（原生会吞触摸 + 刷新时把条子
 // 滚走/移除，导致「按一下就没了」且点击根本到不了 WXKBFireAction）。改为我们自己、
-// 完全受控的子视图，常驻挂在键盘根视图顶部：始终可见、触摸可靠（UIButton 的
-// addTarget 直接生效）。按钮条本身不参与透明/背景清理（WXKBClearBgTree 已按 tag 跳过）。
+// 完全受控的子视图：触摸可靠（UIButton 的 addTarget 直接生效），深色圆角底 + 白图标，
+// WXKBClearBgTree 按 tag 跳过、透明模式下也常驻可见。
+// 1.6.6 三个修正（用户实测 1.6.5 截图）：
+//   a) 只在「可见」的键盘根视图上建条 —— 微信会预加载屏外键盘布局，屏外根上的条
+//      会露在可见键盘下方（截图里底部那排幽灵按钮就是这么来的），一律不建并清除；
+//   b) 全窗只保留这一根条，幽灵条统一拆掉；
+//   c) 位置精确覆盖原生工具栏那一行（用户要的「常驻那里」），不再和原生图标叠影。
+static void WXKBRemoveStrayBars(UIView *v, UIView *keep) {
+    if (!v) return;
+    if (v != keep && v.tag == kWXKBActionBarTag) {
+        [v removeFromSuperview];
+        return;
+    }
+    for (UIView *s in [v.subviews copy]) WXKBRemoveStrayBars(s, keep);
+}
+
+static UIView *WXKBFindToolbar(UIView *v) {
+    Class cls = objc_getClass("WBFunctionToolBar");
+    if (!cls || !v) return nil;
+    if ([v isKindOfClass:cls]) return v;
+    for (UIView *s in v.subviews) {
+        UIView *r = WXKBFindToolbar(s);
+        if (r) return r;
+    }
+    return nil;
+}
+
 static void WXKBEnsureActionBar(UIView *root) {
     if (!root) return;
-    UIView *bar = [root viewWithTag:kWXKBActionBarTag];
     NSArray *actions = WXKBResolvedActions();
-    if (!gEnabled || WXKBIsEditing(root) || actions.count == 0) {
+
+    UIView *bar = [root viewWithTag:kWXKBActionBarTag];
+
+    // 原生工具栏进入「定制工具栏」编辑态时让位，编辑完下一轮布局自动恢复
+    UIView *tb = WXKBFindToolbar(root);
+    if (WXKBIsEditing(tb)) {
+        if (bar) [bar removeFromSuperview];
+        return;
+    }
+
+    // 屏外预加载布局（不在窗口里 / 整体在窗口外）不建条
+    UIWindow *win = root.window;
+    BOOL visible = NO;
+    if (win) {
+        CGRect wf = [root convertRect:root.bounds toView:nil];
+        visible = CGRectIntersectsRect(wf, win.bounds);
+    }
+    if (!gEnabled || actions.count == 0 || !visible) {
         if (bar) [bar removeFromSuperview];
         return;
     }
     CGSize bd = root.bounds.size;
     if (bd.width < 50 || bd.height < 40) return;
 
-    CGFloat h = 30;
-    CGFloat y = 2;   // 顶部常驻（覆盖候选栏顶部一小条；可见性优先于原生工具栏整合）
+    // 位置：精确覆盖原生工具栏那一行；找不到工具栏就退回顶部一条
+    CGFloat x = 0, y = 2, w = bd.width, h = 30;
+    @try {
+        if (tb) {
+            CGRect tf = [root convertRect:tb.bounds fromView:tb];
+            if (tf.size.width > 60 && tf.size.height > 22 &&
+                tf.origin.y > -1 && tf.origin.y < bd.height - 20) {
+                y = tf.origin.y;
+                h = tf.size.height;
+            }
+        }
+    } @catch (__unused NSException *e) {
+    }
+
     BOOL needBuild = NO;
     if (!bar) {
-        bar = [[UIView alloc] initWithFrame:CGRectMake(0, y, bd.width, h)];
+        bar = [[UIView alloc] initWithFrame:CGRectMake(x, y, w, h)];
         bar.tag = kWXKBActionBarTag;
         bar.userInteractionEnabled = YES;
-        bar.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.45];
+        bar.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.55];
+        bar.layer.cornerRadius = 8;
+        bar.layer.masksToBounds = YES;
         bar.autoresizingMask =
             UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
         needBuild = YES;
     } else {
-        bar.frame = CGRectMake(0, y, bd.width, h);
+        bar.frame = CGRectMake(x, y, w, h);
     }
 
     // 动作数量/顺序变化时才重建内部按钮
@@ -1348,6 +1401,8 @@ static void WXKBEnsureActionBar(UIView *root) {
     }
     if (bar.superview != root) [root addSubview:bar];
     [root bringSubviewToFront:bar];
+    // 全窗只留这一根条：微信预加载的屏外键盘布局上的旧条全部拆掉
+    if (root.window) WXKBRemoveStrayBars(root.window, bar);
 }
 
 #pragma mark - Hooks
@@ -1563,7 +1618,7 @@ static void WXKBEnsureActionBar(UIView *root) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.6.5 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
+    NSLog(@"[WxkbToolbar10] 1.6.6 loaded enabled=%d funcs=%lu bg=%d trans=%d key=%d grad=%d corner=%.1f offset=%.1f acts=%lu",
           gEnabled, (unsigned long)gFuncList.count, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gCorner, gKbOffset, (unsigned long)WXKBResolvedActions().count);
 }
