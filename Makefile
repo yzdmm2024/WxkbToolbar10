@@ -37,6 +37,9 @@ WxkbToolbar10Prefs_FILES = \
 	prefs/WXKBPreviewKeyboardView.m \
 	prefs/WXKBThemeProfile.m \
 	prefs/WXKBThemeProfilesController.m \
+	prefs/WXKBPreviewKeyboardView.m \
+	prefs/WXKBThemeProfile.m \
+	prefs/WXKBThemeProfilesController.m \
 	license_kit/src/lk_alg.c \
 	license_kit/src/lk_core.c \
 	license_kit/src/lk_issue.c \
