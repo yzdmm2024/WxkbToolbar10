@@ -21,6 +21,7 @@
  * ============================================================ */
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import <string.h>
 #import "lk.h"
 
