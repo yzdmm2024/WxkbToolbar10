@@ -70,6 +70,9 @@
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
+    [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
+                           values:@[@0, @1, @2, @3]
+                           titles:@[@"白底", @"全透明", @"灰色", @"白50%"]]];
 
     // ---- 字母渐变 / 逐个 ----
     g = [PSSpecifier groupSpecifierWithName:@"字母键进阶"];
