@@ -466,18 +466,24 @@ static UIColor *WXKBKeyBackground(WBKeyView *v);
 static const void *kWXKBCapLayerKey = &kWXKBCapLayerKey;   // 伸出底部的侧壁
 static const void *kWXKBCapBodyKey  = &kWXKBCapBodyKey;    // 键体（深色侧壁/前脸）
 static const void *kWXKBCapTopKey   = &kWXKBCapTopKey;     // 凸起顶面（穹顶渐变）
+static const void *kWXKBCapSkirtKey = &kWXKBCapSkirtKey;   // 1.8.0 侧壁裙边渐变
+static const void *kWXKBCapEdgeKey  = &kWXKBCapEdgeKey;    // 1.8.0 轮廓硬描边
 
 static void WXKBApplyCap(UIView *v, UIView *leaf) {
     UIView *target = leaf ?: v;
     CAShapeLayer *wall = objc_getAssociatedObject(v, kWXKBCapLayerKey);
     CAShapeLayer *body = objc_getAssociatedObject(target, kWXKBCapBodyKey);
     CAGradientLayer *top  = objc_getAssociatedObject(target, kWXKBCapTopKey);
+    CAGradientLayer *skirt = objc_getAssociatedObject(target, kWXKBCapSkirtKey);
+    CAShapeLayer *edge  = objc_getAssociatedObject(target, kWXKBCapEdgeKey);
     // 1.7.5：皮肤模式隐含启用立体键帽渲染——穹顶明暗从皮肤底色推导，
     // 取代退役的 CGImage 贴图路线（见 WXKBApplySkin 注释）。
     if (!gEnabled || (!gCap3D && !gSkinEnabled)) {
         if (wall)  { [wall removeFromSuperlayer];  objc_setAssociatedObject(v, kWXKBCapLayerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         if (body)  { [body removeFromSuperlayer];  objc_setAssociatedObject(target, kWXKBCapBodyKey,  nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         if (top)   { [top  removeFromSuperlayer];  objc_setAssociatedObject(target, kWXKBCapTopKey,   nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+        if (skirt) { [skirt removeFromSuperlayer]; objc_setAssociatedObject(target, kWXKBCapSkirtKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+        if (edge)  { [edge removeFromSuperlayer];  objc_setAssociatedObject(target, kWXKBCapEdgeKey,  nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         // 还原：清掉我们加的悬浮阴影
         v.layer.shadowOpacity = 0.0;
         return;
@@ -493,8 +499,8 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     if (v.layer.shadowOpacity > 0.0 && v.layer.shadowRadius < 0.5) v.layer.shadowOpacity = 0.0;
 
     static const CGFloat kDepth = 4.0;      // 底部伸出厚度
-    static const CGFloat kInset = 3.0;      // 顶面左右内缩（露出侧壁）
-    static const CGFloat kFront = 6.0;      // 顶面底部上抬 → 露出更明显的前脸
+    static const CGFloat kInset = 4.0;      // 1.8.0 顶面左右内缩加宽 → 四周裙边可见
+    static const CGFloat kFront = 7.0;      // 1.8.0 顶面底部上抬更多 → 前脸更立体
     CGFloat rad = 5.0;
     if (gShape == 0) {
         rad = target.layer.cornerRadius;
@@ -510,24 +516,31 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         if (cg) base = [UIColor colorWithCGColor:cg];
     }
 
-    // 由底色推导键帽各段色（高光 / 亮面 / 正面 / 下缘 / 前面）
+    // 由底色推导键帽各段色（高光 / 亮面 / 正面 / 下缘 / 前面 + 1.8.0 侧壁裙边两档）
     CGFloat h = 0, s = 0, br = 0, al = 0;
-    UIColor *cHi, *cLight, *cFace, *cLow, *cFront;
+    UIColor *cHi, *cLight, *cFace, *cLow, *cFront, *cWallHi, *cWallLo;
     if (base && [base getHue:&h saturation:&s brightness:&br alpha:&al] && s > 0.02) {
-        cHi    = [UIColor colorWithHue:h saturation:MAX(s * 0.35, 0.0) brightness:MIN(br * 1.30 + 0.30, 1.0) alpha:1.0];
-        cLight = [UIColor colorWithHue:h saturation:s brightness:MIN(br * 1.14, 1.0) alpha:1.0];
-        cFace  = [UIColor colorWithHue:h saturation:s brightness:br alpha:1.0];
-        cLow   = [UIColor colorWithHue:h saturation:s brightness:br * 0.82 alpha:1.0];
-        cFront = [UIColor colorWithHue:h saturation:MIN(s * 1.25, 1.0) brightness:br * 0.46 alpha:1.0];
+        cHi     = [UIColor colorWithHue:h saturation:MAX(s * 0.30, 0.0) brightness:MIN(br * 1.35 + 0.34, 1.0) alpha:1.0];
+        cLight  = [UIColor colorWithHue:h saturation:s brightness:MIN(br * 1.14, 1.0) alpha:1.0];
+        cFace   = [UIColor colorWithHue:h saturation:s brightness:br alpha:1.0];
+        cLow    = [UIColor colorWithHue:h saturation:s brightness:br * 0.78 alpha:1.0];
+        cFront  = [UIColor colorWithHue:h saturation:MIN(s * 1.25, 1.0) brightness:br * 0.46 alpha:1.0];
+        // 1.8.0 电脑键盘风侧壁：大幅去饱和 + 明暗两档 → 穹顶四周一圈中性深色裙边
+        cWallHi = [UIColor colorWithHue:h saturation:s * 0.30 brightness:MAX(br * 0.60, 0.30) alpha:1.0];
+        cWallLo = [UIColor colorWithHue:h saturation:MIN(s * 0.55, 1.0) brightness:MAX(br * 0.30, 0.14) alpha:1.0];
     } else {
         CGFloat w = (base) ? br : 0.78;
         if (base) { CGFloat a0 = 0; if (![base getWhite:&w alpha:&a0]) w = br; }
-        cHi    = [UIColor colorWithWhite:MIN(w * 1.30 + 0.22, 1.0) alpha:1.0];
-        cLight = [UIColor colorWithWhite:MIN(w * 1.12, 1.0) alpha:1.0];
-        cFace  = [UIColor colorWithWhite:w alpha:1.0];
-        cLow   = [UIColor colorWithWhite:w * 0.82 alpha:1.0];
-        cFront = [UIColor colorWithWhite:w * 0.46 alpha:1.0];
+        cHi     = [UIColor colorWithWhite:MIN(w * 1.30 + 0.22, 1.0) alpha:1.0];
+        cLight  = [UIColor colorWithWhite:MIN(w * 1.12, 1.0) alpha:1.0];
+        cFace   = [UIColor colorWithWhite:w alpha:1.0];
+        cLow    = [UIColor colorWithWhite:w * 0.82 alpha:1.0];
+        cFront  = [UIColor colorWithWhite:w * 0.46 alpha:1.0];
+        cWallHi = [UIColor colorWithWhite:MAX(w * 0.68, 0.42) alpha:1.0];
+        cWallLo = [UIColor colorWithWhite:MAX(w * 0.36, 0.16) alpha:1.0];
     }
+    // 1.8.0 轮廓描边：近黑中性色（电脑键盘风的外圈硬描边）
+    UIColor *cEdge = [UIColor colorWithWhite:0.18 alpha:0.92];
 
     // 轮廓按各自坐标系生成：键体/顶面按背景叶尺寸 tbsz（与 layer 坐标一致），
     // 伸出侧壁按按键尺寸 sz（要覆盖整颗键并向下凸出）
@@ -554,9 +567,9 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         t = CGAffineTransformConcat(t, CGAffineTransformMakeTranslation(-cx, -cy));
         [topPath applyTransform:t];
     } else {
-        CGFloat rr = (gShape == 1) ? MAX(MIN(tbsz.width, tbsz.height) / 2.0 - kInset, 1.0)
-                                   : MAX(rad - kInset, 1.0);
-        CGFloat topY  = 1.5;
+        CGFloat rr = (gShape == 1) ? MAX(MIN(tbsz.width, tbsz.height) / 2.0 - kInset, 2.0)
+                                   : MAX(rad * 0.8, 3.0);   // 1.8.0 顶面圆角随轮廓走，别被内缩吃掉
+        CGFloat topY  = 2.5;                // 1.8.0 顶部也留出裙边
         CGFloat botY = kInset + kFront;     // 底部多抬一截 → 前脸更高
         topPath = [UIBezierPath bezierPathWithRoundedRect:
                        CGRectMake(kInset, topY, tbsz.width - 2 * kInset,
@@ -589,8 +602,25 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     }
     body.frame = CGRectMake(0, 0, tbsz.width, tbsz.height);
     body.path = silLeaf.CGPath;
-    body.fillColor = cFront.CGColor;
+    body.fillColor = cWallLo.CGColor;
     body.zPosition = -998;
+
+    // ①' 1.8.0 侧壁裙边渐变：铺满整颗轮廓的上亮下暗中性深色，替代旧版单色前脸，
+    //     穹顶四周（左/右/上/下）都露出立体裙边 = 真实键帽的斜面侧壁
+    if (!skirt) {
+        skirt = [CAGradientLayer layer];
+        skirt.name = @"wxkb_cap_skirt";
+        objc_setAssociatedObject(target, kWXKBCapSkirtKey, skirt, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [target.layer insertSublayer:skirt atIndex:0];
+    }
+    skirt.frame = CGRectMake(0, 0, tbsz.width, tbsz.height);
+    skirt.startPoint = CGPointMake(0.5, 0.0);
+    skirt.endPoint   = CGPointMake(0.5, 1.0);
+    skirt.colors = @[(id)cWallHi.CGColor, (id)cWallLo.CGColor];
+    CAShapeLayer *smask = [CAShapeLayer layer];
+    smask.path = silLeaf.CGPath;
+    skirt.mask = smask;
+    skirt.zPosition = -997.5;
 
     // ② 凸起顶面（内缩轮廓内的穹顶渐变：上亮下暗）—— 同样挂在背景叶上
     if (!top) {
@@ -602,12 +632,26 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     top.frame = CGRectMake(0, 0, tbsz.width, tbsz.height);
     top.startPoint = CGPointMake(0.5, 0.0);
     top.endPoint   = CGPointMake(0.5, 1.0);
-    top.locations = @[@0.0, @0.15, @0.6, @1.0];   // 高光 → 亮面 → 正面 → 下缘
+    top.locations = @[@0.0, @0.12, @0.55, @1.0];  // 1.8.0 高光带加宽 → 顶部近白的穹顶感
     top.colors = @[(id)cHi.CGColor, (id)cLight.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
     CAShapeLayer *tmask = [CAShapeLayer layer];
     tmask.path = topPath.CGPath;
     top.mask = tmask;
     top.zPosition = -997;
+
+    // ①'' 1.8.0 轮廓硬描边：整颗键帽外圈一圈细近黑描边（叶片自身裁剪，只露内半宽）
+    if (!edge) {
+        edge = [CAShapeLayer layer];
+        edge.name = @"wxkb_cap_edge";
+        objc_setAssociatedObject(target, kWXKBCapEdgeKey, edge, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [target.layer insertSublayer:edge atIndex:0];
+    }
+    edge.frame = CGRectMake(0, 0, tbsz.width, tbsz.height);
+    edge.path = silLeaf.CGPath;
+    edge.fillColor = [UIColor clearColor].CGColor;
+    edge.strokeColor = cEdge.CGColor;
+    edge.lineWidth = 1.4;
+    edge.zPosition = -996;
 
     // ③ 正下方伸出的侧壁（有空隙/透明键盘时厚度可见）
     UIBezierPath *wallPath = [silWall copy];
@@ -621,7 +665,7 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     }
     wall.frame = CGRectMake(0, 0, sz.width, sz.height + kDepth);
     wall.path = wallPath.CGPath;
-    wall.fillColor = cFront.CGColor;
+    wall.fillColor = cWallLo.CGColor;
 
     // ④ 整颗键柔和投影（浮在底板上）
     v.layer.shadowColor  = [UIColor colorWithWhite:0.0 alpha:1.0].CGColor;
@@ -2057,7 +2101,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.7.5 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 1.8.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, gCap3D, gCorner, gKbOffset, gSkinEnabled);
 }
