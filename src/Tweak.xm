@@ -526,11 +526,11 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         kInset = 4.5;                       // 更大的侧壁内缩（露出更多侧壁）
         kFront = 8.0;                       // 更高的前脸（立体感更强）
         topY   = 2.5;                       // 顶部裙边
-    } else if (capStyle == 4) {             // 玻璃态：轻微凸起 + 半透明
-        kDepth = 3.0;
-        kInset = 2.0;
-        kFront = 4.0;
-        topY   = 1.5;
+    } else if (capStyle == 4) {             // 卡通手绘：大圆角 + 柔和弧面 + 浮起阴影
+        kDepth = 4.0;                       // 底部投影深度
+        kInset = 2.5;                       // 侧壁内缩（柔和）
+        kFront = 5.0;                       // 前脸高度
+        topY   = 2.0;                       // 顶部裙边
     } else if (capStyle == 5) {             // 霓虹：明显凸起 + 发光边缘
         kDepth = 5.0;
         kInset = 3.0;
@@ -549,9 +549,9 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         rad = MAX(rad, MIN(sz.width, sz.height) * 0.18);
         rad = MIN(rad, MIN(sz.width, sz.height) * 0.30);
     } else if (capStyle == 4 && gShape == 0) {
-        // 玻璃态：圆角较大（柔和感）
-        rad = MAX(rad, MIN(sz.width, sz.height) * 0.25);
-        rad = MIN(rad, MIN(sz.width, sz.height) * 0.40);
+        // 卡通手绘：大圆角（约键高 1/3）
+        rad = MAX(rad, MIN(sz.width, sz.height) * 0.30);
+        rad = MIN(rad, MIN(sz.width, sz.height) * 0.45);
     } else if (capStyle == 5 && gShape == 0) {
         // 霓虹：圆角适中
         rad = MAX(rad, MIN(sz.width, sz.height) * 0.20);
@@ -603,13 +603,12 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         cHi     = [UIColor colorWithHue:h saturation:MAX(s * 0.50, 0.0) brightness:MIN(br * 1.35 + 0.20, 1.0) alpha:1.0];
         cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.10, 1.0) brightness:br * 0.65 alpha:1.0];
     } else if (capStyle == 4) {
-        // 玻璃态：半透明键面 + 强高光 + 淡侧壁
-        cWallHi = [UIColor colorWithHue:h saturation:MAX(s * 0.30, 0.0) brightness:MIN(br * 1.20 + 0.15, 1.0) alpha:0.60];
-        cWallLo = [UIColor colorWithHue:h saturation:MAX(s * 0.40, 0.0) brightness:MIN(br * 1.00 + 0.05, 1.0) alpha:0.50];
-        cEdge   = [UIColor colorWithWhite:1.0 alpha:0.25];
-        cHi     = [UIColor colorWithWhite:1.0 alpha:0.70];
-        cLow    = [UIColor colorWithHue:h saturation:MAX(s * 0.50, 0.0) brightness:br alpha:0.85];
-        cFace   = [UIColor colorWithHue:h saturation:MAX(s * 0.60, 0.0) brightness:br alpha:0.75];
+        // 卡通手绘：无硬描边 + 柔和侧壁 + 顶部微弱高光
+        cWallHi = [UIColor colorWithHue:h saturation:MIN(s * 1.05, 1.0) brightness:MAX(br * 0.85, 0.55) alpha:1.0];
+        cWallLo = [UIColor colorWithHue:h saturation:MIN(s * 1.10, 1.0) brightness:MAX(br * 0.70, 0.45) alpha:1.0];
+        cEdge   = [UIColor colorWithWhite:0.0 alpha:0.0];  // 无描边
+        cHi     = [UIColor colorWithHue:h saturation:MAX(s * 0.40, 0.0) brightness:MIN(br * 1.25 + 0.15, 1.0) alpha:1.0];
+        cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.05, 1.0) brightness:br * 0.80 alpha:1.0];
     } else if (capStyle == 5) {
         // 霓虹：深色键面 + 发光侧壁 + 强描边
         cWallHi = [UIColor colorWithHue:h saturation:1.0 brightness:0.90 alpha:1.0];
@@ -731,8 +730,8 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         top.locations = @[@0.0, @0.15, @0.70, @1.0];
         top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
     } else if (capStyle == 4) {
-        // 玻璃态：强高光 → 半透明键面
-        top.locations = @[@0.0, @0.20, @0.80, @1.0];
+        // 卡通手绘：柔和弧面渐变（顶部微弱高光 → 键面 → 底部轻微压暗）
+        top.locations = @[@0.0, @0.25, @0.75, @1.0];
         top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
     } else if (capStyle == 5) {
         // 霓虹：暗键面 → 底部微亮（模拟发光）
@@ -789,10 +788,10 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         v.layer.shadowOffset  = CGSizeMake(0.0, 4.0);
         v.layer.shadowRadius  = 5.0;
     } else if (capStyle == 4) {
-        // 玻璃态：柔和投影
-        v.layer.shadowOpacity = 0.15;
-        v.layer.shadowOffset  = CGSizeMake(0.0, 2.5);
-        v.layer.shadowRadius  = 4.0;
+        // 卡通手绘：浮起投影（柔和阴影，模拟悬浮感）
+        v.layer.shadowOpacity = 0.20;
+        v.layer.shadowOffset  = CGSizeMake(0.0, 3.5);
+        v.layer.shadowRadius  = 5.0;
     } else if (capStyle == 5) {
         // 霓虹：发光投影（彩色阴影）
         v.layer.shadowOpacity = 0.50;
@@ -1827,46 +1826,17 @@ static BOOL WXKBDarkMode(void) {
 }
 
 static UIColor *WXKBKeyText(WBKeyView *v) {
-    // 2.2.1 检测键盘背景亮度，自动适配文字颜色
+    // 2.2.4 开启皮肤时，所有文字强制黑色
+    if (gSkinEnabled) {
+        return [UIColor colorWithRed:0.0 green:0.0 blue:0.0 alpha:1.0];
+    }
+
     NSInteger cs = WXKBCapStyle();
     BOOL isLetterKey = (v && WXKBLetterIndex(v) != NSNotFound);
-
-    // 查找键盘根视图背景色
-    UIColor *kbBgColor = nil;
-    UIView *parent = v;
-    while (parent) {
-        if (parent.backgroundColor && [parent isKindOfClass:[UIView class]]) {
-            CGFloat r, g, b, a;
-            [parent.backgroundColor getRed:&r green:&g blue:&b alpha:&a];
-            if (a > 0.5) {  // 只考虑不透明背景
-                kbBgColor = parent.backgroundColor;
-                break;
-            }
-        }
-        parent = parent.superview;
-    }
-
-    // 根据背景亮度决定文字颜色
-    if (kbBgColor) {
-        CGFloat r, g, b, a;
-        [kbBgColor getRed:&r green:&g blue:&b alpha:&a];
-        CGFloat brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        if (brightness > 0.7) {
-            // 浅色背景（如搜索键盘白色背景）→ 纯黑文字
-            return [UIColor colorWithRed:0.0 green:0.0 blue:0.0 alpha:1.0];
-        } else if (brightness < 0.3) {
-            // 深色背景 → 纯白文字
-            return [UIColor colorWithRed:1.0 green:1.0 blue:1.0 alpha:1.0];
-        }
-    }
 
     // 默认：键帽风格用深炭灰，其他用用户设置
     if (isLetterKey && (cs == 3 || cs == 4 || cs == 5)) {
         return [UIColor colorWithRed:0.23 green:0.23 blue:0.25 alpha:1.0];
-    }
-    if (gSkinEnabled && v && !isLetterKey) {
-        return [UIColor colorWithRed:74.0 / 255.0 green:74.0 / 255.0 blue:81.0 / 255.0 alpha:1.0];
     }
     if (!(gEnabled && gKeyEnabled)) return nil;
     return WXKBDarkMode() ? (gTextColorDark ?: gTextColor) : gTextColor;
