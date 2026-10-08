@@ -1095,40 +1095,67 @@ static void WXKBForceDarkContent(UIView *v) {
     }
 }
 
-// 精准处理「文字 label 左侧兄弟图标」：剪贴板面板里每一项 = [左侧类型图标] + [WBTextItemLabel 文字]，
+// 精准处理「文字 label 左侧图标」：剪贴板面板里每一项 = [左侧类型图标] + [WBTextItemLabel 文字]，
 // 左侧图标通常是 AlwaysOriginal 白 PNG（渲染模式不受 tint 影响），在浅色皮肤下看不见。
-// 这里只针对 WBTextItemLabel 同父级里的 UIImageView / UIButton 图标，转 template + 深灰 tint，
-// 不影响缩略图（缩略图不在文字项的同父级，且尺寸更大）。
+// 图标未必和 label 是同父直接兄弟（微信常包一层容器），所以从 label 向上取根容器，
+// 再广度遍历其所有后代找 UIImageView / UIButton 图标，转 template + 深灰 tint。
+// 阈值 48pt：类型图标（~20-28pt）会被改，而「拷贝的图片」缩略图（通常更大）不受影响。
 static void WXKBDarkenSiblingIcons(UIView *label) {
     if (!label || !gEnabled || !gSkinEnabled) return;
-    UIView *p = label.superview;
-    if (!p) return;
+    // 向上取文字项根容器（最多 4 层祖先）
+    UIView *root = label;
+    for (int i = 0; i < 4; i++) {
+        UIView *pp = root.superview;
+        if (!pp) break;
+        root = pp;
+    }
     UIColor *gray = [UIColor colorWithRed:0.35 green:0.35 blue:0.38 alpha:1.0];
-    for (UIView *sv in p.subviews) {
-        if (sv == label) continue;
-        if ([sv isKindOfClass:[UIImageView class]]) {
-            UIImageView *iv = (UIImageView *)sv;
-            if (iv.image && iv.image.renderingMode == UIImageRenderingModeAlwaysOriginal) {
-                CGSize s = iv.image.size;
-                if (s.width > 0 && s.width <= 64 && s.height > 0 && s.height <= 64) {
-                    iv.image = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-                    iv.tintColor = gray;
-                }
-            }
-        } else if ([sv isKindOfClass:[UIButton class]]) {
-            UIButton *btn = (UIButton *)sv;
-            for (NSInteger st = 0; st <= 3; st++) {
-                UIImage *im = [btn imageForState:st];
-                if (im && im.renderingMode == UIImageRenderingModeAlwaysOriginal) {
-                    CGSize s = im.size;
-                    if (s.width > 0 && s.width <= 64 && s.height > 0 && s.height <= 64) {
-                        [btn setImage:[im imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:st];
+    NSMutableArray *queue = [NSMutableArray arrayWithObject:root];
+    NSInteger depth = 0;
+    while (queue.count > 0 && depth <= 5) {
+        NSMutableArray *next = [NSMutableArray array];
+        for (UIView *cur in queue) {
+            if ([cur isKindOfClass:[UIImageView class]]) {
+                UIImageView *iv = (UIImageView *)cur;
+                if (iv.image && iv.image.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    CGSize s = iv.image.size;
+                    if (s.width > 0 && s.width <= 48 && s.height > 0 && s.height <= 48) {
+                        iv.image = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+                        iv.tintColor = gray;
                     }
                 }
+                if (iv.highlightedImage &&
+                    iv.highlightedImage.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    CGSize hs = iv.highlightedImage.size;
+                    if (hs.width > 0 && hs.width <= 48 && hs.height > 0 && hs.height <= 48) {
+                        iv.highlightedImage = [iv.highlightedImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+                    }
+                }
+            } else if ([cur isKindOfClass:[UIButton class]]) {
+                UIButton *btn = (UIButton *)cur;
+                for (NSInteger st = 0; st <= 3; st++) {
+                    UIImage *im = [btn imageForState:st];
+                    if (im && im.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                        CGSize s = im.size;
+                        if (s.width > 0 && s.width <= 48 && s.height > 0 && s.height <= 48) {
+                            [btn setImage:[im imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:st];
+                        }
+                    }
+                    UIImage *bim = [btn backgroundImageForState:st];
+                    if (bim && bim.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                        CGSize s = bim.size;
+                        if (s.width > 0 && s.width <= 48 && s.height > 0 && s.height <= 48) {
+                            [btn setBackgroundImage:[bim imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:st];
+                        }
+                    }
+                }
+                btn.imageView.tintColor = gray;
+                btn.tintColor = gray;
             }
-            btn.imageView.tintColor = gray;
-            btn.tintColor = gray;
+            for (UIView *sv in cur.subviews) [next addObject:sv];
         }
+        queue = next;
+        depth++;
     }
 }
 
@@ -2953,7 +2980,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.5 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.3.6 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
