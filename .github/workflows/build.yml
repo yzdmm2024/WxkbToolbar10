@@ -18,6 +18,8 @@ jobs:
       - name: Ensure GNU make on PATH (arm64 homebrew 在 /opt/homebrew)
         if: runner.os == 'macOS'
         run: echo "/opt/homebrew/opt/make/libexec/gnubin" >> "$GITHUB_PATH"
+      - name: Ensure script exec bits (Windows checkout 丢可执行位)
+        run: chmod 0755 layout/DEBIAN/postinst
       - name: Build package (rootless)
         run: make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
       - uses: actions/upload-artifact@v4
