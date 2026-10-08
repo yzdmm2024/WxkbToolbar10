@@ -2406,48 +2406,102 @@ static void WXKBFireAction(int c) {
 // 类不存在时 Logos 自动忽略，不影响运行。
 
 %hook WBTopBarTipsView
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBBaseToast
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBToastView
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBToastView2
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBModernToast
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBCommonPanelView
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBSubPanelView
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBNetworkAlertView
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBCandidateExpandView
-- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
-- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
 %end
 
 %hook WBKeyView
