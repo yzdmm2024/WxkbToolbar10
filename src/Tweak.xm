@@ -453,6 +453,8 @@ static UIBezierPath *WXKBWaterDropPath(CGSize s) {
     return p;
 }
 
+static UIColor *WXKBSkinCanvasColor(void);  // 前向声明（皮肤画布底色，定义在下方皮肤块）
+
 // 仅对「真正画背景的叶子视图」应用形状（不动布局，纯视觉裁剪）
 static void WXKBApplyShapeMask(UIView *target, NSInteger shape, CGSize sz) {
     if (!target || sz.width <= 0 || sz.height <= 0) return;
@@ -941,7 +943,6 @@ static void WXKBApplyCornerInner(UIView *v) {
 }
 
 static void WXKBApplySkin(UIView *v, UIView *leaf);  // 前向声明（定义见下方皮肤块）
-static UIColor *WXKBSkinCanvasColor(void);             // 前向声明（皮肤画布底色）
 
 // 2.2.7 皮肤模式下，递归强制所有文字/图标为深色。
 // 之前只 hook 了 tintColorForCurrentState 等少数方法，但微信键盘的文字/图标
