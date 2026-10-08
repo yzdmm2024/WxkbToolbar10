@@ -179,6 +179,18 @@ static BOOL wxkbPVDarkMode(UIView *ref) {
     return NO;
 }
 
+// CFNotificationCallback 必须是函数指针，不能是 block
+static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
+                                      void *observer,
+                                      CFStringRef name,
+                                      const void *object,
+                                      CFDictionaryRef userInfo) {
+    WXKBPreviewKeyboardView *self2 = (__bridge WXKBPreviewKeyboardView *)observer;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self2 refresh];
+    });
+}
+
 @implementation WXKBPreviewKeyboardView {
     // 由 refresh 读出的偏好派生值（与 Tweak 的全局 g* 对应）
     BOOL  _gEnabled, _gBgEnabled, _gTransparent, _gKeyEnabled, _gSkinEnabled, _gGradEnabled;
@@ -229,14 +241,7 @@ static BOOL wxkbPVDarkMode(UIView *ref) {
     CFNotificationCenterAddObserver(
         CFNotificationCenterGetDarwinNotifyCenter(),
         (__bridge const void *)self,
-        ^(CFNotificationCenterRef center, void *observer, CFStringRef name,
-          const void *object, CFDictionaryRef userInfo) {
-            WXKBPreviewKeyboardView *self2 =
-                (__bridge WXKBPreviewKeyboardView *)observer;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self2 refresh];
-            });
-        },
+        WXKBPreviewNotifyCallback,
         CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
         CFNotificationSuspensionBehaviorCoalesce);
 }
