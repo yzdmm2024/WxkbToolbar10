@@ -1814,14 +1814,45 @@ static BOOL WXKBDarkMode(void) {
 }
 
 static UIColor *WXKBKeyText(WBKeyView *v) {
-    // 2.2.0 键帽风格文字色：彩虹3D/玻璃态/霓虹 → 字母用深炭灰
+    // 2.2.1 检测键盘背景亮度，自动适配文字颜色
     NSInteger cs = WXKBCapStyle();
-    if (v && WXKBLetterIndex(v) != NSNotFound && (cs == 3 || cs == 4 || cs == 5)) {
+    BOOL isLetterKey = (v && WXKBLetterIndex(v) != NSNotFound);
+
+    // 查找键盘根视图背景色
+    UIColor *kbBgColor = nil;
+    UIView *parent = v;
+    while (parent) {
+        if (parent.backgroundColor && [parent isKindOfClass:[UIView class]]) {
+            CGFloat r, g, b, a;
+            [parent.backgroundColor getRed:&r green:&g blue:&b alpha:&a];
+            if (a > 0.5) {  // 只考虑不透明背景
+                kbBgColor = parent.backgroundColor;
+                break;
+            }
+        }
+        parent = parent.superview;
+    }
+
+    // 根据背景亮度决定文字颜色
+    if (kbBgColor) {
+        CGFloat r, g, b, a;
+        [kbBgColor getRed:&r green:&g blue:&b alpha:&a];
+        CGFloat brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+
+        if (brightness > 0.7) {
+            // 浅色背景（如搜索键盘白色背景）→ 纯黑文字
+            return [UIColor colorWithRed:0.0 green:0.0 blue:0.0 alpha:1.0];
+        } else if (brightness < 0.3) {
+            // 深色背景 → 纯白文字
+            return [UIColor colorWithRed:1.0 green:1.0 blue:1.0 alpha:1.0];
+        }
+    }
+
+    // 默认：键帽风格用深炭灰，其他用用户设置
+    if (isLetterKey && (cs == 3 || cs == 4 || cs == 5)) {
         return [UIColor colorWithRed:0.23 green:0.23 blue:0.25 alpha:1.0];
     }
-    // 1.7.5 皮肤模式：非字母键是画布白键帽，配深灰文字（demo 同款）；
-    // 字母键是彩色键帽，仍走用户设置的文字色。
-    if (gSkinEnabled && v && WXKBLetterIndex(v) == NSNotFound) {
+    if (gSkinEnabled && v && !isLetterKey) {
         return [UIColor colorWithRed:74.0 / 255.0 green:74.0 / 255.0 blue:81.0 / 255.0 alpha:1.0];
     }
     if (!(gEnabled && gKeyEnabled)) return nil;
