@@ -85,6 +85,9 @@
 // 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
 #define WXKB_KEY_OFFSET        @"kbOffset"
 
+// 我的主题（用户存档）：NSDictionary { 主题名 -> { 偏好键 -> 值 } }
+#define WXKB_KEY_THEME_PROFILES @"themeProfiles"
+
 #pragma mark - 默认值
 
 #define WXKB_DEF_LETTER_BG     @"#FFFFFF"
