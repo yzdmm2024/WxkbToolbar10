@@ -160,6 +160,15 @@
 @interface WBCandidateExpandView : UIView
 @end
 
+@interface WBCandidateView : UIView
+@end
+
+@interface WBCandidateCell : UIView
+@end
+
+@interface WBTextItemLabel : UILabel
+@end
+
 @interface WBCorrectionNoticeView : UIView
 @end
 
@@ -2533,6 +2542,55 @@ static void WXKBFireAction(int c) {
 }
 %end
 
+// 候选栏（普通模式）- 候选词文字可能是动态颜色，白底上变白
+%hook WBCandidateView
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
+%end
+
+%hook WBCandidateCell
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
+- (void)setSelected:(BOOL)selected {
+    %orig(selected);
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)setHighlighted:(BOOL)highlighted {
+    %orig(highlighted);
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+%end
+
+// 候选词文字 label - 直接强制设为深色
+%hook WBTextItemLabel
+- (void)setTextColor:(UIColor *)color {
+    if (gSkinEnabled && gEnabled) {
+        // 强制深色，不接受动态颜色
+        %orig([UIColor colorWithWhite:0.18 alpha:1.0]);
+    } else {
+        %orig(color);
+    }
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) {
+        [super setTextColor:[UIColor colorWithWhite:0.18 alpha:1.0]];
+    }
+}
+%end
+
 // 2.3.2 更多提示/通知类：修正通知、改写通知、AI Toast、剪贴板服务内容
 %hook WBCorrectionNoticeView
 - (void)layoutSubviews {
@@ -2828,7 +2886,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.2 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.3.3 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
