@@ -66,16 +66,21 @@
     // ---- 皮肤（内置）----
     g = [PSSpecifier groupSpecifierWithName:@"皮肤（内置）"];
     [g setProperty:@"开启后把键盘渲染成内置皮肤。"
-                  @"「主题配色」= 百度彩虹（原图取色）/ 马卡龙 / 蜜桃 / 薄荷 / 暮紫，"
-                  @"后四套是内置配套主题，取色纯代码、选了即用，不依赖皮肤图。"
+                  @"「主题族」= 百度彩虹（原图取色）/ 彩虹 / 马卡龙 / 蜜桃 / 薄荷 / 暮紫 / 海蓝 / 落日 / 森系，"
+                  @"后八套是内置配套主题，色相按方向做连续渐变，选了即用，不依赖皮肤图。"
+                  @"「变色方向」= 横向（左右渐变）/ 竖向（上下渐变）/ 斜向（对角）。"
                   @"「皮肤背景」单独控制键盘底色（白底/全透明/灰色/白50%）。"
                   @"关闭总开关则恢复上方普通按键配色。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
-    [s addObject:[self wxkbChoice:@"主题配色" key:WXKB_KEY_SKIN_THEME def:@0
-                           values:@[@0, @1, @2, @3, @4]
-                           titles:@[@"百度彩虹（原图）", @"马卡龙", @"蜜桃", @"薄荷", @"暮紫"]]];
+    [s addObject:[self wxkbChoice:@"主题族" key:WXKB_KEY_SKIN_THEME def:@0
+                           values:@[@0, @1, @2, @3, @4, @5, @6, @7, @8]
+                           titles:@[@"百度彩虹（原图）", @"彩虹", @"马卡龙", @"蜜桃", @"薄荷",
+                                    @"暮紫", @"海蓝", @"落日", @"森系"]]];
+    [s addObject:[self wxkbChoice:@"变色方向" key:WXKB_KEY_SKIN_DIR def:@0
+                           values:@[@0, @1, @2]
+                           titles:@[@"横向渐变（左右）", @"竖向渐变（上下）", @"斜向渐变（对角）"]]];
     [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
                            values:@[@0, @1, @2, @3]
                            titles:@[@"白底", @"全透明", @"灰色", @"白50%"]]];
