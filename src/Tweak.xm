@@ -180,10 +180,7 @@ static CGFloat   gCorner       = 0.0;
 static int       gShape        = 0;      // 0 默认圆角 1 圆形 2 六边形 3 水珠
 static BOOL      gSkinEnabled  = NO;     // 内置皮肤「彩虹按键」（百度）开关
 static NSString *gSkinName     = nil;    // 皮肤名（当前固定 rainbow）
-static BOOL      gCap3D        = NO;     // 立体键帽（电脑键盘风）
-static BOOL      gCapRainbow   = NO;     // 彩虹键盘帽（浅色柔和凸起，1.9.0）
-static BOOL      gCapMacaron   = NO;     // 马卡龙浮雕键帽（全彩键面+小字，2.0.0）
-static BOOL      gCapRainbow3D = NO;     // 彩虹3D键帽（百度彩虹按键同款，2.1.0）
+static NSInteger gCapStyle     = 0;      // 键帽风格（单选）：0=关闭 1=立体 2=彩虹 3=彩虹3D 4=玻璃态 5=霓虹
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
 static double    gLastLoad     = -1;
 
@@ -356,10 +353,7 @@ static void WXKBReload(BOOL force) {
     id sn = d[WXKB_KEY_SKIN_NAME];
     gSkinName = ([sn isKindOfClass:[NSString class]] && [sn length]) ? sn : @"rainbow";
 
-    gCap3D = [d[WXKB_KEY_KEYCAP3D] boolValue];
-    gCapRainbow = [d[WXKB_KEY_CAPRAINBOW] boolValue];
-    gCapMacaron = [d[WXKB_KEY_CAPMACARON] boolValue];
-    gCapRainbow3D = [d[WXKB_KEY_CAPRAINBOW3D] boolValue];
+    gCapStyle = [d[WXKB_KEY_CAP_STYLE] integerValue];
 
     // ---- 键盘位置 ----
     id of2 = d[WXKB_KEY_OFFSET];
@@ -478,17 +472,15 @@ static const void *kWXKBCapEdgeKey  = &kWXKBCapEdgeKey;    // 1.8.0 轮廓硬描
 
 // 键帽风格：0 关 / 1 立体键帽（电脑键盘风：深色裙边+近黑描边）/
 // 2 彩虹键盘帽（1.9.0：浅色裙边+柔和阴影）/
-// 3 马卡龙浮雕（2.0.0：全彩键面+小字）/
-// 4 彩虹3D键帽（2.1.0：百度彩虹按键同款，粉彩配色+明显3D深度）。
-// 优先级：彩虹3D > 马卡龙 > 彩虹键盘帽 > 立体键帽 > 皮肤默认。
+// 3 彩虹3D键帽（2.1.0：百度彩虹按键同款，粉彩配色+明显3D深度）/
+// 4 玻璃态（2.2.0：半透明+模糊+高光）/
+// 5 霓虹（2.2.0：深色背景+发光边缘）。
+// 单选：一次只能开一种，由 capStyle 偏好决定。
 static NSInteger WXKBCapStyle(void) {
     if (!gEnabled) return 0;
-    if (gCapRainbow3D) return 4;    // 彩虹3D键帽（百度同款，2.1.0）
-    if (gCapMacaron) return 3;      // 马卡龙浮雕（2.0.0，原版键帽观感）
-    if (gCapRainbow) return 2;
-    if (gCap3D) return 1;
-    if (gSkinEnabled) return 3;     // 皮肤默认 = 马卡龙浮雕
-    return 0;
+    if (gCapStyle < 0 || gCapStyle > 5) return 0;
+    if (gSkinEnabled && gCapStyle == 0) return 3;  // 皮肤默认 = 彩虹3D
+    return gCapStyle;
 }
 
 static void WXKBApplyCap(UIView *v, UIView *leaf) {
@@ -529,16 +521,21 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         kInset = 3.0;
         kFront = 8.0;
         topY   = 2.0;
-    } else if (capStyle == 3) {             // 马卡龙浮雕：全彩键面，无裙边无伸出
-        kDepth = 0.0;
-        kInset = 0.0;
-        kFront = 0.0;
-        topY   = 0.0;
-    } else if (capStyle == 4) {             // 彩虹3D键帽：百度同款，实体键盘深度
+    } else if (capStyle == 3) {             // 彩虹3D键帽：百度同款，实体键盘深度
         kDepth = 7.0;                       // 更厚的底部伸出（实体键盘感）
         kInset = 4.5;                       // 更大的侧壁内缩（露出更多侧壁）
         kFront = 8.0;                       // 更高的前脸（立体感更强）
         topY   = 2.5;                       // 顶部裙边
+    } else if (capStyle == 4) {             // 玻璃态：轻微凸起 + 半透明
+        kDepth = 3.0;
+        kInset = 2.0;
+        kFront = 4.0;
+        topY   = 1.5;
+    } else if (capStyle == 5) {             // 霓虹：明显凸起 + 发光边缘
+        kDepth = 5.0;
+        kInset = 3.0;
+        kFront = 6.0;
+        topY   = 2.0;
     }
     CGFloat rad = 5.0;
     if (gShape == 0) {
@@ -548,13 +545,17 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         if (rad <= 0.5) rad = 5.0;
     }
     if (capStyle == 3 && gShape == 0) {
-        // 2.0.0 马卡龙：圆角明显调大（原图键帽圆润，约键高 1/5 起）
-        rad = MAX(rad, MIN(sz.width, sz.height) * 0.22);
-        rad = MIN(rad, MIN(sz.width, sz.height) * 0.38);
-    } else if (capStyle == 4 && gShape == 0) {
-        // 2.1.0 彩虹3D：圆角适中（百度同款，约键高 1/6）
+        // 彩虹3D：圆角适中（百度同款，约键高 1/6）
         rad = MAX(rad, MIN(sz.width, sz.height) * 0.18);
         rad = MIN(rad, MIN(sz.width, sz.height) * 0.30);
+    } else if (capStyle == 4 && gShape == 0) {
+        // 玻璃态：圆角较大（柔和感）
+        rad = MAX(rad, MIN(sz.width, sz.height) * 0.25);
+        rad = MIN(rad, MIN(sz.width, sz.height) * 0.40);
+    } else if (capStyle == 5 && gShape == 0) {
+        // 霓虹：圆角适中
+        rad = MAX(rad, MIN(sz.width, sz.height) * 0.20);
+        rad = MIN(rad, MIN(sz.width, sz.height) * 0.35);
     }
 
     // 取按键底色：优先用我们的配色（含彩虹/数字分组），否则取原生背景叶颜色
@@ -587,24 +588,36 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         cWallHi = [UIColor colorWithWhite:MAX(w * 0.68, 0.42) alpha:1.0];
         cWallLo = [UIColor colorWithWhite:MAX(w * 0.36, 0.16) alpha:1.0];
     }
-    // 键帽外观：电脑键盘风 = 近黑硬描边 + 深色裙边（1.8.0）；
-    // 彩虹键盘帽 = 浅灰白裙边 + 极淡描边（1.9.0）；
-    // 马卡龙浮雕（2.0.0）= 无裙边无描边，全彩键面 + 顶部提亮 + 底部同色系收边唇；
-    // 彩虹3D键帽（2.1.0）= 粉彩键面 + 明显侧壁 + 柔和渐变 + 极淡描边
+    // 键帽外观：
+    // 1 立体键帽 = 近黑硬描边 + 深色裙边
+    // 2 彩虹键盘帽 = 浅灰白裙边 + 极淡描边
+    // 3 彩虹3D键帽 = 粉彩键面 + 明显侧壁 + 柔和渐变 + 极淡描边
+    // 4 玻璃态 = 半透明 + 模糊 + 高光
+    // 5 霓虹 = 深色背景 + 发光边缘
     UIColor *cEdge;
     if (capStyle == 3) {
-        cWallHi = cFace;
-        cWallLo = cFace;
-        cEdge   = [UIColor colorWithWhite:0.0 alpha:0.0];
-        cHi     = [UIColor colorWithHue:h saturation:s * 0.80 brightness:MIN(br * 1.10 + 0.06, 1.0) alpha:1.0];
-        cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.08, 1.0) brightness:br * 0.72 alpha:1.0];
-    } else if (capStyle == 4) {
-        // 2.1.1 彩虹3D：实体键盘键帽，侧壁同色系稍暗（真实键盘感）
+        // 彩虹3D：实体键盘键帽，侧壁同色系稍暗（真实键盘感）
         cWallHi = [UIColor colorWithHue:h saturation:MIN(s * 1.05, 1.0) brightness:MAX(br * 0.78, 0.50) alpha:1.0];
         cWallLo = [UIColor colorWithHue:h saturation:MIN(s * 1.15, 1.0) brightness:MAX(br * 0.62, 0.38) alpha:1.0];
         cEdge   = [UIColor colorWithHue:h saturation:MIN(s * 1.20, 1.0) brightness:MAX(br * 0.50, 0.30) alpha:0.40];
         cHi     = [UIColor colorWithHue:h saturation:MAX(s * 0.50, 0.0) brightness:MIN(br * 1.35 + 0.20, 1.0) alpha:1.0];
         cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.10, 1.0) brightness:br * 0.65 alpha:1.0];
+    } else if (capStyle == 4) {
+        // 玻璃态：半透明键面 + 强高光 + 淡侧壁
+        cWallHi = [UIColor colorWithHue:h saturation:MAX(s * 0.30, 0.0) brightness:MIN(br * 1.20 + 0.15, 1.0) alpha:0.60];
+        cWallLo = [UIColor colorWithHue:h saturation:MAX(s * 0.40, 0.0) brightness:MIN(br * 1.00 + 0.05, 1.0) alpha:0.50];
+        cEdge   = [UIColor colorWithWhite:1.0 alpha:0.25];
+        cHi     = [UIColor colorWithWhite:1.0 alpha:0.70];
+        cLow    = [UIColor colorWithHue:h saturation:MAX(s * 0.50, 0.0) brightness:br alpha:0.85];
+        cFace   = [UIColor colorWithHue:h saturation:MAX(s * 0.60, 0.0) brightness:br alpha:0.75];
+    } else if (capStyle == 5) {
+        // 霓虹：深色键面 + 发光侧壁 + 强描边
+        cWallHi = [UIColor colorWithHue:h saturation:1.0 brightness:0.90 alpha:1.0];
+        cWallLo = [UIColor colorWithHue:h saturation:1.0 brightness:0.60 alpha:1.0];
+        cEdge   = [UIColor colorWithHue:h saturation:1.0 brightness:1.0 alpha:0.80];
+        cHi     = [UIColor colorWithHue:h saturation:0.80 brightness:0.30 alpha:1.0];
+        cLow    = [UIColor colorWithHue:h saturation:1.0 brightness:0.15 alpha:1.0];
+        cFace   = [UIColor colorWithHue:h saturation:0.90 brightness:0.20 alpha:1.0];
     } else if (capStyle == 2) {
         cWallHi = [UIColor colorWithWhite:0.985 alpha:1.0];
         cWallLo = [UIColor colorWithWhite:0.800 alpha:1.0];
@@ -714,12 +727,16 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     top.startPoint = CGPointMake(0.5, 0.0);
     top.endPoint   = CGPointMake(0.5, 1.0);
     if (capStyle == 3) {
-        // 马卡龙浮雕：顶部提亮 → 键面 → 底部收边唇（单图层完成弧面凸起感）
-        top.locations = @[@0.0, @0.22, @0.82, @1.0];
-        top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
-    } else if (capStyle == 4) {
         // 彩虹3D：实体键盘强渐变（高光 → 键面 → 底部明显压暗）
         top.locations = @[@0.0, @0.15, @0.70, @1.0];
+        top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
+    } else if (capStyle == 4) {
+        // 玻璃态：强高光 → 半透明键面
+        top.locations = @[@0.0, @0.20, @0.80, @1.0];
+        top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
+    } else if (capStyle == 5) {
+        // 霓虹：暗键面 → 底部微亮（模拟发光）
+        top.locations = @[@0.0, @0.30, @0.70, @1.0];
         top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
     } else if (capStyle == 2) {
         // 彩虹键盘帽：柔和两段式（亮面 → 键面），不要强高光带
@@ -767,14 +784,21 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     // ④ 整颗键柔和投影：电脑键盘风更沉，彩虹键盘帽更轻更散，彩虹3D适中
     v.layer.shadowColor  = [UIColor colorWithWhite:0.0 alpha:1.0].CGColor;
     if (capStyle == 3) {
-        v.layer.shadowOpacity = 0.16;
-        v.layer.shadowOffset  = CGSizeMake(0.0, 3.0);
-        v.layer.shadowRadius  = 5.0;
-    } else if (capStyle == 4) {
         // 彩虹3D：实体键盘投影，更深更明显
         v.layer.shadowOpacity = 0.25;
         v.layer.shadowOffset  = CGSizeMake(0.0, 4.0);
         v.layer.shadowRadius  = 5.0;
+    } else if (capStyle == 4) {
+        // 玻璃态：柔和投影
+        v.layer.shadowOpacity = 0.15;
+        v.layer.shadowOffset  = CGSizeMake(0.0, 2.5);
+        v.layer.shadowRadius  = 4.0;
+    } else if (capStyle == 5) {
+        // 霓虹：发光投影（彩色阴影）
+        v.layer.shadowOpacity = 0.50;
+        v.layer.shadowOffset  = CGSizeMake(0.0, 2.0);
+        v.layer.shadowRadius  = 6.0;
+        v.layer.shadowColor   = cEdge.CGColor;  // 发光颜色 = 描边颜色
     } else if (capStyle == 2) {
         v.layer.shadowOpacity = 0.20;
         v.layer.shadowOffset  = CGSizeMake(0.0, 3.0);
@@ -809,29 +833,12 @@ static const void *kWXKBSubKey = &kWXKBSubKey;
 
 static void WXKBApplySublabel(UIView *v) {
     if (!v) return;
+    // 2.2.0 移除马卡龙浮雕后，不再显示下层小字
     UILabel *sub = objc_getAssociatedObject(v, kWXKBSubKey);
-    NSInteger li = (gEnabled && WXKBCapStyle() == 3) ? WXKBLetterIndex((WBKeyView *)v) : NSNotFound;
-    NSString *txt = (li != NSNotFound) ? WXKBSublabelForLetter(li) : nil;
-    if (!txt) {
-        if (sub) {
-            [sub removeFromSuperview];
-            objc_setAssociatedObject(v, kWXKBSubKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
-        return;
+    if (sub) {
+        [sub removeFromSuperview];
+        objc_setAssociatedObject(v, kWXKBSubKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    CGSize sz = v.bounds.size;
-    if (sz.height < 30.0 || sz.width < 24.0) return;
-    if (!sub) {
-        sub = [UILabel new];
-        sub.userInteractionEnabled = NO;
-        sub.textAlignment = NSTextAlignmentCenter;
-        objc_setAssociatedObject(v, kWXKBSubKey, sub, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [v addSubview:sub];
-    }
-    sub.text = txt;
-    sub.font = [UIFont systemFontOfSize:MAX(sz.height * 0.19, 8.0) weight:UIFontWeightRegular];
-    sub.textColor = [UIColor colorWithWhite:0.35 alpha:0.60];
-    sub.frame = CGRectMake(0, sz.height * 0.56, sz.width, sz.height * 0.36);
 }
 
 static void WXKBApplyCornerInner(UIView *v) {
@@ -1807,29 +1814,9 @@ static BOOL WXKBDarkMode(void) {
 }
 
 static UIColor *WXKBKeyText(WBKeyView *v) {
-    // 2.0.0 马卡龙浮雕 / 2.1.0 彩虹3D：粉彩键面 → 字母用深炭灰，不跟用户白字
+    // 2.2.0 键帽风格文字色：彩虹3D/玻璃态/霓虹 → 字母用深炭灰
     NSInteger cs = WXKBCapStyle();
-    if (v && WXKBLetterIndex(v) != NSNotFound && (cs == 3 || cs == 4)) {
-        // 2.1.1 检测键盘背景亮度，深色背景用浅文字
-        UIColor *bgColor = nil;
-        UIView *parent = v.superview;
-        while (parent) {
-            if ([parent isKindOfClass:[UIView class]] && parent.backgroundColor) {
-                bgColor = parent.backgroundColor;
-                break;
-            }
-            parent = parent.superview;
-        }
-        if (bgColor) {
-            CGFloat r, g, b, a;
-            [bgColor getRed:&r green:&g blue:&b alpha:&a];
-            CGFloat brightness = 0.299 * r + 0.587 * g + 0.114 * b;
-            if (brightness < 0.4) {
-                // 深色背景 → 浅文字
-                return [UIColor colorWithRed:0.92 green:0.92 blue:0.94 alpha:1.0];
-            }
-        }
-        // 浅色背景 → 深炭灰文字
+    if (v && WXKBLetterIndex(v) != NSNotFound && (cs == 3 || cs == 4 || cs == 5)) {
         return [UIColor colorWithRed:0.23 green:0.23 blue:0.25 alpha:1.0];
     }
     // 1.7.5 皮肤模式：非字母键是画布白键帽，配深灰文字（demo 同款）；
@@ -2296,7 +2283,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.0.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d rainbow=%d macaron=%d corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.2.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, gCap3D, gCapRainbow, gCapMacaron, gCorner, gKbOffset, gSkinEnabled);
+          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }

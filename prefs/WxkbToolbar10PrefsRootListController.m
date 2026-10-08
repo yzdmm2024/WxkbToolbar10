@@ -96,21 +96,18 @@
     }
 
     // ---- 按键形状 ----
-    g = [PSSpecifier groupSpecifierWithName:@"按键形状 / 立体键帽"];
-    [g setProperty:@"「默认圆角」由下方滑块决定；「圆形 / 六边形 / 水珠」会忽略圆角滑块，"
-                  @"直接把按键裁成对应形状。「彩虹3D键帽」= 百度彩虹按键同款，粉彩配色+明显3D深度；"
-                  @"「马卡龙浮雕键帽」= 全彩键面 + 顶部提亮 + 底部收边唇 + 柔和投影 + 深色字母 + 下层小字（开启皮肤时默认）；"
-                  @"「彩虹键盘帽」= 白/浅灰裙边柔和凸起；「立体键帽」= 深色电脑键盘风。"
-                  @"优先级：彩虹3D > 马卡龙 > 彩虹 > 立体键帽。以上都只改视觉，不影响键盘布局。"
+    g = [PSSpecifier groupSpecifierWithName:@"按键形状 / 键帽风格"];
+    [g setProperty:@"「默认圆角」由下方滑块决定；「圆形 / 六边形 / 水珠」会忽略圆角滑块，直接把按键裁成对应形状。"
+                  @"「键帽风格」单选：关闭 / 立体键帽（电脑键盘风）/ 彩虹键盘帽（柔和凸起）/ 彩虹3D键帽（百度同款，粉彩+3D深度）/ 玻璃态（半透明+高光）/ 霓虹（深色+发光边缘）。"
+                  @"开启皮肤时默认 = 彩虹3D键帽。以上都只改视觉，不影响键盘布局。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbChoice:@"按键形状" key:WXKB_KEY_SHAPE def:@0
                            values:@[@0, @1, @2, @3]
                            titles:@[@"默认圆角", @"圆形", @"六边形", @"水珠"]]];
-    [s addObject:[self wxkbSwitch:@"彩虹3D键帽（百度同款）" key:WXKB_KEY_CAPRAINBOW3D def:NO]];
-    [s addObject:[self wxkbSwitch:@"马卡龙浮雕键帽（原版观感）" key:WXKB_KEY_CAPMACARON def:NO]];
-    [s addObject:[self wxkbSwitch:@"彩虹键盘帽（柔和凸起）" key:WXKB_KEY_CAPRAINBOW def:NO]];
-    [s addObject:[self wxkbSwitch:@"立体键帽（电脑键盘风）" key:WXKB_KEY_KEYCAP3D def:NO]];
+    [s addObject:[self wxkbChoice:@"键帽风格" key:WXKB_KEY_CAP_STYLE def:@0
+                           values:@[@0, @1, @2, @3, @4, @5]
+                           titles:@[@"关闭", @"立体键帽", @"彩虹键盘帽", @"彩虹3D键帽", @"玻璃态", @"霓虹"]]];
     [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
                               min:0.0 max:22.0]];
 
@@ -159,7 +156,7 @@
     return @{
         @"极光": @{
             WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_KEYCAP3D: @NO,
+            WXKB_KEY_CAP_STYLE: @0,
             WXKB_KEY_GRAD_ENABLED: @YES,
             WXKB_KEY_LETTER_BG: @"#101826",
             WXKB_KEY_FUNC_L_BG: @"#0E1524",
@@ -172,7 +169,7 @@
         },
         @"莫兰迪": @{
             WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_KEYCAP3D: @NO,
+            WXKB_KEY_CAP_STYLE: @0,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#D8CFC4",
             WXKB_KEY_FUNC_L_BG: @"#C9BFB2",
@@ -183,7 +180,7 @@
         },
         @"暗夜": @{
             WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_KEYCAP3D: @NO,
+            WXKB_KEY_CAP_STYLE: @0,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#2B2B2E",
             WXKB_KEY_FUNC_L_BG: @"#1F1F22",
@@ -194,7 +191,7 @@
         },
         @"清新": @{
             WXKB_KEY_KEY_ENABLED: @YES,
-            WXKB_KEY_KEYCAP3D: @NO,
+            WXKB_KEY_CAP_STYLE: @0,
             WXKB_KEY_GRAD_ENABLED: @NO,
             WXKB_KEY_LETTER_BG: @"#E8F5E9",
             WXKB_KEY_FUNC_L_BG: @"#C8E6C9",

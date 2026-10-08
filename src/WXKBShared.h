@@ -67,20 +67,8 @@
 // 皮肤资源在设备上的目录（tweak 从 jbroot 读取）
 #define WXKB_SKIN_DIR          @"/Library/Application Support/WxkbToolbar10/skins"
 
-// 立体键帽：在按键背后垫一层向下的深色「侧壁」，模拟电脑键盘 3D 键帽（纯视觉，不动布局）
-#define WXKB_KEY_KEYCAP3D      @"keyCap3D"
-
-// 彩虹键盘帽（1.9.0）：浅灰白裙边 + 柔和阴影 + 圆润穹顶的凸起键帽。
-#define WXKB_KEY_CAPRAINBOW    @"keyCapRainbow"
-
-// 马卡龙浮雕键帽（2.0.0）：全彩键面（无裙边无描边）+ 顶部提亮 + 底部同色系
-// 收边唇 + 柔和投影 + 深炭灰字母 + 键面下层小字（Q→1、A→! …）。
-// 开启皮肤时三个键帽开关都没开 → 默认按此风格渲染（图2 原版观感）。
-#define WXKB_KEY_CAPMACARON    @"keyCapMacaron"
-
-// 彩虹3D键帽（2.1.0）：粉彩键面 + 明显3D深度 + 柔和渐变 + 极淡描边。
-// 百度「彩虹按键」同款风格，每个键不同粉彩色，立体感强。
-#define WXKB_KEY_CAPRAINBOW3D  @"keyCapRainbow3D"
+// 键帽风格（单选）：0=关闭  1=立体键帽  2=彩虹键盘帽  3=彩虹3D键帽  4=玻璃态  5=霓虹
+#define WXKB_KEY_CAP_STYLE     @"capStyle"
 
 // 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
 #define WXKB_KEY_OFFSET        @"kbOffset"
