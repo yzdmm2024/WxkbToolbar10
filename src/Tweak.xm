@@ -124,6 +124,42 @@
 @interface WBCCFuncItem : UIControl
 @end
 
+@interface WBPasteboardHotWordShellView : UIView
+@end
+
+@interface WBPasteboardListView : UIView
+@end
+
+@interface WBPasteboardImageDetailView : UIView
+@end
+
+@interface WBTopBarTipsView : UIView
+@end
+
+@interface WBBaseToast : UIView
+@end
+
+@interface WBToastView : UIView
+@end
+
+@interface WBToastView2 : UIView
+@end
+
+@interface WBModernToast : UIView
+@end
+
+@interface WBCommonPanelView : UIView
+@end
+
+@interface WBSubPanelView : UIView
+@end
+
+@interface WBNetworkAlertView : UIView
+@end
+
+@interface WBCandidateExpandView : UIView
+@end
+
 @interface WBKeyView : UIView
 - (id)item;
 @end
@@ -2326,6 +2362,94 @@ static void WXKBFireAction(int c) {
 
 %end
 
+// 2.2.10 剪贴板相关面板（"拷贝的图片"/"拷贝的内容"提示条、剪贴板历史列表等）。
+// 皮肤模式下面板底色是浅色的，但文字/图标用了动态颜色，
+// 在深色宿主下解析为白色 → 白底白字看不见。
+// Hook 它们的 layoutSubviews，递归强制深色。
+%hook WBPasteboardHotWordShellView
+
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) {
+        WXKBForceDarkContent(self);
+    }
+}
+
+%end
+
+%hook WBPasteboardListView
+
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) {
+        WXKBForceDarkContent(self);
+    }
+}
+
+%end
+
+%hook WBPasteboardImageDetailView
+
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) {
+        WXKBForceDarkContent(self);
+    }
+}
+
+%end
+
+// 2.3.1 各种提示/Toast/面板类的通用深色化。
+// 皮肤模式下这些视图的背景是浅色的（透出键盘画布色或自身白底），
+// 但文字/图标是动态颜色，在深色宿主下解析为白色 → 看不见。
+// 逐个 hook layoutSubviews 和 didMoveToWindow，确保出现时立刻深色化。
+// 类不存在时 Logos 自动忽略，不影响运行。
+
+%hook WBTopBarTipsView
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
+%hook WBBaseToast
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
+%hook WBToastView
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
+%hook WBToastView2
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
+%hook WBModernToast
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
+%hook WBCommonPanelView
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
+%hook WBSubPanelView
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
+%hook WBNetworkAlertView
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
+%hook WBCandidateExpandView
+- (void)layoutSubviews { %orig; if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self); }
+- (void)didMoveToWindow { %orig; if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self); }
+%end
+
 %hook WBKeyView
 
 - (void)layoutSubviews {
@@ -2556,7 +2680,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.2.9 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.3.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
