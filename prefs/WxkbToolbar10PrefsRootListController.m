@@ -19,7 +19,30 @@
     CGFloat h = [WXKBPreviewKeyboardView preferredHeightForWidth:w];
     _previewView = [[WXKBPreviewKeyboardView alloc] initWithFrame:CGRectMake(0, 0, w, h)];
     _previewView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    self.tableView.tableHeaderView = _previewView;
+
+    // 兼容不同 iOS / 越狱环境下 PSListController 暴露的表视图访问器：
+    // 部分环境（如某些 roothide/rootless 的 Preferences）并未暴露 tableView 属性，
+    // 直接 self.tableView 会触发 doesNotRecognizeSelector 闪退（见崩溃日记）。
+    // 依次尝试 tableView -> table -> 视图层级兜底，保证面板不再崩溃且预览尽量保留。
+    UITableView *tv = nil;
+    if ([self respondsToSelector:@selector(tableView)]) {
+        tv = self.tableView;
+    }
+    if (!tv && [self respondsToSelector:@selector(table)]) {
+        tv = (UITableView *)self.table;
+    }
+    if (!tv) {
+        for (UIView *v in self.view.subviews) {
+            if ([v isKindOfClass:[UITableView class]]) { tv = (UITableView *)v; break; }
+        }
+    }
+    if (tv) {
+        tv.tableHeaderView = _previewView;
+    } else {
+        // 极端兜底：直接叠在视图顶部，保证不闪退且预览仍可见
+        [self.view addSubview:_previewView];
+    }
+
     [_previewView refresh];
 }
 
