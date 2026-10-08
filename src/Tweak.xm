@@ -1683,6 +1683,29 @@ static void WXKBLoadSkin(void) {
         }
     }
     if (gSkinLetterImg[0]) {
+        // 2.2.5 检查提取的颜色是否太浅（白色），如果是则使用后备色
+        BOOL allTooLight = YES;
+        for (NSInteger i = 0; i < 26; i++) {
+            if (gSkinLetterCol[i]) {
+                CGFloat r, g, b, a;
+                [gSkinLetterCol[i] getRed:&r green:&g blue:&b alpha:&a];
+                CGFloat brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+                if (brightness < 0.85) {
+                    allTooLight = NO;
+                    break;
+                }
+            }
+        }
+        if (allTooLight) {
+            // 所有颜色都太浅，使用后备彩虹色
+            for (NSInteger i = 0; i < 26; i++) {
+                CGFloat hue = (i % 10) / 10.0;
+                gSkinLetterCol[i] = [UIColor colorWithHue:hue
+                                               saturation:0.65
+                                               brightness:0.92
+                                                    alpha:1.0];
+            }
+        }
         gSkinLoaded = YES;
     } else {
         // 2.2.3 皮肤加载失败时，使用代码生成的彩虹色作为后备
