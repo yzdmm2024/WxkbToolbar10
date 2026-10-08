@@ -1,15 +1,33 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
+#import "WXKBPreviewKeyboardView.h"
 
-@interface WxkbToolbar10PrefsRootListController : WXKBBaseListController
+@interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
+    WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
+}
 @end
 
 @implementation WxkbToolbar10PrefsRootListController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+
+    // 顶部内联实时预览：用同一套取色 / 键帽渲染数学画仿真键盘，
+    // 改任意控件 -> wxkbNotifyChanged -> 预览自行重绘（见 WXKBPreviewKeyboardView）。
+    CGFloat w = CGRectGetWidth([UIScreen mainScreen].bounds);
+    if (w < 1.0) w = 375.0;
+    CGFloat h = [WXKBPreviewKeyboardView preferredHeightForWidth:w];
+    _previewView = [[WXKBPreviewKeyboardView alloc] initWithFrame:CGRectMake(0, 0, w, h)];
+    _previewView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    self.tableView.tableHeaderView = _previewView;
+    [_previewView refresh];
+}
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     _specifiers = nil;               // 子页返回后刷新右侧当前值
     [self reloadSpecifiers];
+    [_previewView refresh];           // 子页改完回来，预览立即同步
 }
 
 - (NSArray *)specifiers {
@@ -108,6 +126,14 @@
         [b setProperty:nm forKey:@"wxkbPreset"];
         [s addObject:b];
     }
+
+    // ---- 我的主题（存档 / 切换）----
+    g = [PSSpecifier groupSpecifierWithName:@"我的主题（存档 / 切换）"];
+    [g setProperty:@"把当前整套外观（背景 / 按键配色 / 皮肤 / 键帽 / 字母渐变 …）"
+                  @"存成具名主题，随时一键套用。顶部的预览会实时跟着你的改动变。"
+            forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbLink:@"管理我的主题…" detailClass:@"WXKBThemeProfilesController"]];
 
     // ---- 按键形状 ----
     g = [PSSpecifier groupSpecifierWithName:@"按键形状 / 键帽风格"];
