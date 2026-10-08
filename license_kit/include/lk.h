@@ -237,6 +237,7 @@ typedef enum {
     LK_R_BAD_CODE,        /* 码格式/签名不对 */
     LK_R_STATE_BAD,       /* 状态里的码已失效 */
     LK_R_EXPIRED,         /* 已过期 */
+    LK_R_INTERNAL,        /* 内部错误（解混淆/配置失败） */
 } lk_reason;
 
 /* ---------- 核心状态机（lk_core.c） ---------- */
