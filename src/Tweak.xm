@@ -599,10 +599,10 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         cHi     = [UIColor colorWithHue:h saturation:s * 0.80 brightness:MIN(br * 1.10 + 0.06, 1.0) alpha:1.0];
         cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.08, 1.0) brightness:br * 0.72 alpha:1.0];
     } else if (capStyle == 4) {
-        // 2.1.0 彩虹3D：实体键盘键帽，侧壁深色 + 顶面强渐变
-        cWallHi = [UIColor colorWithHue:h saturation:MIN(s * 0.85, 1.0) brightness:MAX(br * 0.55, 0.35) alpha:1.0];
-        cWallLo = [UIColor colorWithHue:h saturation:MIN(s * 0.95, 1.0) brightness:MAX(br * 0.30, 0.18) alpha:1.0];
-        cEdge   = [UIColor colorWithWhite:0.30 alpha:0.35];
+        // 2.1.1 彩虹3D：实体键盘键帽，侧壁同色系稍暗（真实键盘感）
+        cWallHi = [UIColor colorWithHue:h saturation:MIN(s * 1.05, 1.0) brightness:MAX(br * 0.78, 0.50) alpha:1.0];
+        cWallLo = [UIColor colorWithHue:h saturation:MIN(s * 1.15, 1.0) brightness:MAX(br * 0.62, 0.38) alpha:1.0];
+        cEdge   = [UIColor colorWithHue:h saturation:MIN(s * 1.20, 1.0) brightness:MAX(br * 0.50, 0.30) alpha:0.40];
         cHi     = [UIColor colorWithHue:h saturation:MAX(s * 0.50, 0.0) brightness:MIN(br * 1.35 + 0.20, 1.0) alpha:1.0];
         cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.10, 1.0) brightness:br * 0.65 alpha:1.0];
     } else if (capStyle == 2) {
@@ -1810,6 +1810,26 @@ static UIColor *WXKBKeyText(WBKeyView *v) {
     // 2.0.0 马卡龙浮雕 / 2.1.0 彩虹3D：粉彩键面 → 字母用深炭灰，不跟用户白字
     NSInteger cs = WXKBCapStyle();
     if (v && WXKBLetterIndex(v) != NSNotFound && (cs == 3 || cs == 4)) {
+        // 2.1.1 检测键盘背景亮度，深色背景用浅文字
+        UIColor *bgColor = nil;
+        UIView *parent = v.superview;
+        while (parent) {
+            if ([parent isKindOfClass:[UIView class]] && parent.backgroundColor) {
+                bgColor = parent.backgroundColor;
+                break;
+            }
+            parent = parent.superview;
+        }
+        if (bgColor) {
+            CGFloat r, g, b, a;
+            [bgColor getRed:&r green:&g blue:&b alpha:&a];
+            CGFloat brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+            if (brightness < 0.4) {
+                // 深色背景 → 浅文字
+                return [UIColor colorWithRed:0.92 green:0.92 blue:0.94 alpha:1.0];
+            }
+        }
+        // 浅色背景 → 深炭灰文字
         return [UIColor colorWithRed:0.23 green:0.23 blue:0.25 alpha:1.0];
     }
     // 1.7.5 皮肤模式：非字母键是画布白键帽，配深灰文字（demo 同款）；
