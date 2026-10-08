@@ -121,6 +121,9 @@
 @interface WBTopBar : UIView
 @end
 
+@interface WBCCFuncItem : UIControl
+@end
+
 @interface WBKeyView : UIView
 - (id)item;
 @end
@@ -923,18 +926,22 @@ static void WXKBApplyCornerInner(UIView *v) {
         // key 自身不再额外圆角/蒙版，避免双重裁剪
         v.layer.mask = nil;
         v.layer.cornerRadius = 0;
-        // 2.2.8 修复六边形模式下键之间透出黑色三角的问题：
-        // 六边形 mask 后，target 背景叶四角被裁掉，v 本身的深色背景
-        // 从凹角处露出来，形成黑色空隙。把 v 的背景清成透明，
-        // 让底下的键盘画布色透出来，就不会有黑边了。
+        // 2.2.9 修复六边形/水珠模式下键之间透出黑色菱形的问题：
+        // 六边形 mask 后，target 背景叶四角被裁掉，v 下面那层（行容器/间隔）
+        // 的深色背景从凹角处露出来，形成黑色菱形空隙。
+        // 2.2.8 试过把 v 设成透明，但 v 的 superview（行容器）还是深色的。
+        // 正确做法：把 v 的背景设成和键盘画布一致的颜色，
+        // 这样六边形凹角外面的区域就是画布色，和整体背景融为一体。
         if (gSkinEnabled) {
-            v.backgroundColor = [UIColor clearColor];
-            v.layer.backgroundColor = [UIColor clearColor].CGColor;
+            UIColor *canvas = WXKBSkinCanvasColor();
+            v.backgroundColor = canvas;
+            v.layer.backgroundColor = canvas.CGColor;
         }
     }
 }
 
 static void WXKBApplySkin(UIView *v, UIView *leaf);  // 前向声明（定义见下方皮肤块）
+static UIColor *WXKBSkinCanvasColor(void);             // 前向声明（皮肤画布底色）
 
 // 2.2.7 皮肤模式下，递归强制所有文字/图标为深色。
 // 之前只 hook 了 tintColorForCurrentState 等少数方法，但微信键盘的文字/图标
@@ -942,6 +949,12 @@ static void WXKBApplySkin(UIView *v, UIView *leaf);  // 前向声明（定义见
 // 渲染、attributedText 等），漏掉哪一路都会出现"白字看不见"。
 // 改为直接在 layout 后遍历子视图树，暴力把所有显示元素改成深色，
 // 确保浅色画布上文字图标绝对可见。
+//
+// 2.2.9 修复：不再做"亮度 > 0.55 才改"的判断。
+// 因为微信大量使用 UIDynamicProviderColor（动态颜色），用 getRed: 读到的
+// 是 light 模式下的解析值（看起来已经是深色），但实际在深色 trait 环境里
+// 显示出来是白色的（比如 WBCCFuncItem 面板里的图标和文字）。
+// 皮肤模式下面板底色一定是浅色的，文字/图标必须是深色，直接强制覆盖最可靠。
 static void WXKBForceDarkContent(UIView *v) {
     if (!v || !gEnabled || !gSkinEnabled) return;
     UIColor *dark = [UIColor colorWithRed:0.18 green:0.18 blue:0.20 alpha:1.0];
@@ -951,48 +964,45 @@ static void WXKBForceDarkContent(UIView *v) {
     while (queue.count > 0) {
         UIView *cur = [queue firstObject];
         [queue removeObjectAtIndex:0];
-        // UILabel：文字强制深色
+        // UILabel：文字强制深色（动态颜色也直接覆盖，避免白色解析值）
         if ([cur isKindOfClass:[UILabel class]]) {
             UILabel *lbl = (UILabel *)cur;
             if (lbl.textColor && CGColorGetAlpha(lbl.textColor.CGColor) > 0.01) {
-                // 只有当文字接近白色时才改（避免把已经是深色的文字改乱）
-                CGFloat r, g, b, a;
-                if ([lbl.textColor getRed:&r green:&g blue:&b alpha:&a]) {
-                    CGFloat br = 0.299 * r + 0.587 * g + 0.114 * b;
-                    if (br > 0.55) {
-                        lbl.textColor = dark;
-                        // 同步高亮状态文字颜色
-                        if ([cur isKindOfClass:NSClassFromString(@"WBLabel")]) {
-                            // WBLabel 可能有高亮态文字，也改掉
-                        }
-                    }
+                lbl.textColor = dark;
+            }
+            // highlightedTextColor 也改
+            if (lbl.highlightedTextColor &&
+                CGColorGetAlpha(lbl.highlightedTextColor.CGColor) > 0.01) {
+                lbl.highlightedTextColor = dark;
+            }
+        }
+        // UIImageView：tintColor 强制深灰（template 模式图标）
+        if ([cur isKindOfClass:[UIImageView class]]) {
+            UIImageView *iv = (UIImageView *)cur;
+            if (iv.image) {
+                // 无论是 AlwaysTemplate 还是 Automatic，只要走 tint 渲染都改
+                if (iv.image.renderingMode != UIImageRenderingModeAlwaysOriginal) {
+                    iv.tintColor = gray;
                 }
             }
         }
-        // UIImageView：tintColor 强制深灰（功能键图标等）
-        if ([cur isKindOfClass:[UIImageView class]]) {
-            UIImageView *iv = (UIImageView *)cur;
-            if (iv.image && iv.image.renderingMode != UIImageRenderingModeAlwaysOriginal) {
-                iv.tintColor = gray;
-            }
-        }
-        // UIButton：title 和 image 都改
+        // UIButton：所有状态的文字颜色 + image tint 都改
         if ([cur isKindOfClass:[UIButton class]]) {
             UIButton *btn = (UIButton *)cur;
             for (NSInteger s = 0; s <= 3; s++) {
                 UIColor *tc = [btn titleColorForState:s];
                 if (tc) {
-                    CGFloat r, g, b, a;
-                    if ([tc getRed:&r green:&g blue:&b alpha:&a]) {
-                        CGFloat br = 0.299 * r + 0.587 * g + 0.114 * b;
-                        if (br > 0.55) {
-                            [btn setTitleColor:dark forState:s];
-                        }
-                    }
+                    [btn setTitleColor:dark forState:s];
                 }
             }
             btn.imageView.tintColor = gray;
             btn.tintColor = gray;
+        }
+        // UIControl 子类（如 WBCCFuncItem）：自己的 tintColor 也改，
+        // 它内部的子视图会继承 tintColor
+        if ([cur isKindOfClass:[UIControl class]]) {
+            UIControl *ctl = (UIControl *)cur;
+            ctl.tintColor = gray;
         }
         // 继续遍历子视图
         for (UIView *sv in cur.subviews) {
@@ -2300,6 +2310,21 @@ static void WXKBFireAction(int c) {
 
 %end
 
+// 功能面板里的每一项（语音转文字、表情、剪贴板…）。
+// 皮肤模式下面板底色是浅色的，但这里的图标和文字用了 UIDynamicProviderColor，
+// 在深色宿主下会解析成白色 → 白底白字看不见。
+// Hook 它的 layoutSubviews，暴力递归改成深色。
+%hook WBCCFuncItem
+
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) {
+        WXKBForceDarkContent(self);
+    }
+}
+
+%end
+
 %hook WBKeyView
 
 - (void)layoutSubviews {
@@ -2530,7 +2555,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.2.8 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.2.9 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
