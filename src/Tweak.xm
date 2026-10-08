@@ -240,6 +240,7 @@ static CGFloat   gCorner       = 0.0;
 static int       gShape        = 0;      // 0 默认圆角 1 圆形 2 六边形 3 水珠
 static BOOL      gSkinEnabled  = NO;     // 内置皮肤「彩虹按键」（百度）开关
 static NSInteger  gSkinBg       = 0;     // 皮肤背景：0白底 1全透明 2灰色 3白50%
+static NSInteger  gSkinTheme    = 0;     // 主题配色：0百度彩虹 1马卡龙 2蜜桃 3薄荷 4暮紫
 static NSString *gSkinName     = nil;    // 皮肤名（当前固定 rainbow）
 static NSInteger gCapStyle     = 0;      // 键帽风格（单选）：0=关闭 1=立体 2=彩虹 3=彩虹3D 4=玻璃态 5=霓虹
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
@@ -417,6 +418,10 @@ static void WXKBReload(BOOL force) {
     gSkinBg = sbv;
     id sn = d[WXKB_KEY_SKIN_NAME];
     gSkinName = ([sn isKindOfClass:[NSString class]] && [sn length]) ? sn : @"rainbow";
+    id stt = d[WXKB_KEY_SKIN_THEME];
+    NSInteger stv = stt ? [stt integerValue] : 0;
+    if (stv < 0 || stv > 4) stv = 0;
+    gSkinTheme = stv;
 
     gCapStyle = [d[WXKB_KEY_CAP_STYLE] integerValue];
 
@@ -2040,11 +2045,54 @@ static UIColor *WXKBSkinCanvasColor(void) {
 // 画布白（demo 同款白色键帽）。立体明暗（高光/侧壁/投影）由立体键帽渲染器
 // WXKBApplyCap 从这个底色推导——它是 CAShapeLayer+渐变实现，真机上稳定渲染，
 // 彻底取代始终显示不出来的 CGImage 贴图路线。
+// ---- 2.3.8 内置「配套主题」色板 ----
+// 每套 10 色粉彩彩虹，按键盘行循环套色：同一列的三行同色 → 竖向色带，
+// 与百度彩虹按键的 9 宫格是同一套视觉语言（demo.png 的观测色：粉彩键面 +
+// 更饱和的下缘 + 近白功能键 + 浅白画布）。取色纯代码，选了即生效，不依赖皮肤图。
+static NSArray<NSString *> *WXKBThemeHexes(void) {
+    static NSArray *tab[5];
+    if (!tab[1]) {
+        tab[1] = @[@"#FFD9E0", @"#FFE3CC", @"#FFF0C9", @"#F2F5C9", @"#D9EFCF",
+                   @"#C6E8DA", @"#C3E4EC", @"#C9D6F0", @"#DCD2F2", @"#F2D2EC"];  // 马卡龙
+        tab[2] = @[@"#FFD9C8", @"#FFCDB4", @"#FFC2A0", @"#FFD6B0", @"#FFE2B8",
+                   @"#FFD9B6", @"#F8C6A8", @"#FFD2BE", @"#F3BFA6", @"#FFE6CC"];  // 蜜桃
+        tab[3] = @[@"#D6EFD8", @"#CBEBD6", @"#C4E8DF", @"#C0E5E6", @"#C7E6EF",
+                   @"#D2E9F2", @"#C9E2E9", @"#BCE0D8", @"#CDEBD5", @"#DCEFDF"];  // 薄荷
+        tab[4] = @[@"#E6D6F2", @"#DCCFF2", @"#D2CBEF", @"#D6D2F2", @"#E2D2F0",
+                   @"#EFD6EF", @"#F2D6E6", @"#E0D2F0", @"#CDCFEF", @"#D8D6F2"];  // 暮紫
+    }
+    return (gSkinTheme >= 1 && gSkinTheme <= 4) ? tab[gSkinTheme] : nil;
+}
+
+// slot：QWERTY 行序 0..25（行 10/9/7）。取「行内第几列」再套色板，
+// 于是 Q/A/Z 同色、W/S/X 同色……三行竖向对齐成色带。
+static UIColor *WXKBThemeLetterColor(NSInteger slot) {
+    NSArray<NSString *> *hex = WXKBThemeHexes();
+    if (!hex || slot == NSNotFound || slot < 0 || slot >= 26) return nil;
+    NSInteger k = slot;                   // 第一行 10 键：k = 0..9
+    if (slot >= 19)      k = slot - 19;   // 第三行  7 键
+    else if (slot >= 10) k = slot - 10;   // 第二行  9 键
+    return WXKBColor(hex[k % (NSInteger)hex.count], 1.0);
+}
+
+// 功能键（大小写/删除/空格/回车/符号页…）：浅灰白，与百度 demo 的白色功能键一致。
+static UIColor *WXKBSkinFuncColor(void) {
+    return [UIColor colorWithRed:0.90 green:0.90 blue:0.92 alpha:1.0];
+}
+
 static UIColor *WXKBSkinColorFor(WBKeyView *v) {
     if (!gEnabled || !gSkinEnabled || !v) return nil;
+    NSInteger li = WXKBLetterIndex(v);
+    if (gSkinTheme >= 1) {
+        // 2.3.8 配套主题：不读皮肤图，字母键按行套色，其余键浅灰白。
+        if (li != NSNotFound) {
+            UIColor *tc = WXKBThemeLetterColor(WXKBSkinSlotForLetter(li));
+            if (tc) return tc;
+        }
+        return WXKBSkinFuncColor();
+    }
     WXKBLoadSkin();
     if (!gSkinLoaded) return nil;
-    NSInteger li = WXKBLetterIndex(v);
     if (li != NSNotFound) {
         NSInteger slot = WXKBSkinSlotForLetter(li);
         if (slot != NSNotFound && slot < 26 && gSkinLetterCol[slot]) {
@@ -2996,7 +3044,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.7 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld",
+    NSLog(@"[WxkbToolbar10] 2.3.8 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg);
+          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme);
 }
