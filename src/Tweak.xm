@@ -160,6 +160,18 @@
 @interface WBCandidateExpandView : UIView
 @end
 
+@interface WBCorrectionNoticeView : UIView
+@end
+
+@interface WBRewriteNoticeView : UIView
+@end
+
+@interface WBAskAIToast : UIView
+@end
+
+@interface WBPasteboardServiceContent : UIView
+@end
+
 @interface WBKeyView : UIView
 - (id)item;
 @end
@@ -2414,6 +2426,23 @@ static void WXKBFireAction(int c) {
     %orig;
     if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
 }
+- (void)setHidden:(BOOL)hidden {
+    %orig(hidden);
+    if (gSkinEnabled && gEnabled && !hidden) {
+        // 出现时立刻改色，延迟一下确保文字/图片已设置
+        WXKBForceDarkContent(self);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            WXKBForceDarkContent(self);
+        });
+    }
+}
+- (void)setAlpha:(CGFloat)alpha {
+    %orig(alpha);
+    if (gSkinEnabled && gEnabled && alpha > 0.01) {
+        WXKBForceDarkContent(self);
+    }
+}
 %end
 
 %hook WBBaseToast
@@ -2494,6 +2523,71 @@ static void WXKBFireAction(int c) {
 %end
 
 %hook WBCandidateExpandView
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
+%end
+
+// 2.3.2 更多提示/通知类：修正通知、改写通知、AI Toast、剪贴板服务内容
+%hook WBCorrectionNoticeView
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
+- (void)setHidden:(BOOL)hidden {
+    %orig(hidden);
+    if (gSkinEnabled && gEnabled && !hidden) {
+        WXKBForceDarkContent(self);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            WXKBForceDarkContent(self);
+        });
+    }
+}
+%end
+
+%hook WBRewriteNoticeView
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
+- (void)setHidden:(BOOL)hidden {
+    %orig(hidden);
+    if (gSkinEnabled && gEnabled && !hidden) {
+        WXKBForceDarkContent(self);
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            WXKBForceDarkContent(self);
+        });
+    }
+}
+%end
+
+%hook WBAskAIToast
+- (void)layoutSubviews {
+    %orig;
+    if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
+}
+- (void)didMoveToWindow {
+    %orig;
+    if (gSkinEnabled && gEnabled && self.window) WXKBForceDarkContent(self);
+}
+%end
+
+%hook WBPasteboardServiceContent
 - (void)layoutSubviews {
     %orig;
     if (gSkinEnabled && gEnabled) WXKBForceDarkContent(self);
@@ -2734,7 +2828,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.1 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.3.2 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
