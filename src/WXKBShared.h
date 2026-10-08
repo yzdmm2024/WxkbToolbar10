@@ -67,6 +67,10 @@
 // 皮肤背景：0=白底(默认)  1=全透明  2=灰色  3=白50%(白色半透明)
 #define WXKB_KEY_SKIN_BG       @"skinBg"
 
+// 主题配色（2.3.8）：0=百度彩虹(原图取色)  1=马卡龙  2=蜜桃  3=薄荷  4=暮紫
+// 1~4 为内置「配套主题」，取色走代码色板，不依赖皮肤图，选了即用。
+#define WXKB_KEY_SKIN_THEME    @"skinTheme"
+
 // 皮肤资源在设备上的目录（tweak 从 jbroot 读取）
 #define WXKB_SKIN_DIR          @"/Library/Application Support/WxkbToolbar10/skins"
 
