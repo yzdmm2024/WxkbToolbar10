@@ -240,7 +240,8 @@ static CGFloat   gCorner       = 0.0;
 static int       gShape        = 0;      // 0 默认圆角 1 圆形 2 六边形 3 水珠
 static BOOL      gSkinEnabled  = NO;     // 内置皮肤「彩虹按键」（百度）开关
 static NSInteger  gSkinBg       = 0;     // 皮肤背景：0白底 1全透明 2灰色 3白50%
-static NSInteger  gSkinTheme    = 0;     // 主题配色：0百度彩虹 1马卡龙 2蜜桃 3薄荷 4暮紫
+static NSInteger  gSkinTheme    = 0;     // 主题族：0百度彩虹 1彩虹 2马卡龙 3蜜桃 4薄荷 5暮紫 6海蓝 7落日 8森系
+static NSInteger  gSkinDir      = 0;     // 变色方向：0横向 1竖向 2斜向（2.3.9）
 static NSString *gSkinName     = nil;    // 皮肤名（当前固定 rainbow）
 static NSInteger gCapStyle     = 0;      // 键帽风格（单选）：0=关闭 1=立体 2=彩虹 3=彩虹3D 4=玻璃态 5=霓虹
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
@@ -420,8 +421,12 @@ static void WXKBReload(BOOL force) {
     gSkinName = ([sn isKindOfClass:[NSString class]] && [sn length]) ? sn : @"rainbow";
     id stt = d[WXKB_KEY_SKIN_THEME];
     NSInteger stv = stt ? [stt integerValue] : 0;
-    if (stv < 0 || stv > 4) stv = 0;
+    if (stv < 0 || stv > 8) stv = 0;
     gSkinTheme = stv;
+    id sd = d[WXKB_KEY_SKIN_DIR];
+    NSInteger sdv = sd ? [sd integerValue] : 0;
+    if (sdv < 0 || sdv > 2) sdv = 0;
+    gSkinDir = sdv;
 
     gCapStyle = [d[WXKB_KEY_CAP_STYLE] integerValue];
 
@@ -2045,34 +2050,83 @@ static UIColor *WXKBSkinCanvasColor(void) {
 // 画布白（demo 同款白色键帽）。立体明暗（高光/侧壁/投影）由立体键帽渲染器
 // WXKBApplyCap 从这个底色推导——它是 CAShapeLayer+渐变实现，真机上稳定渲染，
 // 彻底取代始终显示不出来的 CGImage 贴图路线。
-// ---- 2.3.8 内置「配套主题」色板 ----
+// ---- 2.3.9 内置「配套主题」= 主题族 × 变色方向 ----
 // 每套 10 色粉彩彩虹，按键盘行循环套色：同一列的三行同色 → 竖向色带，
 // 与百度彩虹按键的 9 宫格是同一套视觉语言（demo.png 的观测色：粉彩键面 +
 // 更饱和的下缘 + 近白功能键 + 浅白画布）。取色纯代码，选了即生效，不依赖皮肤图。
-static NSArray<NSString *> *WXKBThemeHexes(void) {
-    static NSArray *tab[5];
-    if (!tab[1]) {
-        tab[1] = @[@"#FFD9E0", @"#FFE3CC", @"#FFF0C9", @"#F2F5C9", @"#D9EFCF",
-                   @"#C6E8DA", @"#C3E4EC", @"#C9D6F0", @"#DCD2F2", @"#F2D2EC"];  // 马卡龙
-        tab[2] = @[@"#FFD9C8", @"#FFCDB4", @"#FFC2A0", @"#FFD6B0", @"#FFE2B8",
-                   @"#FFD9B6", @"#F8C6A8", @"#FFD2BE", @"#F3BFA6", @"#FFE6CC"];  // 蜜桃
-        tab[3] = @[@"#D6EFD8", @"#CBEBD6", @"#C4E8DF", @"#C0E5E6", @"#C7E6EF",
-                   @"#D2E9F2", @"#C9E2E9", @"#BCE0D8", @"#CDEBD5", @"#DCEFDF"];  // 薄荷
-        tab[4] = @[@"#E6D6F2", @"#DCCFF2", @"#D2CBEF", @"#D6D2F2", @"#E2D2F0",
-                   @"#EFD6EF", @"#F2D6E6", @"#E0D2F0", @"#CDCFEF", @"#D8D6F2"];  // 暮紫
-    }
-    return (gSkinTheme >= 1 && gSkinTheme <= 4) ? tab[gSkinTheme] : nil;
+// ---- 2.3.9 主题族 × 变色方向 ----
+// 每族 = (色相起, 色相止, 饱和度, 亮度)，色相在 [起,止] 上线性插值；
+// 方向决定渐变沿哪根轴走：横向=按列、竖向=按行、斜向=两者取中。
+// 相比 2.3.8 的「10 色板套色」，这里是连续渐变，横向才是真正的彩虹过渡。
+static const double kThemeFam[9][4] = {
+    {   0,   0, 0.00, 0.00},   // 0 百度彩虹（读原图，不参与）
+    {   0, 352, 0.88, 0.72},   // 1 彩虹
+    {   0, 352, 0.82, 0.88},   // 2 马卡龙
+    {  18,  54, 0.90, 0.86},   // 3 蜜桃
+    { 128, 190, 0.72, 0.85},   // 4 薄荷
+    { 240, 332, 0.72, 0.86},   // 5 暮紫
+    { 182, 250, 0.80, 0.82},   // 6 海蓝
+    { 336,  42, 0.90, 0.80},   // 7 落日
+    {  66, 160, 0.70, 0.84},   // 8 森系
+};
+
+// HSL → UIColor（色相 0~360，饱和/亮度 0~1）
+static UIColor *WXKBFromHSL(double h, double s, double l) {
+    double C = (1.0 - fabs(2.0 * l - 1.0)) * s;
+    double hp = fmod(h, 360.0) / 60.0;
+    if (hp < 0) hp += 6.0;
+    double X = C * (1.0 - fabs(fmod(hp, 2.0) - 1.0));
+    double r = 0, g = 0, b = 0;
+    if      (hp < 1) { r = C; g = X; }
+    else if (hp < 2) { r = X; g = C; }
+    else if (hp < 3) { g = C; b = X; }
+    else if (hp < 4) { g = X; b = C; }
+    else if (hp < 5) { r = X; b = C; }
+    else             { r = C; b = X; }
+    double m = l - C / 2.0;
+    return [UIColor colorWithRed:r + m green:g + m blue:b + m alpha:1.0];
 }
 
-// slot：QWERTY 行序 0..25（行 10/9/7）。取「行内第几列」再套色板，
-// 于是 Q/A/Z 同色、W/S/X 同色……三行竖向对齐成色带。
+// 皮肤片号 0..25（行 10/9/7）→ 行号 0..2 + 水平进度 tx。
+// units/offs 与预览图同源：第二行两端各有加宽的 ⇧/⌫，所以中间 7 键并不铺满整行，
+// 用同一套比例才能让真机与预览的渐变色带位置对齐。
+static BOOL WXKBThemeRowCol(NSInteger slot, NSInteger *row, CGFloat *tx) {
+    static const double units[3] = {10.0, 9.0, 9.9};
+    static const double offs[3]  = { 0.0, 0.0, 1.45};
+    NSInteger r, k;
+    if (slot < 0 || slot > 25) return NO;
+    if (slot < 10)      { r = 0; k = slot; }
+    else if (slot < 19) { r = 1; k = slot - 10; }
+    else                { r = 2; k = slot - 19; }
+    *row = r;
+    *tx  = (CGFloat)((offs[r] + k + 0.5) / units[r]);
+    return YES;
+}
+
+// 主题渐变取色：row 行号（0~2 字母行，3 空格行），tx 水平进度 0~1
+static UIColor *WXKBThemeGradientColor(NSInteger row, CGFloat tx) {
+    if (gSkinTheme < 1 || gSkinTheme > 8) return nil;
+    const double *f = kThemeFam[gSkinTheme];
+    double h0 = f[0], h1 = f[1], s = f[2], l = f[3];
+    if (h1 < h0) h1 += 360.0;                 // 跨 0° 的族（落日）绕回
+    double ty = row / 3.0;
+    double t;
+    switch (gSkinDir) {
+        case 1:  t = ty;              break;  // 竖向：按行
+        case 2:  t = (tx + ty) / 2.0; break;  // 斜向
+        default: t = tx;              break;  // 横向：按列
+    }
+    if (t < 0.0) t = 0.0;
+    if (t > 1.0) t = 1.0;
+    return WXKBFromHSL(h0 + (h1 - h0) * t, s, l);
+}
+
+// slot：QWERTY 行序 0..25（行 10/9/7）
 static UIColor *WXKBThemeLetterColor(NSInteger slot) {
-    NSArray<NSString *> *hex = WXKBThemeHexes();
-    if (!hex || slot == NSNotFound || slot < 0 || slot >= 26) return nil;
-    NSInteger k = slot;                   // 第一行 10 键：k = 0..9
-    if (slot >= 19)      k = slot - 19;   // 第三行  7 键
-    else if (slot >= 10) k = slot - 10;   // 第二行  9 键
-    return WXKBColor(hex[k % (NSInteger)hex.count], 1.0);
+    NSInteger row = 0;
+    CGFloat tx = 0.5;
+    if (!WXKBThemeRowCol(slot, &row, &tx)) return nil;
+    return WXKBThemeGradientColor(row, tx);
 }
 
 // 功能键（大小写/删除/空格/回车/符号页…）：浅灰白，与百度 demo 的白色功能键一致。
@@ -2084,9 +2138,14 @@ static UIColor *WXKBSkinColorFor(WBKeyView *v) {
     if (!gEnabled || !gSkinEnabled || !v) return nil;
     NSInteger li = WXKBLetterIndex(v);
     if (gSkinTheme >= 1) {
-        // 2.3.8 配套主题：不读皮肤图，字母键按行套色，其余键浅灰白。
+        // 2.3.9 配套主题：不读皮肤图。字母键按「族 × 方向」取渐变中间色，
+        // 空格键取第 4 行色，其余键近白（与百度 demo 的白色功能键一致）。
         if (li != NSNotFound) {
             UIColor *tc = WXKBThemeLetterColor(WXKBSkinSlotForLetter(li));
+            if (tc) return tc;
+        }
+        if (WXKBKindOf(v) == WXKBKeyKindSpace) {
+            UIColor *tc = WXKBThemeGradientColor(3, 0.5);
             if (tc) return tc;
         }
         return WXKBSkinFuncColor();
@@ -3044,7 +3103,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.8 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld",
+    NSLog(@"[WxkbToolbar10] 2.3.9 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme);
+          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir);
 }
