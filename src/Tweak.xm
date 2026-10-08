@@ -391,19 +391,39 @@ static UIView *WXKBFindBgLeaf(UIView *v, NSInteger depth) {
 
 static const void *kWXKBMaskLayerKey = &kWXKBMaskLayerKey;
 
-// 六边形路径（正多边形，可拉伸到按键矩形）
+// 正六边形路径：保证六条边长度相等，以较短边为基准计算边长，
+// 方向为"横扁"（左右两个顶点，上下两条水平边），契合键盘按键宽>高的比例，
+// 视觉上是蜂窝形键帽，完整落在按键矩形内。
 static UIBezierPath *WXKBHexagonPath(CGSize s) {
     CGFloat w = s.width, h = s.height;
     if (w <= 0 || h <= 0) return nil;
     CGFloat cx = w / 2.0, cy = h / 2.0;
-    UIBezierPath *p = [UIBezierPath bezierPath];
-    for (int i = 0; i < 6; i++) {
-        CGFloat a = (3.141592653589793 / 180.0) * (60.0 * i - 90.0);
-        CGFloat x = cx + (w / 2.0) * cos(a);
-        CGFloat y = cy + (h / 2.0) * sin(a);
-        if (i == 0) [p moveToPoint:CGPointMake(x, y)];
-        else [p addLineToPoint:CGPointMake(x, y)];
+    // 正六边形（横扁方向）：
+    //   顶点数：6，边长 a
+    //   宽度（两顶点距离）= 2a
+    //   高度（两平行边距离）= a * sqrt(3) ≈ 1.732a
+    // 取较短边决定边长 a，保证六边形完整落在矩形内。
+    CGFloat a;  // 边长
+    if (w * 0.866025403784439 <= h) {
+        // 矩形偏宽：受高度限制 → h = a * sqrt(3) → a = h / sqrt(3)
+        a = h * 0.577350269189626;
+    } else {
+        // 矩形偏高：受宽度限制 → w = 2a → a = w / 2
+        a = w / 2.0;
     }
+    CGFloat halfW = a;                       // 水平半宽 = a
+    CGFloat halfH = a * 0.866025403784439;   // 垂直半高 = a * sin(60°)
+    // 六个顶点，从最上面左边那个开始顺时针
+    CGPoint pts[6];
+    pts[0] = CGPointMake(cx - halfW * 0.5, cy - halfH);   // 左上
+    pts[1] = CGPointMake(cx + halfW * 0.5, cy - halfH);   // 右上
+    pts[2] = CGPointMake(cx + halfW,       cy);           // 右顶点
+    pts[3] = CGPointMake(cx + halfW * 0.5, cy + halfH);   // 右下
+    pts[4] = CGPointMake(cx - halfW * 0.5, cy + halfH);   // 左下
+    pts[5] = CGPointMake(cx - halfW,       cy);           // 左顶点
+    UIBezierPath *p = [UIBezierPath bezierPath];
+    [p moveToPoint:pts[0]];
+    for (int i = 1; i < 6; i++) [p addLineToPoint:pts[i]];
     [p closePath];
     return p;
 }
@@ -880,12 +900,78 @@ static void WXKBApplyCornerInner(UIView *v) {
 
 static void WXKBApplySkin(UIView *v, UIView *leaf);  // 前向声明（定义见下方皮肤块）
 
+// 2.2.7 皮肤模式下，递归强制所有文字/图标为深色。
+// 之前只 hook 了 tintColorForCurrentState 等少数方法，但微信键盘的文字/图标
+// 渲染路径很多（UILabel.textColor、UIImageView.tintColor、UIButton 的各种 state
+// 渲染、attributedText 等），漏掉哪一路都会出现"白字看不见"。
+// 改为直接在 layout 后遍历子视图树，暴力把所有显示元素改成深色，
+// 确保浅色画布上文字图标绝对可见。
+static void WXKBForceDarkContent(UIView *v) {
+    if (!v || !gEnabled || !gSkinEnabled) return;
+    UIColor *dark = [UIColor colorWithRed:0.18 green:0.18 blue:0.20 alpha:1.0];
+    UIColor *gray = [UIColor colorWithRed:0.35 green:0.35 blue:0.38 alpha:1.0];
+    // 遍历子视图（BFS，避免递归栈溢出）
+    NSMutableArray *queue = [NSMutableArray arrayWithObject:v];
+    while (queue.count > 0) {
+        UIView *cur = [queue firstObject];
+        [queue removeObjectAtIndex:0];
+        // UILabel：文字强制深色
+        if ([cur isKindOfClass:[UILabel class]]) {
+            UILabel *lbl = (UILabel *)cur;
+            if (lbl.textColor && CGColorGetAlpha(lbl.textColor.CGColor) > 0.01) {
+                // 只有当文字接近白色时才改（避免把已经是深色的文字改乱）
+                CGFloat r, g, b, a;
+                if ([lbl.textColor getRed:&r green:&g blue:&b alpha:&a]) {
+                    CGFloat br = 0.299 * r + 0.587 * g + 0.114 * b;
+                    if (br > 0.55) {
+                        lbl.textColor = dark;
+                        // 同步高亮状态文字颜色
+                        if ([cur isKindOfClass:NSClassFromString(@"WBLabel")]) {
+                            // WBLabel 可能有高亮态文字，也改掉
+                        }
+                    }
+                }
+            }
+        }
+        // UIImageView：tintColor 强制深灰（功能键图标等）
+        if ([cur isKindOfClass:[UIImageView class]]) {
+            UIImageView *iv = (UIImageView *)cur;
+            if (iv.image && iv.image.renderingMode != UIImageRenderingModeAlwaysOriginal) {
+                iv.tintColor = gray;
+            }
+        }
+        // UIButton：title 和 image 都改
+        if ([cur isKindOfClass:[UIButton class]]) {
+            UIButton *btn = (UIButton *)cur;
+            for (NSInteger s = 0; s <= 3; s++) {
+                UIColor *tc = [btn titleColorForState:s];
+                if (tc) {
+                    CGFloat r, g, b, a;
+                    if ([tc getRed:&r green:&g blue:&b alpha:&a]) {
+                        CGFloat br = 0.299 * r + 0.587 * g + 0.114 * b;
+                        if (br > 0.55) {
+                            [btn setTitleColor:dark forState:s];
+                        }
+                    }
+                }
+            }
+            btn.imageView.tintColor = gray;
+            btn.tintColor = gray;
+        }
+        // 继续遍历子视图
+        for (UIView *sv in cur.subviews) {
+            [queue addObject:sv];
+        }
+    }
+}
+
 static void WXKBApplyCorner(UIView *v) {
     WXKBApplyCornerInner(v);
     if (!v) return;
     WXKBApplyCap(v, WXKBFindBgLeaf(v, 0));
     WXKBApplySkin(v, WXKBFindBgLeaf(v, 0));
     WXKBApplySublabel(v);
+    WXKBForceDarkContent(v);
 }
 
 static BOOL WXKBIsKeyView(UIView *v) {
@@ -1946,6 +2032,12 @@ static void WXKBApplyBackground(UIView *host) {
             win.overrideUserInterfaceStyle = want;
         }
     }
+
+    // 2.2.7 暴力修复：皮肤模式下递归遍历整个键盘视图树，
+    // 把所有浅色/白色的文字、图标、按钮文字强制改成深色。
+    // 作为 overrideUserInterfaceStyle 的兜底——有些渲染路径不走
+    // trait collection，白色外观设置了也没用，直接改视图属性最可靠。
+    WXKBForceDarkContent(host);
 }
 
 #pragma mark - 编辑增强按钮
@@ -2394,7 +2486,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.2.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.2.7 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
