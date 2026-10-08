@@ -2166,6 +2166,20 @@ static void WXKBFireAction(int c) {
 }
 
 - (UIColor *)highlightedBgForCurrentState {
+    // 2.2.2 按压反馈：键面轻微变暗
+    NSInteger cs = WXKBCapStyle();
+    if (cs > 0) {
+        UIColor *bg = WXKBKeyBackground(self);
+        if (bg) {
+            CGFloat r, g, b, a;
+            [bg getRed:&r green:&g blue:&b alpha:&a];
+            // 按下时亮度降低 15%
+            return [UIColor colorWithRed:MAX(r * 0.85, 0.0)
+                                   green:MAX(g * 0.85, 0.0)
+                                    blue:MAX(b * 0.85, 0.0)
+                                   alpha:a];
+        }
+    }
     UIColor *c = WXKBKeyHighlight();
     if (c) return c;
     return %orig;
@@ -2205,6 +2219,20 @@ static void WXKBFireAction(int c) {
 }
 
 - (UIColor *)highlightedBgForCurrentState {
+    // 2.2.2 按压反馈：键面轻微变暗
+    NSInteger cs = WXKBCapStyle();
+    if (cs > 0) {
+        UIColor *bg = WXKBKeyBackground(self);
+        if (bg) {
+            CGFloat r, g, b, a;
+            [bg getRed:&r green:&g blue:&b alpha:&a];
+            // 按下时亮度降低 15%
+            return [UIColor colorWithRed:MAX(r * 0.85, 0.0)
+                                   green:MAX(g * 0.85, 0.0)
+                                    blue:MAX(b * 0.85, 0.0)
+                                   alpha:a];
+        }
+    }
     UIColor *c = WXKBKeyHighlight();
     if (c) return c;
     return %orig;
@@ -2226,6 +2254,20 @@ static void WXKBFireAction(int c) {
 }
 
 - (UIColor *)highlightedBgForCurrentState {
+    // 2.2.2 按压反馈：键面轻微变暗
+    NSInteger cs = WXKBCapStyle();
+    if (cs > 0) {
+        UIColor *bg = WXKBKeyBackground(self);
+        if (bg) {
+            CGFloat r, g, b, a;
+            [bg getRed:&r green:&g blue:&b alpha:&a];
+            // 按下时亮度降低 15%
+            return [UIColor colorWithRed:MAX(r * 0.85, 0.0)
+                                   green:MAX(g * 0.85, 0.0)
+                                    blue:MAX(b * 0.85, 0.0)
+                                   alpha:a];
+        }
+    }
     UIColor *c = WXKBKeyHighlight();
     if (c) return c;
     return %orig;
