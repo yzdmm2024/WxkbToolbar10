@@ -239,6 +239,7 @@ static NSDictionary *gLetterMap = nil;
 static CGFloat   gCorner       = 0.0;
 static int       gShape        = 0;      // 0 默认圆角 1 圆形 2 六边形 3 水珠
 static BOOL      gSkinEnabled  = NO;     // 内置皮肤「彩虹按键」（百度）开关
+static NSInteger  gSkinBg       = 0;     // 皮肤背景：0白底 1全透明 2灰色 3白50%
 static NSString *gSkinName     = nil;    // 皮肤名（当前固定 rainbow）
 static NSInteger gCapStyle     = 0;      // 键帽风格（单选）：0=关闭 1=立体 2=彩虹 3=彩虹3D 4=玻璃态 5=霓虹
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
@@ -410,6 +411,10 @@ static void WXKBReload(BOOL force) {
     gShape = s;
 
     gSkinEnabled = [d[WXKB_KEY_SKIN_ENABLED] boolValue];
+    id sb = d[WXKB_KEY_SKIN_BG];
+    NSInteger sbv = sb ? [sb integerValue] : 0;
+    if (sbv < 0 || sbv > 3) sbv = 0;
+    gSkinBg = sbv;
     id sn = d[WXKB_KEY_SKIN_NAME];
     gSkinName = ([sn isKindOfClass:[NSString class]] && [sn length]) ? sn : @"rainbow";
 
@@ -1039,27 +1044,25 @@ static void WXKBForceDarkContent(UIView *v) {
                 lbl.highlightedTextColor = dark;
             }
         }
-        // UIImageView：tintColor 已统一深灰；AlwaysOriginal 的小图标（非照片）转 template
+        // UIImageView：tintColor 已统一深灰；小图标（非照片）转 template
         if ([cur isKindOfClass:[UIImageView class]]) {
             UIImageView *iv = (UIImageView *)cur;
-            if (iv.image) {
-                // 小尺寸（<=40pt）的 AlwaysOriginal 白 PNG 视为图标（复制的照片缩略图通常
-                // 更大，不在范围内），转 template + 深灰 tint，避免白底白图标。
-                // 大尺寸 AlwaysOriginal 一律不动，保留照片原色。
-                if (iv.image.renderingMode == UIImageRenderingModeAlwaysOriginal) {
-                    CGSize sz = iv.image.size;
-                    if (sz.width > 0 && sz.width <= 40 && sz.height > 0 && sz.height <= 40) {
-                        iv.image = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-                        iv.tintColor = gray;
-                    }
+            // 2.3.7 修复：白图标根因是渲染模式判定太窄——只认 AlwaysOriginal，
+            // 漏掉更常见的 Automatic（asset 默认渲染模式）。Automatic 在浅色上下文
+            // 解析成原色（白像素），tint 改了也没用，必须转 AlwaysTemplate 才受 tint 影响。
+            // 阈值从 40 提到 72pt，覆盖 44~50pt 的大图标。只动小图标，照片缩略图更大保留原色。
+            if (iv.image && iv.image.renderingMode != UIImageRenderingModeAlwaysTemplate) {
+                CGSize sz = iv.image.size;
+                if (sz.width > 0 && sz.width <= 72 && sz.height > 0 && sz.height <= 72) {
+                    iv.image = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+                    iv.tintColor = gray;
                 }
-                // highlightedImage 同样处理
-                if (iv.highlightedImage &&
-                    iv.highlightedImage.renderingMode == UIImageRenderingModeAlwaysOriginal) {
-                    CGSize hsz = iv.highlightedImage.size;
-                    if (hsz.width > 0 && hsz.width <= 40 && hsz.height > 0 && hsz.height <= 40) {
-                        iv.highlightedImage = [iv.highlightedImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-                    }
+            }
+            if (iv.highlightedImage &&
+                iv.highlightedImage.renderingMode != UIImageRenderingModeAlwaysTemplate) {
+                CGSize hsz = iv.highlightedImage.size;
+                if (hsz.width > 0 && hsz.width <= 72 && hsz.height > 0 && hsz.height <= 72) {
+                    iv.highlightedImage = [iv.highlightedImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
                 }
             }
         }
@@ -1071,16 +1074,16 @@ static void WXKBForceDarkContent(UIView *v) {
                 UIColor *tc = [btn titleColorForState:s];
                 if (tc) [btn setTitleColor:dark forState:s];
                 UIImage *im = [btn imageForState:s];
-                if (im && im.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                if (im && im.renderingMode != UIImageRenderingModeAlwaysTemplate) {
                     CGSize isz = im.size;
-                    if (isz.width > 0 && isz.width <= 40 && isz.height > 0 && isz.height <= 40) {
+                    if (isz.width > 0 && isz.width <= 72 && isz.height > 0 && isz.height <= 72) {
                         [btn setImage:[im imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:s];
                     }
                 }
                 UIImage *bim = [btn backgroundImageForState:s];
-                if (bim && bim.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                if (bim && bim.renderingMode != UIImageRenderingModeAlwaysTemplate) {
                     CGSize bsz = bim.size;
-                    if (bsz.width > 0 && bsz.width <= 40 && bsz.height > 0 && bsz.height <= 40) {
+                    if (bsz.width > 0 && bsz.width <= 72 && bsz.height > 0 && bsz.height <= 72) {
                         [btn setBackgroundImage:[bim imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:s];
                     }
                 }
@@ -1096,10 +1099,10 @@ static void WXKBForceDarkContent(UIView *v) {
 }
 
 // 精准处理「文字 label 左侧图标」：剪贴板面板里每一项 = [左侧类型图标] + [WBTextItemLabel 文字]，
-// 左侧图标通常是 AlwaysOriginal 白 PNG（渲染模式不受 tint 影响），在浅色皮肤下看不见。
+// 左侧图标通常是白 PNG（渲染模式多为 Automatic，不受 tint 影响），在浅色皮肤下看不见。
 // 图标未必和 label 是同父直接兄弟（微信常包一层容器），所以从 label 向上取根容器，
 // 再广度遍历其所有后代找 UIImageView / UIButton 图标，转 template + 深灰 tint。
-// 阈值 48pt：类型图标（~20-28pt）会被改，而「拷贝的图片」缩略图（通常更大）不受影响。
+// 2.3.7：阈值提到 72pt 且不再限定 AlwaysOriginal（Automatic 同样处理），覆盖大图标与默认渲染图标。
 static void WXKBDarkenSiblingIcons(UIView *label) {
     if (!label || !gEnabled || !gSkinEnabled) return;
     // 向上取文字项根容器（最多 4 层祖先）
@@ -1117,17 +1120,17 @@ static void WXKBDarkenSiblingIcons(UIView *label) {
         for (UIView *cur in queue) {
             if ([cur isKindOfClass:[UIImageView class]]) {
                 UIImageView *iv = (UIImageView *)cur;
-                if (iv.image && iv.image.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                if (iv.image && iv.image.renderingMode != UIImageRenderingModeAlwaysTemplate) {
                     CGSize s = iv.image.size;
-                    if (s.width > 0 && s.width <= 48 && s.height > 0 && s.height <= 48) {
+                    if (s.width > 0 && s.width <= 72 && s.height > 0 && s.height <= 72) {
                         iv.image = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
                         iv.tintColor = gray;
                     }
                 }
                 if (iv.highlightedImage &&
-                    iv.highlightedImage.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    iv.highlightedImage.renderingMode != UIImageRenderingModeAlwaysTemplate) {
                     CGSize hs = iv.highlightedImage.size;
-                    if (hs.width > 0 && hs.width <= 48 && hs.height > 0 && hs.height <= 48) {
+                    if (hs.width > 0 && hs.width <= 72 && hs.height > 0 && hs.height <= 72) {
                         iv.highlightedImage = [iv.highlightedImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
                     }
                 }
@@ -1135,16 +1138,16 @@ static void WXKBDarkenSiblingIcons(UIView *label) {
                 UIButton *btn = (UIButton *)cur;
                 for (NSInteger st = 0; st <= 3; st++) {
                     UIImage *im = [btn imageForState:st];
-                    if (im && im.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    if (im && im.renderingMode != UIImageRenderingModeAlwaysTemplate) {
                         CGSize s = im.size;
-                        if (s.width > 0 && s.width <= 48 && s.height > 0 && s.height <= 48) {
+                        if (s.width > 0 && s.width <= 72 && s.height > 0 && s.height <= 72) {
                             [btn setImage:[im imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:st];
                         }
                     }
                     UIImage *bim = [btn backgroundImageForState:st];
-                    if (bim && bim.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    if (bim && bim.renderingMode != UIImageRenderingModeAlwaysTemplate) {
                         CGSize s = bim.size;
-                        if (s.width > 0 && s.width <= 48 && s.height > 0 && s.height <= 48) {
+                        if (s.width > 0 && s.width <= 72 && s.height > 0 && s.height <= 72) {
                             [btn setBackgroundImage:[bim imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:st];
                         }
                     }
@@ -2018,8 +2021,18 @@ static NSInteger WXKBSkinSlotForLetter(NSInteger letterIdx) {   // 0=A … 25=Z
 }
 
 // 皮肤的「画布底色」——demo 键盘的背景色，也是白色功能键帽的键面色。
+// 2.3.7：新增皮肤背景选项（全透明 / 灰色 / 白50%）。
 static UIColor *WXKBSkinCanvasColor(void) {
-    return [UIColor colorWithRed:245.0 / 255.0 green:247.0 / 255.0 blue:250.0 / 255.0 alpha:1.0];
+    switch (gSkinBg) {
+        case 1:  // 全透明：键盘背景层全透，只留彩虹键帽，透出后面内容
+            return [UIColor clearColor];
+        case 2:  // 灰色：中浅灰底，彩色键帽浮在上面
+            return [UIColor colorWithRed:0.80 green:0.80 blue:0.82 alpha:1.0];
+        case 3:  // 白50%：白色半透明，隐约透出后面内容
+            return [UIColor colorWithWhite:1.0 alpha:0.5];
+        default: // 0 白底（默认，demo 同款浅色底）
+            return [UIColor colorWithRed:245.0 / 255.0 green:247.0 / 255.0 blue:250.0 / 255.0 alpha:1.0];
+    }
 }
 
 // 皮肤配色（走原生按键底色通道，像切换主题一样给键盘上色）。
@@ -2199,9 +2212,12 @@ static void WXKBApplyBackground(UIView *host) {
         bg.backgroundColor = gBgColor;
     } else if (gSkinEnabled) {
         // 1.7.5 皮肤模式：键盘背景涂画布色（demo 同款浅色底），键帽浮在上面。
+        // 2.3.7：画布色可能是透明或半透明（全透明 / 白50%），此时背景层必须 opaque=NO，
+        // 否则不透明层会盖住后面内容，透明设置失效。
         bg.layer.contents = nil;
-        bg.backgroundColor = WXKBSkinCanvasColor();
-        bg.opaque = YES;
+        UIColor *skinBg = WXKBSkinCanvasColor();
+        bg.backgroundColor = skinBg;
+        bg.opaque = (CGColorGetAlpha(skinBg.CGColor) > 0.99);
     } else {
         // 只开了整键盘透明：这一层保持全透
         bg.layer.contents = nil;
@@ -2980,7 +2996,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.6 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.3.7 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
+          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg);
 }
