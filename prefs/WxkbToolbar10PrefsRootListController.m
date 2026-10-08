@@ -65,11 +65,17 @@
 
     // ---- 皮肤（内置）----
     g = [PSSpecifier groupSpecifierWithName:@"皮肤（内置）"];
-    [g setProperty:@"开启后把键盘渲染成内置的「彩虹按键」真实皮肤（来自百度输入法导出的真·键帽图），"
-                  @"替代旧版程序生成的彩虹色。关闭则恢复上方普通按键配色。皮肤图片缺失时会自动退回彩虹配色。"
+    [g setProperty:@"开启后把键盘渲染成内置皮肤。"
+                  @"「主题配色」= 百度彩虹（原图取色）/ 马卡龙 / 蜜桃 / 薄荷 / 暮紫，"
+                  @"后四套是内置配套主题，取色纯代码、选了即用，不依赖皮肤图。"
+                  @"「皮肤背景」单独控制键盘底色（白底/全透明/灰色/白50%）。"
+                  @"关闭总开关则恢复上方普通按键配色。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
+    [s addObject:[self wxkbChoice:@"主题配色" key:WXKB_KEY_SKIN_THEME def:@0
+                           values:@[@0, @1, @2, @3, @4]
+                           titles:@[@"百度彩虹（原图）", @"马卡龙", @"蜜桃", @"薄荷", @"暮紫"]]];
     [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
                            values:@[@0, @1, @2, @3]
                            titles:@[@"白底", @"全透明", @"灰色", @"白50%"]]];
