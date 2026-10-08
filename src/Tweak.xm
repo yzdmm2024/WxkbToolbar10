@@ -534,11 +534,11 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         kInset = 0.0;
         kFront = 0.0;
         topY   = 0.0;
-    } else if (capStyle == 4) {             // 彩虹3D键帽：百度同款，明显3D深度
-        kDepth = 5.0;                       // 更厚的底部伸出
-        kInset = 3.5;                       // 适中的侧壁内缩
-        kFront = 6.0;                       // 适中的前脸高度
-        topY   = 2.0;                       // 顶部裙边
+    } else if (capStyle == 4) {             // 彩虹3D键帽：百度同款，实体键盘深度
+        kDepth = 7.0;                       // 更厚的底部伸出（实体键盘感）
+        kInset = 4.5;                       // 更大的侧壁内缩（露出更多侧壁）
+        kFront = 8.0;                       // 更高的前脸（立体感更强）
+        topY   = 2.5;                       // 顶部裙边
     }
     CGFloat rad = 5.0;
     if (gShape == 0) {
@@ -599,12 +599,12 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         cHi     = [UIColor colorWithHue:h saturation:s * 0.80 brightness:MIN(br * 1.10 + 0.06, 1.0) alpha:1.0];
         cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.08, 1.0) brightness:br * 0.72 alpha:1.0];
     } else if (capStyle == 4) {
-        // 2.1.0 彩虹3D：粉彩键面，侧壁用同色系但更暗，极淡描边
-        cWallHi = [UIColor colorWithHue:h saturation:MIN(s * 0.70, 1.0) brightness:MAX(br * 0.75, 0.50) alpha:1.0];
-        cWallLo = [UIColor colorWithHue:h saturation:MIN(s * 0.85, 1.0) brightness:MAX(br * 0.55, 0.35) alpha:1.0];
-        cEdge   = [UIColor colorWithWhite:0.50 alpha:0.20];
-        cHi     = [UIColor colorWithHue:h saturation:MAX(s * 0.60, 0.0) brightness:MIN(br * 1.20 + 0.15, 1.0) alpha:1.0];
-        cLow    = [UIColor colorWithHue:h saturation:MIN(s * 0.90, 1.0) brightness:br * 0.80 alpha:1.0];
+        // 2.1.0 彩虹3D：实体键盘键帽，侧壁深色 + 顶面强渐变
+        cWallHi = [UIColor colorWithHue:h saturation:MIN(s * 0.85, 1.0) brightness:MAX(br * 0.55, 0.35) alpha:1.0];
+        cWallLo = [UIColor colorWithHue:h saturation:MIN(s * 0.95, 1.0) brightness:MAX(br * 0.30, 0.18) alpha:1.0];
+        cEdge   = [UIColor colorWithWhite:0.30 alpha:0.35];
+        cHi     = [UIColor colorWithHue:h saturation:MAX(s * 0.50, 0.0) brightness:MIN(br * 1.35 + 0.20, 1.0) alpha:1.0];
+        cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.10, 1.0) brightness:br * 0.65 alpha:1.0];
     } else if (capStyle == 2) {
         cWallHi = [UIColor colorWithWhite:0.985 alpha:1.0];
         cWallLo = [UIColor colorWithWhite:0.800 alpha:1.0];
@@ -718,8 +718,8 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         top.locations = @[@0.0, @0.22, @0.82, @1.0];
         top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
     } else if (capStyle == 4) {
-        // 彩虹3D：柔和三段式（高光 → 键面 → 底部微暗），模拟百度同款渐变
-        top.locations = @[@0.0, @0.18, @0.75, @1.0];
+        // 彩虹3D：实体键盘强渐变（高光 → 键面 → 底部明显压暗）
+        top.locations = @[@0.0, @0.15, @0.70, @1.0];
         top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
     } else if (capStyle == 2) {
         // 彩虹键盘帽：柔和两段式（亮面 → 键面），不要强高光带
@@ -771,10 +771,10 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         v.layer.shadowOffset  = CGSizeMake(0.0, 3.0);
         v.layer.shadowRadius  = 5.0;
     } else if (capStyle == 4) {
-        // 彩虹3D：柔和投影，模拟百度同款悬浮感
-        v.layer.shadowOpacity = 0.18;
-        v.layer.shadowOffset  = CGSizeMake(0.0, 3.5);
-        v.layer.shadowRadius  = 4.5;
+        // 彩虹3D：实体键盘投影，更深更明显
+        v.layer.shadowOpacity = 0.25;
+        v.layer.shadowOffset  = CGSizeMake(0.0, 4.0);
+        v.layer.shadowRadius  = 5.0;
     } else if (capStyle == 2) {
         v.layer.shadowOpacity = 0.20;
         v.layer.shadowOffset  = CGSizeMake(0.0, 3.0);
