@@ -71,8 +71,12 @@
 #define WXKB_KEY_KEYCAP3D      @"keyCap3D"
 
 // 彩虹键盘帽（1.9.0）：浅灰白裙边 + 柔和阴影 + 圆润穹顶的凸起键帽。
-// 开启皮肤时两个键帽开关都没开 → 默认按此风格渲染。
 #define WXKB_KEY_CAPRAINBOW    @"keyCapRainbow"
+
+// 马卡龙浮雕键帽（2.0.0）：全彩键面（无裙边无描边）+ 顶部提亮 + 底部同色系
+// 收边唇 + 柔和投影 + 深炭灰字母 + 键面下层小字（Q→1、A→! …）。
+// 开启皮肤时三个键帽开关都没开 → 默认按此风格渲染（图2 原版观感）。
+#define WXKB_KEY_CAPMACARON    @"keyCapMacaron"
 
 // 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
 #define WXKB_KEY_OFFSET        @"kbOffset"

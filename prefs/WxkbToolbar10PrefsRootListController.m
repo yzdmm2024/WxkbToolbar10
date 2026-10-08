@@ -98,15 +98,16 @@
     // ---- 按键形状 ----
     g = [PSSpecifier groupSpecifierWithName:@"按键形状 / 立体键帽"];
     [g setProperty:@"「默认圆角」由下方滑块决定；「圆形 / 六边形 / 水珠」会忽略圆角滑块，"
-                  @"直接把按键裁成对应形状。「彩虹键盘帽」是浅色柔和凸起键帽"
-                  @"（白/浅灰裙边 + 柔和阴影，开启皮肤时默认）；「立体键帽」是深色"
-                  @"电脑键盘风（深色裙边 + 近黑描边）。两者同时开启时优先彩虹键盘帽。"
-                  @"以上都只改视觉，不影响键盘布局。"
+                  @"直接把按键裁成对应形状。「马卡龙浮雕键帽」= 全彩键面 + 顶部提亮 + "
+                  @"底部收边唇 + 柔和投影 + 深色字母 + 下层小字（开启皮肤时默认）；"
+                  @"「彩虹键盘帽」= 白/浅灰裙边柔和凸起；「立体键帽」= 深色电脑键盘风。"
+                  @"优先级：马卡龙 > 彩虹 > 立体键帽。以上都只改视觉，不影响键盘布局。"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbChoice:@"按键形状" key:WXKB_KEY_SHAPE def:@0
                            values:@[@0, @1, @2, @3]
                            titles:@[@"默认圆角", @"圆形", @"六边形", @"水珠"]]];
+    [s addObject:[self wxkbSwitch:@"马卡龙浮雕键帽（原版观感）" key:WXKB_KEY_CAPMACARON def:NO]];
     [s addObject:[self wxkbSwitch:@"彩虹键盘帽（柔和凸起）" key:WXKB_KEY_CAPRAINBOW def:NO]];
     [s addObject:[self wxkbSwitch:@"立体键帽（电脑键盘风）" key:WXKB_KEY_KEYCAP3D def:NO]];
     [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0

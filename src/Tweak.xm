@@ -182,6 +182,7 @@ static BOOL      gSkinEnabled  = NO;     // 内置皮肤「彩虹按键」（百
 static NSString *gSkinName     = nil;    // 皮肤名（当前固定 rainbow）
 static BOOL      gCap3D        = NO;     // 立体键帽（电脑键盘风）
 static BOOL      gCapRainbow   = NO;     // 彩虹键盘帽（浅色柔和凸起，1.9.0）
+static BOOL      gCapMacaron   = NO;     // 马卡龙浮雕键帽（全彩键面+小字，2.0.0）
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
 static double    gLastLoad     = -1;
 
@@ -356,6 +357,7 @@ static void WXKBReload(BOOL force) {
 
     gCap3D = [d[WXKB_KEY_KEYCAP3D] boolValue];
     gCapRainbow = [d[WXKB_KEY_CAPRAINBOW] boolValue];
+    gCapMacaron = [d[WXKB_KEY_CAPMACARON] boolValue];
 
     // ---- 键盘位置 ----
     id of2 = d[WXKB_KEY_OFFSET];
@@ -458,6 +460,7 @@ static void WXKBApplyShapeMask(UIView *target, NSInteger shape, CGSize sz) {
 
 static void WXKBApplyCorner(UIView *v);
 static UIColor *WXKBKeyBackground(WBKeyView *v);
+static NSInteger WXKBLetterIndex(WBKeyView *v);
 
 // —— 立体键帽（真实电脑键盘风）——
 // 每颗键渲染成一颗真键帽：① 深色「键体」铺满轮廓 = 侧壁/前脸；② 在键体内**内缩一圈**的
@@ -476,9 +479,10 @@ static const void *kWXKBCapEdgeKey  = &kWXKBCapEdgeKey;    // 1.8.0 轮廓硬描
 // 优先级：彩虹键盘帽 > 立体键帽 > 皮肤默认（皮肤开启且两开关都没开 → 彩虹键盘帽）。
 static NSInteger WXKBCapStyle(void) {
     if (!gEnabled) return 0;
+    if (gCapMacaron) return 3;      // 马卡龙浮雕（2.0.0，原版键帽观感）
     if (gCapRainbow) return 2;
     if (gCap3D) return 1;
-    if (gSkinEnabled) return 2;
+    if (gSkinEnabled) return 3;     // 皮肤默认 = 马卡龙浮雕
     return 0;
 }
 
@@ -520,6 +524,11 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         kInset = 3.0;
         kFront = 8.0;
         topY   = 2.0;
+    } else if (capStyle == 3) {             // 马卡龙浮雕：全彩键面，无裙边无伸出
+        kDepth = 0.0;
+        kInset = 0.0;
+        kFront = 0.0;
+        topY   = 0.0;
     }
     CGFloat rad = 5.0;
     if (gShape == 0) {
@@ -527,6 +536,11 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         if (gCorner > 0.01) rad = gCorner;
         rad = MIN(rad, MIN(sz.width, sz.height) / 2.0);
         if (rad <= 0.5) rad = 5.0;
+    }
+    if (capStyle == 3 && gShape == 0) {
+        // 2.0.0 马卡龙：圆角明显调大（原图键帽圆润，约键高 1/5 起）
+        rad = MAX(rad, MIN(sz.width, sz.height) * 0.22);
+        rad = MIN(rad, MIN(sz.width, sz.height) * 0.38);
     }
 
     // 取按键底色：优先用我们的配色（含彩虹/数字分组），否则取原生背景叶颜色
@@ -537,7 +551,7 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     }
 
     // 由底色推导键帽各段色（高光 / 亮面 / 正面 / 下缘 / 前面 + 1.8.0 侧壁裙边两档）
-    CGFloat h = 0, s = 0, br = 0, al = 0;
+    CGFloat h = 0, s = 0, br = 0.9, al = 0;
     UIColor *cHi, *cLight, *cFace, *cLow, *cFront, *cWallHi, *cWallLo;
     if (base && [base getHue:&h saturation:&s brightness:&br alpha:&al] && s > 0.02) {
         cHi     = [UIColor colorWithHue:h saturation:MAX(s * 0.30, 0.0) brightness:MIN(br * 1.35 + 0.34, 1.0) alpha:1.0];
@@ -559,10 +573,17 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         cWallHi = [UIColor colorWithWhite:MAX(w * 0.68, 0.42) alpha:1.0];
         cWallLo = [UIColor colorWithWhite:MAX(w * 0.36, 0.16) alpha:1.0];
     }
-    // 轮廓描边与裙边：电脑键盘风 = 近黑硬描边 + 深色裙边（1.8.0）；
-    // 彩虹键盘帽 = 极淡灰描边 + 浅灰白裙边（不随键色，1.9.0）
+    // 键帽外观：电脑键盘风 = 近黑硬描边 + 深色裙边（1.8.0）；
+    // 彩虹键盘帽 = 浅灰白裙边 + 极淡描边（1.9.0）；
+    // 马卡龙浮雕（2.0.0）= 无裙边无描边，全彩键面 + 顶部提亮 + 底部同色系收边唇
     UIColor *cEdge;
-    if (capStyle == 2) {
+    if (capStyle == 3) {
+        cWallHi = cFace;
+        cWallLo = cFace;
+        cEdge   = [UIColor colorWithWhite:0.0 alpha:0.0];
+        cHi     = [UIColor colorWithHue:h saturation:s * 0.80 brightness:MIN(br * 1.10 + 0.06, 1.0) alpha:1.0];
+        cLow    = [UIColor colorWithHue:h saturation:MIN(s * 1.08, 1.0) brightness:br * 0.72 alpha:1.0];
+    } else if (capStyle == 2) {
         cWallHi = [UIColor colorWithWhite:0.985 alpha:1.0];
         cWallLo = [UIColor colorWithWhite:0.800 alpha:1.0];
         cEdge   = [UIColor colorWithWhite:0.60 alpha:0.30];
@@ -597,8 +618,14 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         t = CGAffineTransformConcat(t, CGAffineTransformMakeTranslation(-cx, -cy));
         [topPath applyTransform:t];
     } else {
-        CGFloat rr = (gShape == 1) ? MAX(MIN(tbsz.width, tbsz.height) / 2.0 - kInset, 2.0)
-                                   : MAX(rad * 0.8, 3.0);   // 顶面圆角随轮廓走，别被内缩吃掉
+        CGFloat rr;
+        if (gShape == 1) {
+            rr = MAX(MIN(tbsz.width, tbsz.height) / 2.0 - kInset, 2.0);
+        } else if (capStyle == 3) {
+            rr = rad;                           // 马卡龙：顶面=整颗键面，圆角随轮廓
+        } else {
+            rr = MAX(rad * 0.8, 3.0);           // 顶面圆角随轮廓走，别被内缩吃掉
+        }
         CGFloat botY = kInset + kFront;     // 底部多抬一截 → 前脸更高
         topPath = [UIBezierPath bezierPathWithRoundedRect:
                        CGRectMake(kInset, topY, tbsz.width - 2 * kInset,
@@ -650,6 +677,7 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     smask.path = silLeaf.CGPath;
     skirt.mask = smask;
     skirt.zPosition = -997.5;
+    skirt.hidden = (capStyle == 3);
 
     // ② 凸起顶面（内缩轮廓内的穹顶渐变：上亮下暗）—— 同样挂在背景叶上
     if (!top) {
@@ -661,7 +689,11 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     top.frame = CGRectMake(0, 0, tbsz.width, tbsz.height);
     top.startPoint = CGPointMake(0.5, 0.0);
     top.endPoint   = CGPointMake(0.5, 1.0);
-    if (capStyle == 2) {
+    if (capStyle == 3) {
+        // 马卡龙浮雕：顶部提亮 → 键面 → 底部收边唇（单图层完成弧面凸起感）
+        top.locations = @[@0.0, @0.22, @0.82, @1.0];
+        top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
+    } else if (capStyle == 2) {
         // 彩虹键盘帽：柔和两段式（亮面 → 键面），不要强高光带
         top.locations = @[@0.0, @0.45, @0.85, @1.0];
         top.colors = @[(id)cHi.CGColor, (id)cFace.CGColor, (id)cFace.CGColor, (id)cLow.CGColor];
@@ -687,6 +719,7 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     edge.strokeColor = cEdge.CGColor;
     edge.lineWidth = (capStyle == 2) ? 1.0 : 1.4;
     edge.zPosition = -996;
+    edge.hidden = (capStyle == 3);
 
     // ③ 正下方伸出的侧壁（有空隙/透明键盘时厚度可见）
     UIBezierPath *wallPath = [silWall copy];
@@ -701,10 +734,15 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     wall.frame = CGRectMake(0, 0, sz.width, sz.height + kDepth);
     wall.path = wallPath.CGPath;
     wall.fillColor = cWallLo.CGColor;
+    wall.hidden = (capStyle == 3) || kDepth <= 0.0;
 
     // ④ 整颗键柔和投影：电脑键盘风更沉，彩虹键盘帽更轻更散
     v.layer.shadowColor  = [UIColor colorWithWhite:0.0 alpha:1.0].CGColor;
-    if (capStyle == 2) {
+    if (capStyle == 3) {
+        v.layer.shadowOpacity = 0.16;
+        v.layer.shadowOffset  = CGSizeMake(0.0, 3.0);
+        v.layer.shadowRadius  = 5.0;
+    } else if (capStyle == 2) {
         v.layer.shadowOpacity = 0.20;
         v.layer.shadowOffset  = CGSizeMake(0.0, 3.0);
         v.layer.shadowRadius  = 4.5;
@@ -715,6 +753,52 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     }
 
     [CATransaction commit];
+}
+
+// —— 马卡龙浮雕：字母键下层小字（Q→1…，原版键帽双层文字）——
+static NSString *WXKBSublabelForLetter(NSInteger idx) {
+    static NSArray<NSArray<NSString *> *> *rows = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        rows = @[ @[@"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9", @"0"],
+                  @[@"!", @"@", @"#", @"~", @"%", @"...", @".", @"(", @")"],
+                  @[@"\"", @"'", @"-", @"_", @":", @";", @"?"] ];
+    });
+    NSInteger row = -1, col = 0;
+    if (idx >= 0 && idx <= 9)        { row = 0; col = idx; }
+    else if (idx >= 10 && idx <= 18) { row = 1; col = idx - 10; }
+    else if (idx >= 19 && idx <= 25) { row = 2; col = idx - 19; }
+    if (row < 0) return nil;
+    return rows[row][col];
+}
+
+static const void *kWXKBSubKey = &kWXKBSubKey;
+
+static void WXKBApplySublabel(UIView *v) {
+    if (!v) return;
+    UILabel *sub = objc_getAssociatedObject(v, kWXKBSubKey);
+    NSInteger li = (gEnabled && WXKBCapStyle() == 3) ? WXKBLetterIndex((WBKeyView *)v) : NSNotFound;
+    NSString *txt = (li != NSNotFound) ? WXKBSublabelForLetter(li) : nil;
+    if (!txt) {
+        if (sub) {
+            [sub removeFromSuperview];
+            objc_setAssociatedObject(v, kWXKBSubKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        return;
+    }
+    CGSize sz = v.bounds.size;
+    if (sz.height < 30.0 || sz.width < 24.0) return;
+    if (!sub) {
+        sub = [UILabel new];
+        sub.userInteractionEnabled = NO;
+        sub.textAlignment = NSTextAlignmentCenter;
+        objc_setAssociatedObject(v, kWXKBSubKey, sub, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [v addSubview:sub];
+    }
+    sub.text = txt;
+    sub.font = [UIFont systemFontOfSize:MAX(sz.height * 0.19, 8.0) weight:UIFontWeightRegular];
+    sub.textColor = [UIColor colorWithWhite:0.35 alpha:0.60];
+    sub.frame = CGRectMake(0, sz.height * 0.56, sz.width, sz.height * 0.36);
 }
 
 static void WXKBApplyCornerInner(UIView *v) {
@@ -762,6 +846,7 @@ static void WXKBApplyCorner(UIView *v) {
     if (!v) return;
     WXKBApplyCap(v, WXKBFindBgLeaf(v, 0));
     WXKBApplySkin(v, WXKBFindBgLeaf(v, 0));
+    WXKBApplySublabel(v);
 }
 
 static BOOL WXKBIsKeyView(UIView *v) {
@@ -1689,6 +1774,10 @@ static BOOL WXKBDarkMode(void) {
 }
 
 static UIColor *WXKBKeyText(WBKeyView *v) {
+    // 2.0.0 马卡龙浮雕：粉彩键面 → 字母用深炭灰（图2/图3 同款），不跟用户白字
+    if (v && WXKBLetterIndex(v) != NSNotFound && WXKBCapStyle() == 3) {
+        return [UIColor colorWithRed:0.23 green:0.23 blue:0.25 alpha:1.0];
+    }
     // 1.7.5 皮肤模式：非字母键是画布白键帽，配深灰文字（demo 同款）；
     // 字母键是彩色键帽，仍走用户设置的文字色。
     if (gSkinEnabled && v && WXKBLetterIndex(v) == NSNotFound) {
@@ -2153,7 +2242,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 1.9.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d rainbow=%d corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.0.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d cap3d=%d rainbow=%d macaron=%d corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, gCap3D, gCapRainbow, gCorner, gKbOffset, gSkinEnabled);
+          gGradEnabled, gShape, gCap3D, gCapRainbow, gCapMacaron, gCorner, gKbOffset, gSkinEnabled);
 }
