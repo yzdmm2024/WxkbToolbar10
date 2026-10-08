@@ -1683,7 +1683,20 @@ static void WXKBLoadSkin(void) {
             gSkinLetterCol[i] = WXKBFaceColor(o);
         }
     }
-    if (gSkinLetterImg[0]) gSkinLoaded = YES; else gSkinTried = NO;  // 没读到则下次再试
+    if (gSkinLetterImg[0]) {
+        gSkinLoaded = YES;
+    } else {
+        // 2.2.3 皮肤加载失败时，使用代码生成的彩虹色作为后备
+        gSkinLoaded = YES;  // 标记为已加载（使用后备色）
+        for (NSInteger i = 0; i < 26; i++) {
+            // 按行生成彩虹色：每行一个色相渐变
+            CGFloat hue = (i % 10) / 10.0;  // 0.0 ~ 0.9
+            gSkinLetterCol[i] = [UIColor colorWithHue:hue
+                                           saturation:0.65
+                                           brightness:0.92
+                                                alpha:1.0];
+        }
+    }
 }
 
 // 字母 → 皮肤片号。皮肤条按键盘行排版：26 片分 10/9/7 三段（正好 QWERTY 三行的键数，
@@ -1723,8 +1736,8 @@ static UIColor *WXKBSkinColorFor(WBKeyView *v) {
             return gSkinLetterCol[slot];
         }
     }
-    // 功能键：画布白。文字颜色由 WXKBKeyText 配成深灰（见该函数 1.7.5 注释）。
-    return WXKBSkinCanvasColor();
+    // 2.2.3 功能键：浅灰色（不再是画布白，避免白茫茫一片）
+    return [UIColor colorWithRed:0.88 green:0.88 blue:0.90 alpha:1.0];
 }
 
 static const void *kWXKBSkinKey      = &kWXKBSkinKey;       // 已贴图片（去重，避免重复赋值）
