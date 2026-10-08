@@ -70,6 +70,10 @@
 // 立体键帽：在按键背后垫一层向下的深色「侧壁」，模拟电脑键盘 3D 键帽（纯视觉，不动布局）
 #define WXKB_KEY_KEYCAP3D      @"keyCap3D"
 
+// 彩虹键盘帽（1.9.0）：浅灰白裙边 + 柔和阴影 + 圆润穹顶的凸起键帽。
+// 开启皮肤时两个键帽开关都没开 → 默认按此风格渲染。
+#define WXKB_KEY_CAPRAINBOW    @"keyCapRainbow"
+
 // 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
 #define WXKB_KEY_OFFSET        @"kbOffset"
 
