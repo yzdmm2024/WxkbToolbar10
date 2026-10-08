@@ -1022,6 +1022,11 @@ static void WXKBForceDarkContent(UIView *v) {
     while (queue.count > 0) {
         UIView *cur = [queue firstObject];
         [queue removeObjectAtIndex:0];
+        // 所有非文字视图统一给深灰 tint：覆盖那些用 self.tintColor 画图的自定义图标
+        // 视图（UIControl 之外的图标视图），以及大尺寸模板图标，避免白底白图标。
+        if (![cur isKindOfClass:[UILabel class]]) {
+            cur.tintColor = gray;
+        }
         // UILabel：文字强制深色（动态颜色也直接覆盖，避免白色解析值）
         if ([cur isKindOfClass:[UILabel class]]) {
             UILabel *lbl = (UILabel *)cur;
@@ -1034,46 +1039,95 @@ static void WXKBForceDarkContent(UIView *v) {
                 lbl.highlightedTextColor = dark;
             }
         }
-        // UIImageView：tintColor 强制深灰（template 模式图标）
+        // UIImageView：tintColor 已统一深灰；AlwaysOriginal 的小图标（非照片）转 template
         if ([cur isKindOfClass:[UIImageView class]]) {
             UIImageView *iv = (UIImageView *)cur;
             if (iv.image) {
-                // 无论是 AlwaysTemplate 还是 Automatic，只要走 tint 渲染都改
-                if (iv.image.renderingMode != UIImageRenderingModeAlwaysOriginal) {
-                    iv.tintColor = gray;
-                } else {
-                    // AlwaysOriginal 模式：如果是小图标（<40pt），可能是白色图标，
-                    // 转成 template 模式 + 深色 tint，避免白底白图标
+                // 小尺寸（<=40pt）的 AlwaysOriginal 白 PNG 视为图标（复制的照片缩略图通常
+                // 更大，不在范围内），转 template + 深灰 tint，避免白底白图标。
+                // 大尺寸 AlwaysOriginal 一律不动，保留照片原色。
+                if (iv.image.renderingMode == UIImageRenderingModeAlwaysOriginal) {
                     CGSize sz = iv.image.size;
-                    if (sz.width > 0 && sz.width < 40 && sz.height > 0 && sz.height < 40) {
-                        UIImage *tpl = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-                        iv.image = tpl;
+                    if (sz.width > 0 && sz.width <= 40 && sz.height > 0 && sz.height <= 40) {
+                        iv.image = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
                         iv.tintColor = gray;
+                    }
+                }
+                // highlightedImage 同样处理
+                if (iv.highlightedImage &&
+                    iv.highlightedImage.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    CGSize hsz = iv.highlightedImage.size;
+                    if (hsz.width > 0 && hsz.width <= 40 && hsz.height > 0 && hsz.height <= 40) {
+                        iv.highlightedImage = [iv.highlightedImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
                     }
                 }
             }
         }
-        // UIButton：所有状态的文字颜色 + image tint 都改
+        // UIButton：文字颜色 + image + backgroundImage 全部深色化
+        // （backgroundImage 之前完全漏处理，是白图标的主因：照片符号 / 隔空投送图标等）
         if ([cur isKindOfClass:[UIButton class]]) {
             UIButton *btn = (UIButton *)cur;
             for (NSInteger s = 0; s <= 3; s++) {
                 UIColor *tc = [btn titleColorForState:s];
-                if (tc) {
-                    [btn setTitleColor:dark forState:s];
+                if (tc) [btn setTitleColor:dark forState:s];
+                UIImage *im = [btn imageForState:s];
+                if (im && im.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    CGSize isz = im.size;
+                    if (isz.width > 0 && isz.width <= 40 && isz.height > 0 && isz.height <= 40) {
+                        [btn setImage:[im imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:s];
+                    }
+                }
+                UIImage *bim = [btn backgroundImageForState:s];
+                if (bim && bim.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    CGSize bsz = bim.size;
+                    if (bsz.width > 0 && bsz.width <= 40 && bsz.height > 0 && bsz.height <= 40) {
+                        [btn setBackgroundImage:[bim imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:s];
+                    }
                 }
             }
             btn.imageView.tintColor = gray;
             btn.tintColor = gray;
         }
-        // UIControl 子类（如 WBCCFuncItem）：自己的 tintColor 也改，
-        // 它内部的子视图会继承 tintColor
-        if ([cur isKindOfClass:[UIControl class]]) {
-            UIControl *ctl = (UIControl *)cur;
-            ctl.tintColor = gray;
-        }
         // 继续遍历子视图
         for (UIView *sv in cur.subviews) {
             [queue addObject:sv];
+        }
+    }
+}
+
+// 精准处理「文字 label 左侧兄弟图标」：剪贴板面板里每一项 = [左侧类型图标] + [WBTextItemLabel 文字]，
+// 左侧图标通常是 AlwaysOriginal 白 PNG（渲染模式不受 tint 影响），在浅色皮肤下看不见。
+// 这里只针对 WBTextItemLabel 同父级里的 UIImageView / UIButton 图标，转 template + 深灰 tint，
+// 不影响缩略图（缩略图不在文字项的同父级，且尺寸更大）。
+static void WXKBDarkenSiblingIcons(UIView *label) {
+    if (!label || !gEnabled || !gSkinEnabled) return;
+    UIView *p = label.superview;
+    if (!p) return;
+    UIColor *gray = [UIColor colorWithRed:0.35 green:0.35 blue:0.38 alpha:1.0];
+    for (UIView *sv in p.subviews) {
+        if (sv == label) continue;
+        if ([sv isKindOfClass:[UIImageView class]]) {
+            UIImageView *iv = (UIImageView *)sv;
+            if (iv.image && iv.image.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                CGSize s = iv.image.size;
+                if (s.width > 0 && s.width <= 64 && s.height > 0 && s.height <= 64) {
+                    iv.image = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+                    iv.tintColor = gray;
+                }
+            }
+        } else if ([sv isKindOfClass:[UIButton class]]) {
+            UIButton *btn = (UIButton *)sv;
+            for (NSInteger st = 0; st <= 3; st++) {
+                UIImage *im = [btn imageForState:st];
+                if (im && im.renderingMode == UIImageRenderingModeAlwaysOriginal) {
+                    CGSize s = im.size;
+                    if (s.width > 0 && s.width <= 64 && s.height > 0 && s.height <= 64) {
+                        [btn setImage:[im imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:st];
+                    }
+                }
+            }
+            btn.imageView.tintColor = gray;
+            btn.tintColor = gray;
         }
     }
 }
@@ -2588,6 +2642,8 @@ static void WXKBFireAction(int c) {
     if (gSkinEnabled && gEnabled) {
         // 强制深色，不接受动态颜色
         %orig([UIColor colorWithWhite:0.18 alpha:1.0]);
+        // 顺手把左侧兄弟图标（图片符号 / 复制符号）强制深灰
+        WXKBDarkenSiblingIcons(self);
     } else {
         %orig(color);
     }
@@ -2597,6 +2653,7 @@ static void WXKBFireAction(int c) {
     if (gSkinEnabled && gEnabled && self.window) {
         // 触发 setTextColor: 的 hook 来强制深色
         [self setTextColor:self.textColor];
+        WXKBDarkenSiblingIcons(self);
     }
 }
 %end
@@ -2896,7 +2953,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.4 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.3.5 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
