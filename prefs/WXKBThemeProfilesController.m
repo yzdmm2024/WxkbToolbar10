@@ -111,14 +111,23 @@
 
 #pragma mark - 删除主题
 
-- (BOOL)canDeleteSpecifier:(PSSpecifier *)specifier {
-    return [specifier propertyForKey:@"wxkbThemeName"] != nil;
+- (UITableViewCellEditingStyle)tableView:(UITableView *)tableView
+        editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath {
+    PSSpecifier *s = [self specifierAtIndex:indexPath.row];
+    if ([s propertyForKey:@"wxkbThemeName"]) {
+        return UITableViewCellEditingStyleDelete;
+    }
+    return UITableViewCellEditingStyleNone;
 }
 
-- (void)deleteSpecifier:(PSSpecifier *)specifier {
-    NSString *nm = [specifier propertyForKey:@"wxkbThemeName"];
+- (void)tableView:(UITableView *)tableView
+    commitEditingStyle:(UITableViewCellEditingStyle)editingStyle
+     forRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (editingStyle != UITableViewCellEditingStyleDelete) return;
+    PSSpecifier *s = [self specifierAtIndex:indexPath.row];
+    NSString *nm = [s propertyForKey:@"wxkbThemeName"];
     if (nm.length) WXKBDeleteThemeProfile(nm);
-    [super deleteSpecifier:specifier];
+    [self reloadSpecifiers];
 }
 
 @end
