@@ -1041,6 +1041,15 @@ static void WXKBForceDarkContent(UIView *v) {
                 // 无论是 AlwaysTemplate 还是 Automatic，只要走 tint 渲染都改
                 if (iv.image.renderingMode != UIImageRenderingModeAlwaysOriginal) {
                     iv.tintColor = gray;
+                } else {
+                    // AlwaysOriginal 模式：如果是小图标（<40pt），可能是白色图标，
+                    // 转成 template 模式 + 深色 tint，避免白底白图标
+                    CGSize sz = iv.image.size;
+                    if (sz.width > 0 && sz.width < 40 && sz.height > 0 && sz.height < 40) {
+                        UIImage *tpl = [iv.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+                        iv.image = tpl;
+                        iv.tintColor = gray;
+                    }
                 }
             }
         }
@@ -2887,7 +2896,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.3 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.3.4 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
