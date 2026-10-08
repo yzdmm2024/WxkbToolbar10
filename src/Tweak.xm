@@ -2586,7 +2586,8 @@ static void WXKBFireAction(int c) {
 - (void)didMoveToWindow {
     %orig;
     if (gSkinEnabled && gEnabled && self.window) {
-        [super setTextColor:[UIColor colorWithWhite:0.18 alpha:1.0]];
+        // 触发 setTextColor: 的 hook 来强制深色
+        [self setTextColor:self.textColor];
     }
 }
 %end
