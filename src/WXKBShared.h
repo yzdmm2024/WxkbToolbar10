@@ -64,6 +64,9 @@
 // 皮肤名：当前仅内置 "rainbow" = 百度「彩虹按键」；保留扩展位。
 #define WXKB_KEY_SKIN_NAME     @"skinName"
 
+// 皮肤背景：0=白底(默认)  1=全透明  2=灰色  3=白50%(白色半透明)
+#define WXKB_KEY_SKIN_BG       @"skinBg"
+
 // 皮肤资源在设备上的目录（tweak 从 jbroot 读取）
 #define WXKB_SKIN_DIR          @"/Library/Application Support/WxkbToolbar10/skins"
 
