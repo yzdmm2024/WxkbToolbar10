@@ -532,6 +532,13 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     // 压掉系统原生阴影（取消裁剪后会漏出灰圈），改用我们自己的柔和投影
     if (v.layer.shadowOpacity > 0.0 && v.layer.shadowRadius < 0.5) v.layer.shadowOpacity = 0.0;
 
+    // 2.2.8 实际生效的形状：六边形/水珠只用于正方形键，长矩形键回退为圆角
+    CGFloat ratio = (sz.height > 1) ? sz.width / sz.height : 1.0;
+    if (ratio < 0) ratio = -ratio;
+    BOOL isSquareish = (ratio >= 0.75 && ratio <= 1.35);
+    NSInteger effShape = gShape;
+    if (gShape >= 2 && !isSquareish) effShape = 0;  // 长键：降级为普通圆角
+
     NSInteger capStyle = WXKBCapStyle();
     CGFloat kDepth = 4.0;                   // 底部伸出厚度
     CGFloat kInset = 4.0;                   // 顶面左右内缩（露出侧壁裙边）
@@ -650,12 +657,12 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     // 轮廓按各自坐标系生成：键体/顶面按背景叶尺寸 tbsz（与 layer 坐标一致），
     // 伸出侧壁按按键尺寸 sz（要覆盖整颗键并向下凸出）
     UIBezierPath *silLeaf = nil;
-    if (gShape == 2) {
+    if (effShape == 2) {
         silLeaf = WXKBHexagonPath(tbsz);
-    } else if (gShape == 3) {
+    } else if (effShape == 3) {
         silLeaf = WXKBWaterDropPath(tbsz);
     } else {
-        if (gShape == 1) rad = MIN(tbsz.width, tbsz.height) / 2.0;
+        if (effShape == 1) rad = MIN(tbsz.width, tbsz.height) / 2.0;
         silLeaf = [UIBezierPath bezierPathWithRoundedRect:
                        CGRectMake(0, 0, tbsz.width, tbsz.height) cornerRadius:rad];
     }
@@ -664,7 +671,7 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     // 凸起顶面轮廓：圆角/圆形左右缩 kInset、顶部微缩、底部上抬 kFront（露出高前脸）；
     // 六边形/水珠按比例缩 0.88
     UIBezierPath *topPath;
-    if (gShape >= 2) {
+    if (effShape >= 2) {
         topPath = [silLeaf copy];
         CGFloat cx = tbsz.width / 2.0, cy = tbsz.height / 2.0;
         CGAffineTransform t = CGAffineTransformMakeTranslation(cx, cy);
@@ -673,7 +680,7 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         [topPath applyTransform:t];
     } else {
         CGFloat rr;
-        if (gShape == 1) {
+        if (effShape == 1) {
             rr = MAX(MIN(tbsz.width, tbsz.height) / 2.0 - kInset, 2.0);
         } else if (capStyle == 3) {
             rr = rad;                           // 马卡龙：顶面=整颗键面，圆角随轮廓
@@ -690,13 +697,13 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
 
     // 伸出底部的侧壁：整颗键轮廓（sz）下移 kDepth
     UIBezierPath *silWall = nil;
-    if (gShape == 2) {
+    if (effShape == 2) {
         silWall = WXKBHexagonPath(sz);
-    } else if (gShape == 3) {
+    } else if (effShape == 3) {
         silWall = WXKBWaterDropPath(sz);
     } else {
         CGFloat r2 = rad;
-        if (gShape == 1) r2 = MIN(sz.width, sz.height) / 2.0;
+        if (effShape == 1) r2 = MIN(sz.width, sz.height) / 2.0;
         silWall = [UIBezierPath bezierPathWithRoundedRect:
                        CGRectMake(0, 0, sz.width, sz.height) cornerRadius:r2];
     }
@@ -890,11 +897,40 @@ static void WXKBApplyCornerInner(UIView *v) {
     }
 
     // shape 1/2/3：忽略 keyCornerRadius，用形状（蒙版只加在背景叶子，不裁文字）
+    // 2.2.8 修复：六边形/水珠形状只应用于接近正方形的键（字母键等）。
+    // 长矩形键（空格、shift、删除、123、回车…）强行改成六边形会变形、
+    // 还会和周围键之间露出黑色三角空隙，视觉上不伦不类。长键回退为普通圆角。
+    CGSize sz = v.bounds.size;
+    CGFloat ratio = (sz.height > 1) ? sz.width / sz.height : 1.0;
+    if (ratio < 0) ratio = -ratio;
+    BOOL isSquareish = (ratio >= 0.75 && ratio <= 1.35);
+    if (gShape >= 2 && !isSquareish) {
+        // 长键：六边形/水珠 → 改用普通大圆角，保持协调
+        target.layer.mask = nil;
+        objc_setAssociatedObject(target, kWXKBMaskLayerKey, nil,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        CGFloat r = sz.height * 0.35;
+        if (fabs(target.layer.cornerRadius - r) > 0.01) target.layer.cornerRadius = r;
+        target.layer.masksToBounds = YES;
+        if (target != v) {
+            v.layer.mask = nil;
+            v.layer.cornerRadius = 0;
+        }
+        return;
+    }
     WXKBApplyShapeMask(target, gShape, target.bounds.size);
     if (target != v) {
         // key 自身不再额外圆角/蒙版，避免双重裁剪
         v.layer.mask = nil;
         v.layer.cornerRadius = 0;
+        // 2.2.8 修复六边形模式下键之间透出黑色三角的问题：
+        // 六边形 mask 后，target 背景叶四角被裁掉，v 本身的深色背景
+        // 从凹角处露出来，形成黑色空隙。把 v 的背景清成透明，
+        // 让底下的键盘画布色透出来，就不会有黑边了。
+        if (gSkinEnabled) {
+            v.backgroundColor = [UIColor clearColor];
+            v.layer.backgroundColor = [UIColor clearColor].CGColor;
+        }
     }
 }
 
@@ -2037,7 +2073,10 @@ static void WXKBApplyBackground(UIView *host) {
     // 把所有浅色/白色的文字、图标、按钮文字强制改成深色。
     // 作为 overrideUserInterfaceStyle 的兜底——有些渲染路径不走
     // trait collection，白色外观设置了也没用，直接改视图属性最可靠。
-    WXKBForceDarkContent(host);
+    // 2.2.8 扩大范围：从 window 开始遍历，覆盖工具栏展开面板、
+    // 候选栏面板、各种弹层视图等不在 rootInputView 里的子树。
+    UIView *darkRoot = host.window ?: host;
+    WXKBForceDarkContent(darkRoot);
 }
 
 #pragma mark - 编辑增强按钮
@@ -2236,6 +2275,9 @@ static void WXKBFireAction(int c) {
     if (gSkinEnabled) {
         self.tintColor = [UIColor colorWithRed:74.0 / 255.0 green:74.0 / 255.0 blue:81.0 / 255.0 alpha:1.0];
     }
+    // 2.2.8 暴力兜底：递归遍历整个工具栏及其所有子视图/面板，
+    // 把浅色图标文字强制改成深色（展开面板里的图标也覆盖到）。
+    WXKBForceDarkContent(self);
     WXKBFixScroll(self);
     WXKBScheduleSync();
 }
@@ -2251,6 +2293,8 @@ static void WXKBFireAction(int c) {
     if (gSkinEnabled) {
         self.tintColor = [UIColor colorWithRed:74.0 / 255.0 green:74.0 / 255.0 blue:81.0 / 255.0 alpha:1.0];
     }
+    // 2.2.8 暴力兜底：顶栏及子视图递归深色
+    WXKBForceDarkContent(self);
     WXKBFillRow(self);
 }
 
@@ -2486,7 +2530,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.2.7 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
+    NSLog(@"[WxkbToolbar10] 2.2.8 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled);
 }
