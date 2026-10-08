@@ -1938,6 +1938,13 @@ static void WXKBApplyBackground(UIView *host) {
         if (host.overrideUserInterfaceStyle != want) {
             host.overrideUserInterfaceStyle = want;
         }
+        // 2.2.6 修复：只改 host 覆盖不到键盘 window 里其它子树（工具栏面板 /
+        // 「拷贝的图片」等面板）——它们在深色宿主里仍按深色外观渲染成白字白图标。
+        // 键盘扩展有独立 window，直接对 window 生效，不影响宿主 App。
+        UIWindow *win = host.window;
+        if (win && win.overrideUserInterfaceStyle != want) {
+            win.overrideUserInterfaceStyle = want;
+        }
     }
 }
 
@@ -2132,6 +2139,11 @@ static void WXKBFireAction(int c) {
 
 - (void)layoutSubviews {
     %orig;
+    // 2.2.6 皮肤模式：工具栏面板底色是浅色画布，图标/文字 tint 改深灰，
+    // 否则深色宿主下白色图标在白底上完全看不见。
+    if (gSkinEnabled) {
+        self.tintColor = [UIColor colorWithRed:74.0 / 255.0 green:74.0 / 255.0 blue:81.0 / 255.0 alpha:1.0];
+    }
     WXKBFixScroll(self);
     WXKBScheduleSync();
 }
@@ -2240,6 +2252,26 @@ static void WXKBFireAction(int c) {
         }
     }
     UIColor *c = WXKBKeyHighlight();
+    if (c) return c;
+    return %orig;
+}
+
+// 2.2.6 修复：shift / 退格 / 空格 / 中英 等功能键（本类）之前没有 tint hook，
+// 皮肤模式下这些键的图标仍是系统深色外观渲染的白色 → 浅色键上看不见。
+- (UIColor *)tintColorForCurrentState {
+    UIColor *c = WXKBKeyText(self);
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)normalTintColorForCurrentState {
+    UIColor *c = WXKBKeyText(self);
+    if (c) return c;
+    return %orig;
+}
+
+- (UIColor *)subTintColorForCurrentState {
+    UIColor *c = WXKBKeyText(self);
     if (c) return c;
     return %orig;
 }
