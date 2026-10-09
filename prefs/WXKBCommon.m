@@ -279,12 +279,14 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
         cell.imageView.image = WXKBSwatch(WXKBColorFromHex(hex), 29);
     }
 
-    // 内联网格 cell：把 specifier 的禁用状态（未授权锁定）透传给 cell，
-    // 使其整格置灰、按钮不可点。直接用 cellClass 判断，避免引入头文件依赖。
+    // 内联网格 cell：把 specifier 的「是否启用」透传给 cell，使其整格置灰、按钮不可点。
+    // 直接用 cellClass 判断，避免引入头文件依赖；启用状态用自定义属性 wxkbSpecEnabled
+    // 携带（PSSpecifier 在该 SDK 未暴露 isEnabled getter，故不走系统 isEnabled）。
     Class gridCls = [sp propertyForKey:@"cellClass"];
     if (gridCls && [cell isKindOfClass:gridCls] &&
         [cell respondsToSelector:@selector(setWxkbEnabled:)]) {
-        [cell setWxkbEnabled:[sp isEnabled]];
+        id en = [sp propertyForKey:@"wxkbSpecEnabled"];
+        [cell setWxkbEnabled:(en ? [en boolValue] : YES)];
     }
 
     return cell;

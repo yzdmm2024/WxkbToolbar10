@@ -239,7 +239,9 @@ extern const char *lk_reason_cstr(lk_reason r);
     BOOL locked = ![self _wxkbUnlocked];
     for (PSSpecifier *sp in s) {
         if ([[sp propertyForKey:@"wxkbUnlockEntry"] boolValue]) continue; // 解锁按钮永远可点
-        [sp setEnabled:!locked];
+        BOOL en = !locked;
+        [sp setEnabled:en];
+        [sp setProperty:@(en) forKey:@"wxkbSpecEnabled"];   // 供基类同步给内联网格 cell
     }
 
     _specifiers = s;
