@@ -20,9 +20,13 @@ static void WXKBOffsetSliderNotify(CFNotificationCenterRef center, void *observe
 @property (nonatomic, strong) UILabel  *valueLabel;
 @property (nonatomic, strong) UILabel  *titleLabel;
 @property (nonatomic, weak)   PSSpecifier *lastSpecifier;
+- (void)wxkbSyncFromPrefs;
+- (void)sliderChanged:(UISlider *)s;
+- (void)wxkbUpdateLabel:(NSInteger)iv;
 @end
 
 @implementation WXKBOffsetSliderCell
+@synthesize slider=_slider, valueLabel=_valueLabel, titleLabel=_titleLabel, lastSpecifier=_lastSpecifier;
 
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
