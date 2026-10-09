@@ -4,5 +4,5 @@
 
 @interface WXKBInlineGridCell : PSTableCell
 - (void)wxkbRefreshLetterColors;
-- (void)setWxkbEnabled:(BOOL)enabled;   // 未授权时整格置灰、按钮不可点
+- (void)wxkbResetScroll;   // 回到前台时复位内嵌 scrollView 手势（防切后台回来卡死）
 @end
