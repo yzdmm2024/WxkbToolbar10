@@ -21,12 +21,18 @@ jobs:
       - name: Ensure script exec bits (Windows checkout 丢可执行位)
         run: chmod 0755 layout/DEBIAN/postinst
       - name: Build package (rootless)
-        run: make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+        run: make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1 | tee build.log
       - uses: actions/upload-artifact@v4
         with:
           name: Tweak-deb
           path: packages/*.deb
           if-no-files-found: error
+      - name: Upload build log (debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
       # 自动发布到越狱源 yzdmm2024/repo（debs/ + 重算 Packages）。
       # 需在仓库 Settings → Secrets 配置 REPO_DEPLOY_TOKEN（对 yzdmm2024/repo 有写权限的 PAT）。
       # 未配置该 secret 时本步自动跳过，仍可走手动发布流程。
