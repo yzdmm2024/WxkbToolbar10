@@ -1,6 +1,7 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
 #import "WXKBPreviewKeyboardView.h"
+#import "WXKBInlineGridCell.h"
 #import "lk.h"
 #ifdef __cplusplus
 extern "C" {
@@ -53,6 +54,38 @@ extern const char *lk_reason_cstr(lk_reason r);
     }
 
     [_previewView refresh];
+
+    // 切后台再回来时，嵌套在 cell 里的横向滑动条偶尔会卡在「手势追踪态」，
+    // 导致整行点不动也不能滑。回到前台时统一复位可见网格 cell 的滚动手势。
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(wxkbAppBecameActive)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+}
+
+- (void)wxkbAppBecameActive {
+    UITableView *tv = nil;
+    if ([self respondsToSelector:@selector(tableView)]) {
+        tv = self.tableView;
+    } else if ([self respondsToSelector:@selector(table)]) {
+        tv = (UITableView *)self.table;
+    }
+    if (!tv) {
+        for (UIView *v in self.view.subviews) {
+            if ([v isKindOfClass:[UITableView class]]) { tv = (UITableView *)v; break; }
+        }
+    }
+    for (UITableViewCell *c in tv.visibleCells) {
+        if ([c isKindOfClass:[WXKBInlineGridCell class]]) {
+            [(WXKBInlineGridCell *)c wxkbResetScroll];
+        }
+    }
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:UIApplicationDidBecomeActiveNotification
+                                                  object:nil];
 }
 
 - (void)viewWillAppear:(BOOL)animated {

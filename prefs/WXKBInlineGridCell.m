@@ -55,6 +55,10 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         _scrollView = nil;
         _built = NO;
         _lastSpecifier = specifier;
+        // 字母网格可能在复用前注册过 Darwin 通知，这里先移除，避免重复注册/回调到旧状态
+        CFNotificationCenterRemoveObserver(CFNotificationCenterGetDarwinNotifyCenter(),
+                                          (__bridge const void *)self,
+                                          CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL);
     }
     [super setSpecifier:specifier];
     [self wxkbBuild];
@@ -128,8 +132,11 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         _scrollView.showsHorizontalScrollIndicator = NO;
         _scrollView.showsVerticalScrollIndicator = NO;
         _scrollView.directionalLockEnabled = YES;
-        _scrollView.delaysContentTouches = NO;   // 点按即时响应，滑动仍可拖
         _scrollView.userInteractionEnabled = YES;
+        // 刻意不使用 delaysContentTouches = NO。iOS 在 app 切后台时偶尔不会把
+        // touchesCancelled 正确派发给嵌套 scrollView，delaysContentTouches=NO 时更易让
+        // 手势卡在「追踪中」，导致切回前台后整行点不动/滑不动。保持默认（YES）更稳。
+        _scrollView.canCancelContentTouches = YES;
         [self.contentView addSubview:_scrollView];
         for (NSMutableDictionary *it in _flatItems) {
             UIButton *b = [self wxkbMakeButton:it mode:mode];
@@ -304,6 +311,17 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
             b.backgroundColor = WXKBColorFromHex(hex.length ? hex : WXKB_DEF_LETTER_BG);
         }
     }
+}
+
+// 前台恢复时调用：让嵌套 scrollView 的手势状态复位，避免「切后台回来整行点不动/滑不动」
+// （iOS 偶尔在 app 中断触摸时不派发 touchesCancelled，使 pan 手势卡在追踪态）。
+- (void)wxkbResetScroll {
+    UIScrollView *sv = _scrollView;
+    if (!sv) return;
+    sv.panGestureRecognizer.enabled = NO;
+    sv.panGestureRecognizer.enabled = YES;
+    [sv setContentOffset:sv.contentOffset animated:NO];
+    [sv setNeedsLayout];
 }
 
 - (UIColor *)wxkbTextOn:(UIColor *)c {
