@@ -319,7 +319,7 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 
 - (PSSpecifier *)wxkbChoice:(NSString *)name key:(NSString *)key def:(id)def
                      values:(NSArray *)values titles:(NSArray *)titles {
-    Class c = NSClassFromString(@"WXKBChoiceListController");
+    Class c = NSClassFromString(@"WXKBChoicePreviewController");
     PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:name
                                                      target:self
                                                         set:@selector(setPreferenceValue:specifier:)
