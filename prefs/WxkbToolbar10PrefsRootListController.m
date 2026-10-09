@@ -1,68 +1,10 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
-#import "WXKBPreviewKeyboardView.h"
 
-@interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
-    WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
-}
+@interface WxkbToolbar10PrefsRootListController : WXKBBaseListController
 @end
 
 @implementation WxkbToolbar10PrefsRootListController
-
-- (void)viewDidLoad {
-    [super viewDidLoad];
-
-    // 顶部内联实时预览：用同一套取色 / 键帽渲染数学画仿真键盘，
-    // 改任意控件 -> wxkbNotifyChanged -> 预览自行重绘（见 WXKBPreviewKeyboardView）。
-    CGFloat w = CGRectGetWidth([UIScreen mainScreen].bounds);
-    if (w < 1.0) w = 375.0;
-    CGFloat h = [WXKBPreviewKeyboardView preferredHeightForWidth:w];
-    _previewView = [[WXKBPreviewKeyboardView alloc] initWithFrame:CGRectMake(0, 0, w, h)];
-    _previewView.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-
-    // 兼容不同 iOS / 越狱环境下 PSListController 暴露的表视图访问器：
-    // 部分环境（如某些 roothide/rootless 的 Preferences）并未暴露 tableView 属性，
-    // 直接 self.tableView 会触发 doesNotRecognizeSelector 闪退（见崩溃日记）。
-    // 依次尝试 tableView -> table -> 视图层级兜底，保证面板不再崩溃且预览尽量保留。
-    UITableView *tv = nil;
-    if ([self respondsToSelector:@selector(tableView)]) {
-        tv = self.tableView;
-    }
-    if (!tv && [self respondsToSelector:@selector(table)]) {
-        tv = (UITableView *)self.table;
-    }
-    if (!tv) {
-        for (UIView *v in self.view.subviews) {
-            if ([v isKindOfClass:[UITableView class]]) { tv = (UITableView *)v; break; }
-        }
-    }
-    if (tv) {
-        tv.tableHeaderView = _previewView;
-    } else {
-        // 极端兜底：直接叠在视图顶部，保证不闪退且预览仍可见
-        [self.view addSubview:_previewView];
-    }
-
-    [_previewView refresh];
-}
-
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-// 安全刷新：只重绘顶部预览，绝不动整张表。
-// 之前「切 app / 点刷新 → 动整张表(reloadSpecifiers)」正是切后台回来后整表点不动的元凶，
-// 现已彻底移除该机制——表视图保持原生，切 app 回来系统自动恢复，不再需要手动复位。
-- (void)wxkbRefreshPreview:(id)sender {
-    [_previewView refresh];
-}
-
-- (void)viewWillAppear:(BOOL)animated {
-    [super viewWillAppear:animated];
-    _specifiers = nil;               // 子页返回后刷新右侧当前值
-    [self reloadSpecifiers];
-    [_previewView refresh];           // 子页改完回来，预览立即同步
-}
 
 - (NSArray *)specifiers {
     if (_specifiers) {
@@ -76,16 +18,15 @@
     [g setProperty:@"改动后收起键盘再弹出即可生效。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用增强" key:WXKB_KEY_ENABLED def:YES]];
-    // 只重绘顶部预览（安全），不动整张表
-    [s addObject:[self wxkbButton:@"刷新预览" action:@selector(wxkbRefreshPreview:)]];
 
-    // ---- 主题与皮肤（紧跟顶部预览，改主题立刻在预览看到）----
+    // ---- 主题与皮肤 ----
     g = [PSSpecifier groupSpecifierWithName:@"主题与皮肤"];
-    [g setProperty:@"一键套用内置彩虹键盘，顶部预览实时跟随。" forKey:@"footerText"];
+    [g setProperty:@"点「主题 / 变色方向 / 皮肤背景」进入子页，子页顶部实时预览，选好点「确定」返回。"
+            forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
 
-    // 主题色板：点进去逐个选（原生单选列表，不用自定义网格，避免吞触摸）
+    // 主题色板：32 套，进入子页横向选择 + 实时预览
     [s addObject:[self wxkbChoice:@"主题"
                              key:WXKB_KEY_SKIN_THEME
                              def:@0
@@ -94,22 +35,40 @@
                                     @"极光",@"霓粉",@"电蓝",@"柑橘",@"柠檬",@"葡萄",@"玫瑰金",@"薄雾",@"天空",
                                     @"珊瑚",@"紫罗兰",@"青柠",@"深海",@"暗霓",@"暖阳",@"冰蓝",@"莓果",@"橄榄",@"钨丝",@"蒸汽波",@"翡翠",@"蜜橙",@"雾蓝"]]];
 
-    // 变色方向 / 皮肤背景：原生单选列表（点进去选，不用自定义网格）
+    // 变色方向：12 个（0 横 / 1 竖 / 2 斜 + 9 个角度）
     [s addObject:[self wxkbChoice:@"变色方向" key:WXKB_KEY_SKIN_DIR def:@0
-                           values:@[@0,@1,@2] titles:@[@"横向",@"竖向",@"斜向"]]];
+                           values:@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@11]
+                           titles:@[@"横向",@"竖向",@"斜向",@"15°",@"30°",@"60°",@"75°",@"105°",@"120°",@"135°",@"150°",@"165°"]]];
+
+    // 皮肤背景
     [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
                            values:@[@0,@1,@2,@3] titles:@[@"白底",@"透明",@"灰色",@"白50%"]]];
 
     // ---- 键帽与形状 ----
     g = [PSSpecifier groupSpecifierWithName:@"键帽与形状"];
-    [g setProperty:@"仅改按键外观，不影响键盘布局。" forKey:@"footerText"];
+    [g setProperty:@"仅改按键外观，不影响键盘布局。点「键帽样式 / 键帽形状」进入子页横向选 + 实时预览。"
+            forKey:@"footerText"];
     [s addObject:g];
+    // 键帽样式：12 个（0~5 原有 + 6~11 新增）
     [s addObject:[self wxkbChoice:@"键帽样式" key:WXKB_KEY_CAP_STYLE def:@0
-                           values:@[@0,@1,@2,@3,@4,@5] titles:@[@"关闭",@"立体",@"彩虹帽",@"3D帽",@"卡通",@"霓虹"]]];
+                           values:@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@11]
+                           titles:@[@"关闭",@"立体",@"彩虹帽",@"彩虹3D",@"卡通",@"霓虹",
+                                    @"磨砂",@"镜面",@"描边",@"软萌",@"极简",@"双色"]]];
+    // 键帽形状：12 个（0~3 原有 + 4~11 新增）
     [s addObject:[self wxkbChoice:@"键帽形状" key:WXKB_KEY_SHAPE def:@0
-                           values:@[@0,@1,@2,@3] titles:@[@"圆角",@"圆形",@"六边形",@"水珠"]]];
+                           values:@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@11]
+                           titles:@[@"圆角",@"圆形",@"六边形",@"水珠",
+                                    @"椭圆",@"菱形",@"五边形",@"星形",@"心形",@"药丸",@"半圆",@"圆角方"]]];
     [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
                               min:0.0 max:22.0]];
+
+    // ---- 键盘位置 ----
+    g = [PSSpecifier groupSpecifierWithName:@"键盘位置"];
+    [g setProperty:@"调整键盘整体上下位置（正值下移，负值上移）。无法恢复时把滑块拉回 0。"
+            forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbSlider:@"键盘上下偏移（上下移动）" key:WXKB_KEY_OFFSET def:0.0
+                              min:-80.0 max:80.0]];
 
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];
@@ -153,7 +112,6 @@
                                  def:WXKB_DEF_GRAD_FROM]];
     [s addObject:[self wxkbColorRow:@"渐变结束色" key:WXKB_KEY_GRAD_TO
                                  def:WXKB_DEF_GRAD_TO]];
-    // 26 字母逐个上色：点进去进原生子页，逐行用系统取色器（不再用自定义网格）
     [s addObject:[self wxkbLink:@"逐个字母上色…" detailClass:@"WXKBLetterListController"]];
 
     // ---- 配色预设 ----
@@ -169,9 +127,17 @@
 
     // ---- 我的主题 ----
     g = [PSSpecifier groupSpecifierWithName:@"我的主题"];
-    [g setProperty:@"把当前整套外观存档，随时一键套用，顶部预览实时跟随。" forKey:@"footerText"];
+    [g setProperty:@"把当前整套外观存档，随时一键套用。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbLink:@"管理我的主题…" detailClass:@"WXKBThemeProfilesController"]];
+
+    // ---- 关于 ----
+    g = [PSSpecifier groupSpecifierWithName:@"关于"];
+    [g setProperty:@"WxkbToolbar10 版本 2.4.14\n反馈请联系：wacljcr@qq.com（邮件）"
+            forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbButton:@"反馈（邮件联系 wacljcr@qq.com）"
+                           action:@selector(wxkbFeedback:)]];
 
     _specifiers = s;
     return _specifiers;
@@ -251,6 +217,19 @@
                                           style:UIAlertActionStyleDefault
                                         handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
+}
+
+#pragma mark - 反馈（邮件）
+
+- (void)wxkbFeedback:(id)sender {
+    NSURL *u = [NSURL URLWithString:
+        @"mailto:wacljcr@qq.com?subject=WxkbToolbar10%20%E5%8F%8D%E9%A6%88"];
+    UIApplication *app = [UIApplication sharedApplication];
+    if (@available(iOS 10.0, *)) {
+        [app openURL:u options:@{} completionHandler:nil];
+    } else {
+        [app openURL:u];
+    }
 }
 
 @end
