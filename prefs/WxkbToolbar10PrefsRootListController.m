@@ -12,13 +12,6 @@ extern const char *lk_reason_cstr(lk_reason r);
 }
 #endif
 
-// 该 SDK 的 PSSpecifier 头未声明 setEnabled:/isEnabled，但运行期 Preferences 框架确实
-// 实现它们（标准 cell 据此自动置灰）。补一个分类声明以便禁用/查询 specifier。
-@interface PSSpecifier (WXKBEnabled)
-- (void)setEnabled:(BOOL)enabled;
-- (BOOL)isEnabled;
-@end
-
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
     BOOL _didPromptUnlock;                   // 本次打开面板是否已弹过解锁（避免子页返回重复弹）
@@ -241,15 +234,9 @@ extern const char *lk_reason_cstr(lk_reason r);
     [s addObject:[self wxkbButton:@"下移 5pt" action:@selector(kbDown:)]];
     [s addObject:[self wxkbButton:@"重置为 0" action:@selector(kbReset:)]];
 
-    // 未授权时，除「解锁」按钮外的所有功能 specifier 一律置灰且不可点（母本自动解锁已移除）。
-    // 分组标题 specifier 即便被 setEnabled:NO 也无交互，渲染不受影响，无需特别跳过。
-    BOOL locked = ![self _wxkbUnlocked];
-    for (PSSpecifier *sp in s) {
-        if ([[sp propertyForKey:@"wxkbUnlockEntry"] boolValue]) continue; // 解锁按钮永远可点
-        BOOL en = !locked;
-        [sp setEnabled:en];
-        [sp setProperty:@(en) forKey:@"wxkbSpecEnabled"];   // 供基类同步给内联网格 cell
-    }
+    // 锁定态的「置灰 + 不可点」不在这里做——本 SDK 的 PSSpecifier 运行期无 setEnabled:
+    // （强行调用会 unrecognized selector 闪退）。改由基类 tableView:cellForRowAtIndexPath:
+    // 依据授权状态逐 cell 置灰并关交互（解锁按钮除外），对所有子页统一生效。
 
     _specifiers = s;
     return _specifiers;
