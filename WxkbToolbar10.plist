@@ -8,6 +8,7 @@
 		<key>Bundles</key>
 		<array>
 			<string>com.tencent.wetype.keyboard</string>
+			<string>com.apple.TextInput</string>
 		</array>
 		<!-- 兜底：按可执行文件名匹配 wxkb_plugin.appex -->
 		<key>Executables</key>

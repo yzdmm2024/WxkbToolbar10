@@ -1,6 +1,7 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
 #import "WXKBPreviewKeyboardView.h"
+#import <stdlib.h>
 
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
@@ -70,24 +71,53 @@
     return tv;
 }
 
-// 复位表视图交互：这是「切 app 回前台整表点不动」的真正修复。
-// 1) 确保整张表可交互；2) 把可能卡在追踪态的 pan 手势强制置 Ended（否则它一直吞掉点击）；
-// 3) 重建 specifiers 让所有 cell 重新可点；4) 预览同步。
-- (void)wxkbRefreshPanel:(id)sender {
-    UITableView *tv = [self wxkbTableView];
-    if (tv) {
-        tv.userInteractionEnabled = YES;
-        UIGestureRecognizer *pan = tv.panGestureRecognizer;
-        if (pan && (pan.state == UIGestureRecognizerStateBegan ||
-                    pan.state == UIGestureRecognizerStateChanged ||
-                    pan.state == UIGestureRecognizerStatePossible)) {
-            @try { [pan setValue:@(UIGestureRecognizerStateEnded) forKey:@"state"]; }
-            @catch (NSException *e) {}
-        }
+// 彻底修复「切 app 回前台整表点不动」：reloadData / 手势 KVC 都救不活卡死的表，
+// 只有重建表视图（重进插件=新建实例）才行。这里在回到前台时直接重建一张新表。
+- (void)wxkbRebuildTable {
+    UITableView *old = [self wxkbTableView];
+    if (!old || !old.superview) return;
+    CGRect frame = old.frame;
+    UITableViewStyle style = old.style;
+    CGPoint offset = old.contentOffset;
+    UITableView *newTv = [[UITableView alloc] initWithFrame:frame style:style];
+    newTv.autoresizingMask = old.autoresizingMask;
+    newTv.backgroundColor = old.backgroundColor;
+    newTv.separatorStyle = old.separatorStyle;
+    newTv.tableHeaderView = _previewView;
+    newTv.delegate = (id<UITableViewDelegate>)self;
+    newTv.dataSource = (id<UITableViewDataSource>)self;
+    newTv.contentOffset = offset;
+    newTv.userInteractionEnabled = YES;
+    newTv.scrollEnabled = YES;
+    [old.superview insertSubview:newTv belowSubview:old];
+    [old removeFromSuperview];
+    // 把 PSListController 内部指向旧表的指针重定向到新表（兼容不同 ivar/属性名）
+    for (NSString *k in @[@"tableView", @"_tableView", @"_table"]) {
+        @try { [self setValue:newTv forKey:k]; } @catch (NSException *e) {}
     }
-    _specifiers = nil;
-    [self reloadSpecifiers];
+    _specifiers = nil;            // 重建 specifiers，刷新右侧当前值
+    [newTv reloadData];
     [_previewView refresh];
+}
+
+// 逃生口按钮 + 回到前台通知都走这里：重建表视图，彻底解除卡死。
+- (void)wxkbRefreshPanel:(id)sender {
+    [self wxkbRebuildTable];
+}
+
+// 清除系统键盘缓存：杀掉键盘守护进程（com.apple.TextInput），已开的 App 重排键盘即生效。
+// 键盘布局被 iOS 缓存进进程——只改返回值不够，必须清缓存（这正是 ClassicKeyboardXS
+// 看似「没生效」的真因：hook 写对了，但已开的 app 还在用旧布局）。
+- (void)wxkbClearKBCache:(id)sender {
+    int r = system("killall -9 TextInput 2>/dev/null");
+    NSString *msg = (r == 0)
+        ? @"已杀掉键盘守护进程，已开的 App 会自动重排键盘，紧凑设置立即生效。"
+        : @"未找到 TextInput 守护进程（你的系统键盘可能运行在 App 进程内）。请直接杀掉并重开对应 App，或 Respring 后重试。";
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"已发送清缓存"
+                                                             message:msg
+                                                      preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -218,6 +248,13 @@
     [s addObject:[self wxkbButton:@"上移 5pt" action:@selector(kbUp:)]];
     [s addObject:[self wxkbButton:@"下移 5pt" action:@selector(kbDown:)]];
     [s addObject:[self wxkbButton:@"重置为 0" action:@selector(kbReset:)]];
+
+    // ---- 系统键盘紧凑（作用于系统键盘，不是微信键盘）----
+    g = [PSSpecifier groupSpecifierWithName:@"系统键盘紧凑"];
+    [g setProperty:@"收窄系统键盘底部留白、把地球/听写键收进键盘本体。改完点下方「清除键盘缓存」立即生效（iOS 会缓存键盘布局，不清缓存已开的 App 不会变）。" forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbSwitch:@"启用紧凑键盘" key:WXKB_KEY_COMPACT def:NO]];
+    [s addObject:[self wxkbButton:@"清除键盘缓存（让改动立即生效）" action:@selector(wxkbClearKBCache:)]];
 
     _specifiers = s;
     return _specifiers;
