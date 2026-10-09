@@ -136,6 +136,7 @@ static BOOL WXKBIsLicensed(void) {
     BOOL ok = (lk_peek(env, &exp, &why) == LK_UNLOCKED);  // 仅 16 位码解锁，无母本自动解锁
     gLkCached = ok ? 1 : 0;
     gLkTs = now;
+    NSLog(@"[WXKB] licensed=%d why=%d", (int)ok, (int)why);
     return ok;
 }
 
@@ -1557,6 +1558,8 @@ static void WXKBOnPrefsChanged(CFNotificationCenterRef center, void *observer,
                                CFStringRef name, const void *object,
                                CFDictionaryRef userInfo) {
     WXKBReload(YES);
+    NSLog(@"[WXKB] prefsChanged cap=%ld shape=%ld skin=%d skinTheme=%ld licensed=%d",
+          (long)gCapStyle, (long)gShape, (int)gSkinEnabled, (long)gSkinTheme, (int)WXKBIsLicensed());
     WXKBScheduleSync();
     WXKBForceRelayout();
 }
@@ -3162,7 +3165,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.5.10 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld licensed=%d",
+    NSLog(@"[WxkbToolbar10] 2.5.12 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld licensed=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir, WXKBIsLicensed());
 }
