@@ -1,7 +1,7 @@
 // WXKBInlineGridCell.m — 内联网格 cell
 //
 // 用法（由 WXKBBaseListController 的 wxkbGrid: / wxkbLetterGrid 构造）：
-//   wxkbGridMode = @"theme"  / @"select" → 单行「横向滑动选择条」（色块/文字 chip），高度很矮，省空间
+//   wxkbGridMode = @"theme"  / @"select" → 自动换行的 chip 色板/单选条（固定 chip 高 40pt）
 //   wxkbGridMode = @"letter"            → 26 字母键盘（纵向 3 排），点字母直接弹取色器
 // 点击选择类 → 直接写偏好 + 通知预览刷新；点击字母 → 让所属控制器弹 UIColorPickerViewController。
 #import "WXKBInlineGridCell.h"
@@ -32,6 +32,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
     if (self) {
         self.selectionStyle = UITableViewCellSelectionStyleNone;
         self.backgroundColor = [UIColor clearColor];
+        self.clipsToBounds = YES;   // 兜底：万一高度估算偏少，溢出行被裁掉而不是叠到下一节
         self.textLabel.hidden = YES;
         self.detailTextLabel.hidden = YES;
         self.contentView.userInteractionEnabled = YES;   // 保证内嵌控件能收触摸
@@ -222,20 +223,22 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
             y += rowH + gap;
         }
     } else {
-        // 自动换行（flow）布局：从左到右排，当前行放不下就折到下一行。无需 scrollView。
+        // 自动换行（flow）布局：chip 高度【固定 40pt】，行数由实际宽度决定。
+        // ⚠️ chip 高度绝不能从 cell 高度推导——cell 高度本身是按「行数×chip高」估算的，
+        // 若每颗 chip 都取整格高，就变成 2.5.8 的巨型色块回归（32 主题 → 8 行估算高度
+        // 366pt → 每颗 chip 350pt 高，铺满整屏）。
         CGFloat padX = 12.0, padY = 8.0, gapX = 8.0, gapY = 8.0;
+        CGFloat chipH = 40.0;
         CGFloat maxX = b.size.width - padX;
-        CGFloat h = b.size.height - 2.0 * padY;
-        if (h < 20.0) h = 20.0;
         CGFloat x = padX, y = padY;
         for (NSMutableDictionary *it in _flatItems) {
             CGFloat w = [self wxkbChipWidth:it mode:mode];
             if (x + w > maxX && x > padX) {   // 当前行放不下 → 换行
                 x = padX;
-                y += h + gapY;
+                y += chipH + gapY;
             }
             UIButton *bt = it[@"button"];
-            bt.frame = CGRectMake(x, y, w, h);
+            bt.frame = CGRectMake(x, y, w, chipH);
             x += w + gapX;
         }
     }
