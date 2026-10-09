@@ -1,5 +1,6 @@
 // WXKBCommon.m — 偏好面板公共基类与读写工具
 #import "WXKBCommon.h"
+#import "WXKBInlineGridCell.h"   // 声明 setWxkbEnabled:，供 tableView:cellForRowAtIndexPath: 同步锁定态
 #import <objc/runtime.h>
 
 static NSUserDefaults *WXKBDefaults(void) {
