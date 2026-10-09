@@ -17,6 +17,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
 
 @interface WXKBInlineGridCell ()
 @property (nonatomic, assign) BOOL built;
+@property (nonatomic, assign) BOOL wxkbEnabled;            // 锁定（未授权）时为 NO：整格置灰、按钮不可点
 @property (nonatomic, strong) NSMutableArray *flatItems;   // 所有 item（NSMutableDictionary）
 @property (nonatomic, strong) NSArray *layoutRows;         // NSArray<NSArray<item>>（字母键盘用）
 @property (nonatomic, assign) NSInteger cols;
@@ -34,6 +35,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         self.textLabel.hidden = YES;
         self.detailTextLabel.hidden = YES;
         self.contentView.userInteractionEnabled = YES;   // 保证内嵌控件能收触摸
+        _wxkbEnabled = YES;
         _flatItems = [NSMutableArray array];
         _cols = 0;
     }
@@ -148,6 +150,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
 
     [self wxkbUpdateSelection];
     _built = YES;
+    [self wxkbApplyEnabledState];   // 应用当前锁定状态（构建完成后统一置灰/恢复）
 
     if ([mode isEqualToString:@"letter"]) {
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
@@ -322,6 +325,31 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
     sv.panGestureRecognizer.enabled = YES;
     [sv setContentOffset:sv.contentOffset animated:NO];
     [sv setNeedsLayout];
+}
+
+// 未授权时整格置灰、按钮不可点。PSListController 会通过 setEnabled: 把 specifier 的
+// 禁用状态透传给 cell；这里同时暴露 setWxkbEnabled: 供基类显式同步。
+// 注意：按钮置为不可交互后，hitTest 会自然跳过它们（仍可横向滚动查看，只是不触发选择）。
+- (void)setEnabled:(BOOL)enabled {
+    [super setEnabled:enabled];
+    [self setWxkbEnabled:enabled];
+}
+
+- (void)setWxkbEnabled:(BOOL)enabled {
+    _wxkbEnabled = enabled;
+    [self wxkbApplyEnabledState];
+}
+
+- (void)wxkbApplyEnabledState {
+    CGFloat a = _wxkbEnabled ? 1.0 : 0.35;   // 锁定：半透明置灰
+    for (NSMutableDictionary *it in _flatItems) {
+        UIButton *b = it[@"button"];
+        if (!b) continue;
+        b.userInteractionEnabled = _wxkbEnabled;
+        b.alpha = a;
+    }
+    // 滚动容器始终保留滑动（锁定下仅能滑动、不能选）；字母网格无 scrollView 则跳过
+    if (_scrollView) _scrollView.userInteractionEnabled = YES;
 }
 
 - (UIColor *)wxkbTextOn:(UIColor *)c {

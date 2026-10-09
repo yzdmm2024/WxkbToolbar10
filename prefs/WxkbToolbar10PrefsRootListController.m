@@ -96,15 +96,11 @@ extern const char *lk_reason_cstr(lk_reason r);
     [_previewView refresh];           // 子页改完回来，预览立即同步
 }
 
-// 打开面板：尚未解锁（未输码且未识别母本）时自动弹出解锁界面
+// 打开面板：尚未解锁（未输码）时自动弹出解锁界面。任何设备都要解锁，母本自动解锁已移除。
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     if (_didPromptUnlock) return;
-    const lk_env *env = lk_get_env();
-    lk_reason why = LK_R_NONE;
-    long long exp = 0;
-    if (lk_master_verify(env, &why, &exp) != LK_UNLOCKED &&
-        lk_peek(env, &exp, &why) != LK_UNLOCKED) {
+    if (![self _wxkbUnlocked]) {
         _didPromptUnlock = YES;
         [self _doUnlock:nil];
     }
@@ -119,9 +115,11 @@ extern const char *lk_reason_cstr(lk_reason r);
 
     // ---- 解锁 / 验证 ----
     g = [PSSpecifier groupSpecifierWithName:@"解锁 / 验证"];
-    [g setProperty:@"本插件需授权后生效：设备装正版母本（加密狗）自动解锁，或点下方「解锁」复制本机 UDID 发给作者签 16 位码后，再粘贴解锁。" forKey:@"footerText"];
+    [g setProperty:@"本插件需输入解锁码后生效：点下方「解锁」复制本机 UDID 发给作者签 16 位码，再粘贴解锁。未解锁时面板内所有功能均不可用。" forKey:@"footerText"];
     [s addObject:g];
-    [s addObject:[self wxkbButton:[self _lkStatusTitle] action:@selector(_doUnlock:)]];
+    PSSpecifier *unlockBtn = [self wxkbButton:[self _lkStatusTitle] action:@selector(_doUnlock:)];
+    [unlockBtn setProperty:@YES forKey:@"wxkbUnlockEntry"];   // 解锁按钮永远可点（即便锁定）
+    [s addObject:unlockBtn];
 
     // ---- 总开关 ----
     g = [PSSpecifier groupSpecifierWithName:@"总开关"];
@@ -236,6 +234,14 @@ extern const char *lk_reason_cstr(lk_reason r);
     [s addObject:[self wxkbButton:@"下移 5pt" action:@selector(kbDown:)]];
     [s addObject:[self wxkbButton:@"重置为 0" action:@selector(kbReset:)]];
 
+    // 未授权时，除「解锁」按钮外的所有功能 specifier 一律置灰且不可点（母本自动解锁已移除）。
+    // 分组标题 specifier 即便被 setEnabled:NO 也无交互，渲染不受影响，无需特别跳过。
+    BOOL locked = ![self _wxkbUnlocked];
+    for (PSSpecifier *sp in s) {
+        if ([[sp propertyForKey:@"wxkbUnlockEntry"] boolValue]) continue; // 解锁按钮永远可点
+        [sp setEnabled:!locked];
+    }
+
     _specifiers = s;
     return _specifiers;
 }
@@ -340,25 +346,22 @@ extern const char *lk_reason_cstr(lk_reason r);
 
 #pragma mark - 解锁 / 验证
 
-- (NSString *)_lkStatusTitle {
+// 仅 16 位码解锁（无母本自动解锁）。解锁状态由 license_kit 持久化（跨更新保留）。
+- (BOOL)_wxkbUnlocked {
     const lk_env *env = lk_get_env();
     lk_reason why = LK_R_NONE;
     long long exp = 0;
-    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) return @"解锁（母本已识别）";
-    if (lk_peek(env, &exp, &why) == LK_UNLOCKED) return @"解锁（已输码）";
-    return @"解锁（未授权）";
+    return lk_peek(env, &exp, &why) == LK_UNLOCKED;
+}
+
+- (NSString *)_lkStatusTitle {
+    if ([self _wxkbUnlocked]) return @"解锁（已授权）✓";
+    return @"解锁（未授权 · 点此解锁）";
 }
 
 - (void)_doUnlock:(PSSpecifier *)spec {
     (void)self; (void)spec;
     const lk_env *env = lk_get_env();
-    lk_reason why = LK_R_NONE;
-    long long exp = 0;
-    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) {
-        [self _toast:@"已通过母本（加密狗）自动解锁，无需输入解锁码。"];
-        [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
-        return;
-    }
     // 取出与验签同源的本机 UDID，供用户复制后发给作者签码
     char udidBuf[160];
     NSString *udid = @"";
@@ -383,6 +386,7 @@ extern const char *lk_reason_cstr(lk_reason r);
     }]];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"解锁" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
+        (void)act;
         UITextField *tf = a.textFields.firstObject;
         NSString *code = [[tf text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if (code.length == 0) return;
@@ -390,6 +394,7 @@ extern const char *lk_reason_cstr(lk_reason r);
         lk_status st = lk_submit(env, [code UTF8String], &w);
         if (st == LK_UNLOCKED) [self _toast:@"解锁成功"];
         else [self _toast:[NSString stringWithFormat:@"解锁失败：%s", lk_reason_cstr(w)]];
+        _specifiers = nil;   // 重新计算「锁定」状态，解锁后所有功能开放
         [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
     }]];
     [self presentViewController:a animated:YES completion:nil];

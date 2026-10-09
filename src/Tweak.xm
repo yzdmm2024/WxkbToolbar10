@@ -121,10 +121,10 @@ extern const lk_env *lk_get_env(void);
 }
 #endif
 
-/* —— 授权校验（license_kit：母本加密狗 / 16 位解锁码）——
- * 母本 com.locsim.generator 在场，或已提交有效解锁码 → 视为已授权。
- * 未授权时本插件所有增强（外观 / 工具栏动作）一律不生效。
- * 结果缓存 5s，避免每次 layoutSubviews 都扫一遍已装 App。 */
+/* —— 授权校验（license_kit：仅 16 位解锁码）——
+ * 不再支持「母本加密狗」自动解锁：任何设备都必须手动输入作者签发的 16 位码，
+ * 已提交有效解锁码（lk_peek）才视为已授权。未授权时本插件所有增强一律不生效。
+ * 结果缓存 5s，避免每次 layoutSubviews 都扫一遍存储。 */
 static BOOL WXKBIsLicensed(void) {
     static int gLkCached = -1;   // -1 未知, 0 未授权, 1 已授权
     static CFAbsoluteTime gLkTs = 0;
@@ -133,9 +133,7 @@ static BOOL WXKBIsLicensed(void) {
     const lk_env *env = lk_get_env();
     lk_reason why = LK_R_NONE;
     long long exp = 0;
-    BOOL ok = NO;
-    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) ok = YES;
-    else if (lk_peek(env, &exp, &why) == LK_UNLOCKED) ok = YES;
+    BOOL ok = (lk_peek(env, &exp, &why) == LK_UNLOCKED);  // 仅 16 位码解锁，无母本自动解锁
     gLkCached = ok ? 1 : 0;
     gLkTs = now;
     return ok;
@@ -3164,7 +3162,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.5.4 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld licensed=%d",
+    NSLog(@"[WxkbToolbar10] 2.5.5 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld licensed=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir, WXKBIsLicensed());
 }
