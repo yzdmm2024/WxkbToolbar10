@@ -56,9 +56,31 @@ static NSString *__udidCacheFile(void) {
     return cands.lastObject;
 }
 
+// 跨进程 UDID 共享域：与 WXKB_PREFS_DOMAIN（com.yzdmm.wxkbtoolbar10）同源。
+// 设置面板（解锁时，MGCopyAnswer 能拿到真 UDID）把真 UDID 写进这个域；键盘扩展
+// 等 MGCopyAnswer 取不到真 UDID 的进程，直接读这个域拿到「签码时用的同一个 UDID」。
+// 走 NSUserDefaults 共享域（而非裸文件）是关键：键盘扩展沙盒对裸文件读取不可靠，
+// 但本插件所有设置项都经这个域实时下发到键盘（已验证跨进程可读），用它做 UDID 通道最稳。
+static NSString *__wxkbUDIDSuite(void) { return @"com.yzdmm.wxkbtoolbar10"; }
+
 static void _wxkbCacheUDID(NSString *udid) {
     if (!udid.length || [udid isEqualToString:@"unknown"]) return;
+    // 主通道：共享偏好域（跨进程可读，键盘扩展也读得到）
+    NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__wxkbUDIDSuite()];
+    if (d) { [d setObject:udid forKey:@"wxkb_device_udid"]; [d synchronize]; }
+    // 备用：落盘文件（jbroot 优先），兼容旧版缓存
     [udid writeToFile:__udidCacheFile() atomically:NO encoding:NSUTF8StringEncoding error:nil];
+}
+
+// 读跨进程共享 UDID：优先共享域，其次落盘文件。键盘扩展据此拿到与签码一致的 UDID。
+static NSString *__wxkbReadCachedUDID(void) {
+    NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__wxkbUDIDSuite()];
+    NSString *u = d ? [d stringForKey:@"wxkb_device_udid"] : nil;
+    if (u.length && ![u isEqualToString:@"unknown"]) return u;
+    NSString *f = [NSString stringWithContentsOfFile:__udidCacheFile()
+                                           encoding:NSUTF8StringEncoding error:nil];
+    if (f.length && ![f isEqualToString:@"unknown"]) return f;
+    return nil;
 }
 
 static NSString *__realUDID = nil;     // 本进程经 MGCopyAnswer 拿到的真 UDID（缓存，避免反复 dlopen）
@@ -98,20 +120,19 @@ static NSString *__attribute__((noinline)) _wxkbFallbackUDID(void) {
 
 static int my_device_id(char *buf, int cap) {
     NSString *ud = nil;
-    int src = 0;                                  // 1=本进程真值 2=落盘缓存 3=兜底
+    int src = 0;                                  // 1=本进程真值 2=跨进程共享 3=兜底
     NSString *real = _wxkbRealUDID();            // 优先：本进程能拿到真 UDID（设置面板）
     if (real.length) { ud = real; src = 1; }
-    if (!ud) {                                    // 拿不到：读落盘缓存（签码时的真 UDID）
-        ud = [NSString stringWithContentsOfFile:__udidCacheFile()
-                                       encoding:NSUTF8StringEncoding error:nil];
+    if (!ud) {                                    // 拿不到：读跨进程共享 UDID（签码时的真 UDID）
+        ud = __wxkbReadCachedUDID();
         if (!ud.length || [ud isEqualToString:@"unknown"]) ud = nil;
         else src = 2;
     }
     if (!ud) { ud = _wxkbFallbackUDID(); src = 3; }  // 仍没有：identifierForVendor / unknown
     if (!ud || !ud.length) ud = @"unknown";
     // 诊断日志（无 PII，只报来源与是否退化成 unknown，便于定位键盘扩展读不到真 UDID）
-    NSLog(@"[WXKB-lic] device_id src=%d isUnknown=%d cachePath=%@",
-          src, [ud isEqualToString:@"unknown"] ? 1 : 0, __udidCacheFile());
+    NSLog(@"[WXKB-lic] device_id src=%d isUnknown=%d",
+          src, [ud isEqualToString:@"unknown"] ? 1 : 0);
     const char *c = [ud UTF8String];
     int n = (int)strlen(c);
     if (n >= cap) n = cap - 1;

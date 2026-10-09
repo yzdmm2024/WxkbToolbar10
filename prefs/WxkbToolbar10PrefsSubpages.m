@@ -69,17 +69,31 @@
                                                   object:nil];
 }
 
+// 强制结束可能卡在「追踪/变化」态的滚动手势（系统未派发 touchesCancelled 时，表视图会
+// 一直认为手指还按着 → 整张表开关/滑块/网格都点不动）。用 KVC 直接把 state 置为 Ended，
+// 这是二级页「切后台回前台整表点不动」的真正修复（仅开关 enabled 不够）。
+- (void)wxkbUnstickScrollViews {
+    UITableView *tv = [self wxkbTableView];
+    if (!tv) return;
+    tv.userInteractionEnabled = YES;
+    UIGestureRecognizer *pan = tv.panGestureRecognizer;
+    if (pan && (pan.state == UIGestureRecognizerStateBegan ||
+                pan.state == UIGestureRecognizerStateChanged ||
+                pan.state == UIGestureRecognizerStatePossible)) {
+        @try { [pan setValue:@(UIGestureRecognizerStateEnded) forKey:@"state"]; }
+        @catch (NSException *e) {}
+    }
+    for (UIGestureRecognizer *g in tv.gestureRecognizers) {
+        g.enabled = NO;
+        g.enabled = YES;
+    }
+}
+
 - (void)wxkbAppBecameActive {
     if (!self.isViewLoaded) return;
-    UITableView *tv = [self wxkbTableView];
-    if (tv) {
-        tv.userInteractionEnabled = YES;
-        for (UIGestureRecognizer *g in tv.gestureRecognizers) {
-            g.enabled = NO;
-            g.enabled = YES;
-        }
-    }
-    [_previewView refresh];
+    [self wxkbUnstickScrollViews];
+    [self reloadSpecifiers];      // 重建 cell，恢复可交互态
+    [_previewView refresh];        // 预览同步
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -87,6 +101,11 @@
     _specifiers = nil;               // 子页返回后刷新右侧当前值
     [self reloadSpecifiers];
     [_previewView refresh];           // 改完回到本页，预览立即同步
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self wxkbUnstickScrollViews];   // 进入本页即复位手势，避免「进二级页就点不动」
 }
 
 @end

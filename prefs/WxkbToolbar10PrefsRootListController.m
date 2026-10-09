@@ -55,19 +55,32 @@ extern const char *lk_reason_cstr(lk_reason r);
     return nil;
 }
 
-// 回到前台：复位表视图滚动手势（开关 enabled 强制取消其卡住的跟踪态），并重建 specifiers/cell
+// 强制结束可能卡在「追踪/变化」态的滚动手势（系统未派发 touchesCancelled 时，表视图会
+// 一直认为手指还按着 → 整张表开关/滑块/网格都点不动）。用 KVC 直接把 state 置为 Ended，
+// 这是「切后台回前台整表点不动」的真正修复（仅开关 enabled 不够）。
+- (void)wxkbUnstickScrollViews {
+    UITableView *tv = [self wxkbTableView];
+    if (!tv) return;
+    tv.userInteractionEnabled = YES;
+    UIGestureRecognizer *pan = tv.panGestureRecognizer;
+    if (pan && (pan.state == UIGestureRecognizerStateBegan ||
+                pan.state == UIGestureRecognizerStateChanged ||
+                pan.state == UIGestureRecognizerStatePossible)) {
+        @try { [pan setValue:@(UIGestureRecognizerStateEnded) forKey:@"state"]; }
+        @catch (NSException *e) {}
+    }
+    for (UIGestureRecognizer *g in tv.gestureRecognizers) {
+        g.enabled = NO;
+        g.enabled = YES;
+    }
+}
+
+// 回到前台：复位表视图滚动手势（强制取消其卡住的跟踪态），并重建 specifiers/cell
 // 恢复交互态。这是「切换 app 再回来整张表点不动」的真正修复——2.5.8 删嵌套 scrollView 时把
 // 这个通知也一并删了，导致无人复位手势。
 - (void)wxkbAppBecameActive {
     if (!self.isViewLoaded) return;          // 面板还没打开过，无需处理
-    UITableView *tv = [self wxkbTableView];
-    if (tv) {
-        tv.userInteractionEnabled = YES;     // 双保险：确保整张表在回前台时可交互（避免整表点不动）
-        for (UIGestureRecognizer *g in tv.gestureRecognizers) {
-            g.enabled = NO;
-            g.enabled = YES;
-        }
-    }
+    [self wxkbUnstickScrollViews];
     [self reloadSpecifiers];
 }
 
@@ -80,6 +93,7 @@ extern const char *lk_reason_cstr(lk_reason r);
 // 打开面板：尚未解锁（未输码）时自动弹出解锁界面。任何设备都要解锁，母本自动解锁已移除。
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    [self wxkbUnstickScrollViews];   // 进入面板即复位手势，避免「进面板就点不动」
     if (_didPromptUnlock) return;
     if (![self _wxkbUnlocked]) {
         _didPromptUnlock = YES;
@@ -148,7 +162,7 @@ extern const char *lk_reason_cstr(lk_reason r);
 
     // ---- 关于本插件（版本号 + 反馈，置于最底部）----
     g = [PSSpecifier groupSpecifierWithName:@"关于本插件"];
-    [g setProperty:@"WxkbToolbar10 v2.5.14\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
+    [g setProperty:@"WxkbToolbar10 v2.5.15\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"复制作者邮箱" action:@selector(copyEmail:)]];
