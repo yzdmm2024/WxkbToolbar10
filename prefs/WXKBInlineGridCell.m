@@ -128,6 +128,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         _scrollView.showsHorizontalScrollIndicator = NO;
         _scrollView.showsVerticalScrollIndicator = NO;
         _scrollView.directionalLockEnabled = YES;
+        _scrollView.delaysContentTouches = NO;   // 点按即时响应，滑动仍可拖
         _scrollView.userInteractionEnabled = YES;
         [self.contentView addSubview:_scrollView];
         for (NSMutableDictionary *it in _flatItems) {
@@ -315,14 +316,15 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
 }
 
 // 关键修复：PSTableCell 对 PSLinkCell 会接管整行触摸，导致 contentView 内的控件
-// 收不到 TouchUpInside。这里让落在按钮/滚动容器内的触摸优先交给它们，其余回落到 cell。
+// 收不到 TouchUpInside。这里遍历子视图并「递归」调用其 hitTest——落到按钮就返回按钮
+// （可选中），落到滚动容器的空隙就返回滚动容器（仍可滑动）。注意：必须递归，不能
+// 直接 return sub，否则 scrollView 收下触摸后其内部的按钮永远不会被命中。
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     for (UIView *sub in self.contentView.subviews) {
         if (!sub.userInteractionEnabled || sub.hidden) continue;
         CGPoint p = [sub convertPoint:point fromView:self];
-        if ([sub pointInside:p withEvent:event]) {
-            return sub;
-        }
+        UIView *inner = [sub hitTest:p withEvent:event];
+        if (inner) return inner;
     }
     return [super hitTest:point withEvent:event];
 }
