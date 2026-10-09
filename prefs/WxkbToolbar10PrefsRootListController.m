@@ -55,9 +55,53 @@ extern const char *lk_reason_cstr(lk_reason r);
     }
 
     [_previewView refresh];
+
+    // 切后台再回到前台时，iOS 不会重发 viewWillAppear（视图从未离开层级），但表视图自身的
+    // 滚动手势可能卡在「追踪态」（系统未派发 touchesCancelled），导致整张表（开关/滑块/网格）
+    // 都点不动。回到前台时强制复位表视图手势 + 重建 cell，恢复可点。
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(wxkbAppBecameActive)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
 }
 
 - (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:UIApplicationDidBecomeActiveNotification
+                                                  object:nil];
+}
+
+#pragma mark - 切后台回来复位
+
+// 兼容不同环境下表视图访问器（同 viewDidLoad）
+- (UITableView *)wxkbTableView {
+    if ([self respondsToSelector:@selector(tableView)]) {
+        UITableView *t = self.tableView;
+        if (t) return t;
+    }
+    if ([self respondsToSelector:@selector(table)]) {
+        UITableView *t = (UITableView *)self.table;
+        if (t) return t;
+    }
+    for (UIView *v in self.view.subviews) {
+        if ([v isKindOfClass:[UITableView class]]) return (UITableView *)v;
+    }
+    return nil;
+}
+
+// 回到前台：复位表视图滚动手势（开关 enabled 强制取消其卡住的跟踪态），并重建 specifiers/cell
+// 恢复交互态。这是「切换 app 再回来整张表点不动」的真正修复——2.5.8 删嵌套 scrollView 时把
+// 这个通知也一并删了，导致无人复位手势。
+- (void)wxkbAppBecameActive {
+    if (!self.isViewLoaded) return;          // 面板还没打开过，无需处理
+    UITableView *tv = [self wxkbTableView];
+    if (tv) {
+        for (UIGestureRecognizer *g in tv.gestureRecognizers) {
+            g.enabled = NO;
+            g.enabled = YES;
+        }
+    }
+    [self reloadSpecifiers];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
