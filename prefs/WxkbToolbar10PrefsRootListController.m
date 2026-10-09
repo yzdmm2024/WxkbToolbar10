@@ -2,19 +2,8 @@
 #import "WXKBCommon.h"
 #import "WXKBPreviewKeyboardView.h"
 #import "WXKBInlineGridCell.h"
-#import "lk.h"
-#ifdef __cplusplus
-extern "C" {
-#endif
-extern const lk_env *lk_get_env(void);
-extern const char *lk_reason_cstr(lk_reason r);
-#ifdef __cplusplus
-}
-#endif
 
-@interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
-    BOOL _didPromptUnlock;                   // 本次打开面板是否已弹过解锁（避免子页返回重复弹）
-}
+@interface WxkbToolbar10PrefsRootListController : WXKBBaseListController
 @end
 
 @implementation WxkbToolbar10PrefsRootListController
@@ -92,25 +81,9 @@ extern const char *lk_reason_cstr(lk_reason r);
     [self reloadSpecifiers];
 }
 
-// 打开面板：尚未解锁（未输码）时自动弹出解锁界面。任何设备都要解锁，母本自动解锁已移除。
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self wxkbUnstickScrollViews];   // 进入面板即复位手势，避免「进面板就点不动」
-    // 诊断：打印面板授权态（抓包定位「只能点按钮」是不是 licensed=NO 误锁）
-    {
-        const lk_env *env = lk_get_env();
-        if (env) {
-            long long exp = 0; lk_reason why = LK_R_NONE;
-            lk_status st = lk_peek(env, &exp, &why);
-            NSLog(@"[WXKB-panel] lk_peek=%d why=%d unlocked=%d",
-                  (int)st, (int)why, (st == LK_UNLOCKED) ? 1 : 0);
-        }
-    }
-    if (_didPromptUnlock) return;
-    if (![self _wxkbUnlocked]) {
-        _didPromptUnlock = YES;
-        [self _doUnlock:nil];
-    }
 }
 
 - (NSArray *)specifiers {
@@ -119,14 +92,6 @@ extern const char *lk_reason_cstr(lk_reason r);
     }
     NSMutableArray *s = [NSMutableArray array];
     PSSpecifier *g;
-
-    // ---- 解锁 / 验证 ----
-    g = [PSSpecifier groupSpecifierWithName:@"解锁 / 验证"];
-    [g setProperty:@"本插件需输入解锁码后生效：点下方「解锁」复制本机 UDID 发给作者签 16 位码，再粘贴解锁。未解锁时面板内所有功能均不可用。" forKey:@"footerText"];
-    [s addObject:g];
-    PSSpecifier *unlockBtn = [self wxkbButton:[self _lkStatusTitle] action:@selector(_doUnlock:)];
-    [unlockBtn setProperty:@YES forKey:@"wxkbUnlockEntry"];   // 解锁按钮永远可点（即便锁定）
-    [s addObject:unlockBtn];
 
     // ---- 总开关 ----
     g = [PSSpecifier groupSpecifierWithName:@"总开关"];
@@ -175,14 +140,10 @@ extern const char *lk_reason_cstr(lk_reason r);
 
     // ---- 关于本插件（版本号 + 反馈，置于最底部）----
     g = [PSSpecifier groupSpecifierWithName:@"关于本插件"];
-    [g setProperty:@"WxkbToolbar10 v2.5.17\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
+    [g setProperty:@"WxkbToolbar10 v2.5.18\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"复制作者邮箱" action:@selector(copyEmail:)]];
-
-    // 锁定态的「置灰 + 不可点」不在这里做——本 SDK 的 PSSpecifier 运行期无 setEnabled:
-    // （强行调用会 unrecognized selector 闪退）。改由基类 tableView:cellForRowAtIndexPath:
-    // 依据授权状态逐 cell 置灰并关交互（解锁按钮除外），对所有子页统一生效。
 
     _specifiers = s;
     return _specifiers;
@@ -283,62 +244,6 @@ extern const char *lk_reason_cstr(lk_reason r);
     [a addAction:[UIAlertAction actionWithTitle:@"好"
                                           style:UIAlertActionStyleDefault
                                         handler:nil]];
-    [self presentViewController:a animated:YES completion:nil];
-}
-
-#pragma mark - 解锁 / 验证
-
-// 仅 16 位码解锁（无母本自动解锁）。解锁状态由 license_kit 持久化（跨更新保留）。
-- (BOOL)_wxkbUnlocked {
-    const lk_env *env = lk_get_env();
-    lk_reason why = LK_R_NONE;
-    long long exp = 0;
-    return lk_peek(env, &exp, &why) == LK_UNLOCKED;
-}
-
-- (NSString *)_lkStatusTitle {
-    if ([self _wxkbUnlocked]) return @"解锁（已授权）✓";
-    return @"解锁（未授权 · 点此解锁）";
-}
-
-- (void)_doUnlock:(PSSpecifier *)spec {
-    (void)self; (void)spec;
-    const lk_env *env = lk_get_env();
-    // 取出与验签同源的本机 UDID，供用户复制后发给作者签码
-    char udidBuf[160];
-    NSString *udid = @"";
-    if (env->device_id && env->device_id(udidBuf, (int)sizeof(udidBuf)) > 0) {
-        udid = [NSString stringWithUTF8String:udidBuf];
-    }
-    NSString *msg = [NSString stringWithFormat:
-        @"本机 UDID（点「复制 UDID」发给作者签码）：\n%@\n\n再把作者签发的 16 位解锁码粘贴到下方，点「解锁」。", udid];
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"解锁（输入解锁码）"
-        message:msg preferredStyle:UIAlertControllerStyleAlert];
-    [a addTextFieldWithConfigurationHandler:^(UITextField *tf){
-        tf.placeholder = @"16 位解锁码"; tf.clearButtonMode = UITextFieldViewModeWhileEditing;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-    }];
-    [a addAction:[UIAlertAction actionWithTitle:@"复制 UDID" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
-        (void)act;
-        if (udid.length) {
-            [[UIPasteboard generalPasteboard] setString:udid];
-            [self _toast:@"已复制 UDID ✓"];   // 复制后弹 toast 反馈（UIAlertAction.title 只读，不可原地把按钮文案改掉）
-        }
-    }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"解锁" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
-        (void)act;
-        UITextField *tf = a.textFields.firstObject;
-        NSString *code = [[tf text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (code.length == 0) return;
-        lk_reason w = LK_R_NONE;
-        lk_status st = lk_submit(env, [code UTF8String], &w);
-        if (st == LK_UNLOCKED) [self _toast:@"解锁成功"];
-        else [self _toast:[NSString stringWithFormat:@"解锁失败：%s", lk_reason_cstr(w)]];
-        _specifiers = nil;   // 重新计算「锁定」状态，解锁后所有功能开放
-        [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
-    }]];
     [self presentViewController:a animated:YES completion:nil];
 }
 

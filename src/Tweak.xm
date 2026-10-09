@@ -112,32 +112,10 @@
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import "WXKBShared.h"
-#import "lk.h"
-#ifdef __cplusplus
-extern "C" {
-#endif
-extern const lk_env *lk_get_env(void);
-#ifdef __cplusplus
-}
-#endif
-
-/* —— 授权校验（license_kit：仅 16 位解锁码）——
- * 不再支持「母本加密狗」自动解锁：任何设备都必须手动输入作者签发的 16 位码，
- * 已提交有效解锁码（lk_peek）才视为已授权。未授权时本插件所有增强一律不生效。
- * 结果缓存 5s，避免每次 layoutSubviews 都扫一遍存储。 */
+/* —— 验证系统已移除（license_kit 整库删除）——
+ * 所有增强功能不再需要解锁码，恒视为已授权。 */
 static BOOL WXKBIsLicensed(void) {
-    static int gLkCached = -1;   // -1 未知, 0 未授权, 1 已授权
-    static CFAbsoluteTime gLkTs = 0;
-    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-    if (gLkCached >= 0 && now - gLkTs < 5.0) return gLkCached == 1;
-    const lk_env *env = lk_get_env();
-    lk_reason why = LK_R_NONE;
-    long long exp = 0;
-    BOOL ok = (lk_peek(env, &exp, &why) == LK_UNLOCKED);  // 仅 16 位码解锁，无母本自动解锁
-    gLkCached = ok ? 1 : 0;
-    gLkTs = now;
-    NSLog(@"[WXKB] licensed=%d why=%d", (int)ok, (int)why);
-    return ok;
+    return YES;
 }
 
 #pragma mark - 私有类声明（实现由原 App 提供）
@@ -3165,7 +3143,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.5.17 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld licensed=%d",
+    NSLog(@"[WxkbToolbar10] 2.5.18 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld licensed=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir, WXKBIsLicensed());
 }
