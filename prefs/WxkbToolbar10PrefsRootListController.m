@@ -44,73 +44,17 @@
     }
 
     [_previewView refresh];
-
-    // 切到别的 app 再回到设置：系统常把表视图滚动手势卡在「追踪/变化」态，
-    // 导致整张表（含皮肤/键帽选择）点不动。注册回到前台通知，回到稳定态后再复位一次。
-    // 注意：不能在通知里同步重建——切 app 过渡期表视图内部行数据/ specifier 还未一致，
-    // 同步 reloadData 会读到错位（nil）specifier 触发 EXC_BAD_ACCESS(0x38) 闪退（见崩溃日记）。
-    [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(wxkbDidBecomeActive:)
-                                                 name:UIApplicationDidBecomeActiveNotification
-                                               object:nil];
 }
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
-// 兼容不同环境取表视图（与 viewDidLoad 同一套兜底）
-- (UITableView *)wxkbTableView {
-    UITableView *tv = nil;
-    if ([self respondsToSelector:@selector(tableView)]) tv = self.tableView;
-    if (!tv && [self respondsToSelector:@selector(table)]) tv = (UITableView *)self.table;
-    if (!tv) {
-        for (UIView *v in self.view.subviews) {
-            if ([v isKindOfClass:[UITableView class]]) { tv = (UITableView *)v; break; }
-        }
-    }
-    return tv;
-}
-
-// 彻底修复「切 app 回前台整表点不动 / 点刷新面板也卡死」且不闪退：
-// 不再重建 UITableView —— 重建会重定向 PSListController 内部表指针，导致 reloadData
-// 读到错位（nil）specifier 触发 EXC_BAD_ACCESS(0x38) 闪退（见崩溃日记）。
-// 改为：复位卡住的滚动手势（切后台系统不派发 touchesCancelled，pan 卡在追踪态吞掉点击）
-// + 用框架原生的 reloadSpecifiers 安全刷新（同一张表、数据源完全协调，不会 nil specifier）。
-- (void)wxkbUnfreeze {
-    UITableView *tv = [self wxkbTableView];
-    if (!tv) {
-        @try { [self reloadSpecifiers]; } @catch (NSException *e) {}
-        [_previewView refresh];
-        return;
-    }
-    // 切 app 回来整表点不动的真凶：滚动手势卡在 tracking 态（系统退后台前未派发
-    // touchesCancelled），它持续吞掉 cell 的点击。单纯 enabled=NO/YES 取消不了已 tracking
-    // 的手势，必须开关 scrollEnabled / userInteractionEnabled 才能强制 UIScrollView 复位。
-    tv.scrollEnabled = NO;
-    tv.userInteractionEnabled = NO;
-    tv.scrollEnabled = YES;
-    tv.userInteractionEnabled = YES;
-    @try { [self reloadSpecifiers]; } @catch (NSException *e) {}
+// 安全刷新：只重绘顶部预览，绝不动整张表。
+// 之前「切 app / 点刷新 → 动整张表(reloadSpecifiers)」正是切后台回来后整表点不动的元凶，
+// 现已彻底移除该机制——表视图保持原生，切 app 回来系统自动恢复，不再需要手动复位。
+- (void)wxkbRefreshPreview:(id)sender {
     [_previewView refresh];
-}
-
-// 回到前台：延迟到下一轮 runloop 再修，避开系统切 app 过渡期表视图状态不一致。
-- (void)wxkbDidBecomeActive:(NSNotification *)note {
-    if (self.view.window == nil) return;       // 面板不在屏幕上（如子页在前）不处理
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.view.window == nil) return;
-        [self wxkbUnfreeze];
-    });
-}
-
-// 逃生口按钮 + 回到前台通知都走这里：复位手势 + 安全刷新，解除卡死且不闪退。
-- (void)wxkbRefreshPanel:(id)sender {
-    if (self.view.window == nil) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.view.window == nil) return;
-        [self wxkbUnfreeze];
-    });
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -132,8 +76,8 @@
     [g setProperty:@"改动后收起键盘再弹出即可生效。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用增强" key:WXKB_KEY_ENABLED def:YES]];
-    // 逃生口：切 app 回前台整张表点不动时，点这里立即复位（详见 wxkbRefreshPanel:）
-    [s addObject:[self wxkbButton:@"刷新面板（卡住时点这里）" action:@selector(wxkbRefreshPanel:)]];
+    // 只重绘顶部预览（安全），不动整张表
+    [s addObject:[self wxkbButton:@"刷新预览" action:@selector(wxkbRefreshPreview:)]];
 
     // ---- 主题与皮肤（紧跟顶部预览，改主题立刻在预览看到）----
     g = [PSSpecifier groupSpecifierWithName:@"主题与皮肤"];
