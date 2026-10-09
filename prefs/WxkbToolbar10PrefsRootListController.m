@@ -84,13 +84,13 @@
         [_previewView refresh];
         return;
     }
-    // 复位卡住的滚动手势（关键：切后台回来整表点不动的真凶）
-    for (UIGestureRecognizer *g in tv.gestureRecognizers) {
-        g.enabled = NO;
-        g.enabled = YES;
-    }
-    tv.userInteractionEnabled = YES;
+    // 切 app 回来整表点不动的真凶：滚动手势卡在 tracking 态（系统退后台前未派发
+    // touchesCancelled），它持续吞掉 cell 的点击。单纯 enabled=NO/YES 取消不了已 tracking
+    // 的手势，必须开关 scrollEnabled / userInteractionEnabled 才能强制 UIScrollView 复位。
+    tv.scrollEnabled = NO;
+    tv.userInteractionEnabled = NO;
     tv.scrollEnabled = YES;
+    tv.userInteractionEnabled = YES;
     @try { [self reloadSpecifiers]; } @catch (NSException *e) {}
     [_previewView refresh];
 }
