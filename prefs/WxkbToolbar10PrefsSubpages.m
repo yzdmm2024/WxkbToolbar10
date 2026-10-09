@@ -56,7 +56,14 @@
     }
     [_previewView refresh];
 
-    // 切后台再回来：复位表视图手势（Bug B 修复），并刷新预览。
+    // 导航栏「刷新」按钮：卡住时点它，强重建 cell 恢复交互（Bug B 的手动逃生口）。
+    UIBarButtonItem *rf = [[UIBarButtonItem alloc] initWithTitle:@"刷新"
+                                                          style:UIBarButtonItemStylePlain
+                                                         target:self
+                                                         action:@selector(wxkbRefresh:)];
+    self.navigationItem.rightBarButtonItem = rf;
+
+    // 切后台再回来：安全复位表视图手势（Bug B 修复），并刷新预览。
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(wxkbAppBecameActive)
                                                  name:UIApplicationDidBecomeActiveNotification
@@ -69,23 +76,17 @@
                                                   object:nil];
 }
 
-// 强制结束可能卡在「追踪/变化」态的滚动手势（系统未派发 touchesCancelled 时，表视图会
-// 一直认为手指还按着 → 整张表开关/滑块/网格都点不动）。用 KVC 直接把 state 置为 Ended，
-// 这是二级页「切后台回前台整表点不动」的真正修复（仅开关 enabled 不够）。
+// 安全复位：仅确保表视图可交互、手势处于启用态。
+// 切勿用 KVC 强改 panGestureRecognizer.state —— 那会让 UITableView 的触摸派发错乱，
+// 表现为「整张表只剩首个开关能点、其余点不动」（2.5.15 的倒退正是它造成的）。
+// 真正的「切后台回前台整表点不动」由导航栏「刷新」按钮解决，稳且不伤交互。
 - (void)wxkbUnstickScrollViews {
     UITableView *tv = [self wxkbTableView];
     if (!tv) return;
     tv.userInteractionEnabled = YES;
-    UIGestureRecognizer *pan = tv.panGestureRecognizer;
-    if (pan && (pan.state == UIGestureRecognizerStateBegan ||
-                pan.state == UIGestureRecognizerStateChanged ||
-                pan.state == UIGestureRecognizerStatePossible)) {
-        @try { [pan setValue:@(UIGestureRecognizerStateEnded) forKey:@"state"]; }
-        @catch (NSException *e) {}
-    }
+    tv.scrollEnabled = YES;
     for (UIGestureRecognizer *g in tv.gestureRecognizers) {
-        g.enabled = NO;
-        g.enabled = YES;
+        if (!g.enabled) g.enabled = YES;
     }
 }
 
@@ -93,6 +94,15 @@
     if (!self.isViewLoaded) return;
     [self wxkbUnstickScrollViews];
     [self reloadSpecifiers];      // 重建 cell，恢复可交互态
+    [_previewView refresh];        // 预览同步
+}
+
+// 用户主动刷新：卡住时点导航栏「刷新」。强重建 cell + 刷新预览，彻底恢复触摸与显示。
+- (void)wxkbRefresh:(id)sender {
+    (void)sender;
+    [self wxkbUnstickScrollViews];
+    _specifiers = nil;
+    [self reloadSpecifiers];
     [_previewView refresh];        // 预览同步
 }
 

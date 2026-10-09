@@ -57,30 +57,32 @@ extern const char *lk_reason_cstr(lk_reason r);
 
 // 强制结束可能卡在「追踪/变化」态的滚动手势（系统未派发 touchesCancelled 时，表视图会
 // 一直认为手指还按着 → 整张表开关/滑块/网格都点不动）。用 KVC 直接把 state 置为 Ended，
-// 这是「切后台回前台整表点不动」的真正修复（仅开关 enabled 不够）。
+// 安全复位：仅确保表视图可交互、手势处于启用态。
+// 切勿用 KVC 强改 panGestureRecognizer.state —— 那会让 UITableView 的触摸派发错乱，
+// 表现为「整张表只剩首个开关能点、其余点不动」（2.5.15 的倒退正是它造成的）。
+// 真正的「切后台回前台整表点不动」由用户主动点「刷新面板」按钮（见下方）解决，稳且不伤交互。
 - (void)wxkbUnstickScrollViews {
     UITableView *tv = [self wxkbTableView];
     if (!tv) return;
     tv.userInteractionEnabled = YES;
-    UIGestureRecognizer *pan = tv.panGestureRecognizer;
-    if (pan && (pan.state == UIGestureRecognizerStateBegan ||
-                pan.state == UIGestureRecognizerStateChanged ||
-                pan.state == UIGestureRecognizerStatePossible)) {
-        @try { [pan setValue:@(UIGestureRecognizerStateEnded) forKey:@"state"]; }
-        @catch (NSException *e) {}
-    }
+    tv.scrollEnabled = YES;
     for (UIGestureRecognizer *g in tv.gestureRecognizers) {
-        g.enabled = NO;
-        g.enabled = YES;
+        if (!g.enabled) g.enabled = YES;
     }
 }
 
-// 回到前台：复位表视图滚动手势（强制取消其卡住的跟踪态），并重建 specifiers/cell
-// 恢复交互态。这是「切换 app 再回来整张表点不动」的真正修复——2.5.8 删嵌套 scrollView 时把
-// 这个通知也一并删了，导致无人复位手势。
+// 回到前台：安全复位表视图交互 + 重建 specifiers/cell（恢复可点）。
 - (void)wxkbAppBecameActive {
     if (!self.isViewLoaded) return;          // 面板还没打开过，无需处理
     [self wxkbUnstickScrollViews];
+    [self reloadSpecifiers];
+}
+
+// 用户主动刷新：卡住时点它。强重建 cell，彻底恢复触摸与显示（Bug B 的手动逃生口）。
+- (void)wxkbRefresh:(id)sender {
+    (void)sender;
+    [self wxkbUnstickScrollViews];
+    _specifiers = nil;
     [self reloadSpecifiers];
 }
 
@@ -121,6 +123,7 @@ extern const char *lk_reason_cstr(lk_reason r);
     [g setProperty:@"改动后收起键盘再弹出即可生效。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用增强" key:WXKB_KEY_ENABLED def:YES]];
+    [s addObject:[self wxkbButton:@"刷新面板（卡住时点这里）" action:@selector(wxkbRefresh:)]];
 
     // ---- 外观设置（二级界面入口，每页顶部带实时预览）----
     g = [PSSpecifier groupSpecifierWithName:@"外观设置"];
@@ -162,7 +165,7 @@ extern const char *lk_reason_cstr(lk_reason r);
 
     // ---- 关于本插件（版本号 + 反馈，置于最底部）----
     g = [PSSpecifier groupSpecifierWithName:@"关于本插件"];
-    [g setProperty:@"WxkbToolbar10 v2.5.15\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
+    [g setProperty:@"WxkbToolbar10 v2.5.16\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"复制作者邮箱" action:@selector(copyEmail:)]];

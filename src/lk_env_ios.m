@@ -56,26 +56,52 @@ static NSString *__udidCacheFile(void) {
     return cands.lastObject;
 }
 
-// 跨进程 UDID 共享域：与 WXKB_PREFS_DOMAIN（com.yzdmm.wxkbtoolbar10）同源。
-// 设置面板（解锁时，MGCopyAnswer 能拿到真 UDID）把真 UDID 写进这个域；键盘扩展
-// 等 MGCopyAnswer 取不到真 UDID 的进程，直接读这个域拿到「签码时用的同一个 UDID」。
-// 走 NSUserDefaults 共享域（而非裸文件）是关键：键盘扩展沙盒对裸文件读取不可靠，
-// 但本插件所有设置项都经这个域实时下发到键盘（已验证跨进程可读），用它做 UDID 通道最稳。
-static NSString *__wxkbUDIDSuite(void) { return @"com.yzdmm.wxkbtoolbar10"; }
+// 跨进程 UDID 共享：与 WXKB_PREFS_DOMAIN（com.yzdmm.wxkbtoolbar10）同源，且复用
+// Tweak 里 WXKBLoadPrefs 已验证的 CFPreferences 通道（走 cfprefsd 守护——设置项正是
+// 经它实时下发到键盘扩展的）。解锁时（面板，MGCopyAnswer 能拿真 UDID）把真 UDID 写进此域；
+// 键盘扩展等 MGCopyAnswer 取不到真 UDID 的进程，直接读此域拿到「签码时用的同一个 UDID」，
+// 于是 lk_peek 用同一 UDID 重验通过 → 扩展不再被误判未授权 → 键帽/形状等真正生效（Bug A）。
+// 关键：必须用 CFPreferences（而非 initWithSuiteName:）——沙盒键盘扩展里后者读不到面板写的值，
+// 这正是 2.5.15 之后键帽仍不生效的根因。
+static NSString *const __wxkbUDIDKey    = @"wxkb_device_udid";
+static NSString *const __wxkbUDIDDomain = @"com.yzdmm.wxkbtoolbar10";
+
+// 经 cfprefsd 读偏好字符串（与 WXKBLoadPrefs 同源通道，跨进程最稳）
+static NSString *__wxkbReadPrefString(NSString *domain, NSString *key) {
+    CFStringRef dom = (__bridge CFStringRef)domain;
+    CFStringRef k   = (__bridge CFStringRef)key;
+    CFPropertyListRef v = CFPreferencesCopyValue(k, dom,
+        kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (!v) v = CFPreferencesCopyValue(k, dom,
+        kCFPreferencesAnyUser, kCFPreferencesAnyHost);
+    NSString *s = nil;
+    if (v) {
+        if (CFGetTypeID(v) == CFStringGetTypeID()) s = (__bridge NSString *)v;
+        CFRelease(v);
+    }
+    return s;
+}
+
+// 经 cfprefsd 写偏好字符串并立即同步（让键盘扩展立刻可见）
+static void __wxkbWritePrefString(NSString *domain, NSString *key, NSString *val) {
+    CFStringRef dom = (__bridge CFStringRef)domain;
+    CFStringRef k   = (__bridge CFStringRef)key;
+    CFPreferencesSetValue(k, (__bridge CFPropertyListRef)val, dom,
+        kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    CFPreferencesSynchronize(dom, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+}
 
 static void _wxkbCacheUDID(NSString *udid) {
     if (!udid.length || [udid isEqualToString:@"unknown"]) return;
-    // 主通道：共享偏好域（跨进程可读，键盘扩展也读得到）
-    NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__wxkbUDIDSuite()];
-    if (d) { [d setObject:udid forKey:@"wxkb_device_udid"]; [d synchronize]; }
-    // 备用：落盘文件（jbroot 优先），兼容旧版缓存
+    // 主通道：CFPreferences 共享域（与设置下发同通道，键盘扩展必能读到）
+    __wxkbWritePrefString(__wxkbUDIDDomain, __wxkbUDIDKey, udid);
+    // 备用：落盘文件（jbroot 优先），兼容旧版缓存 / 极端环境
     [udid writeToFile:__udidCacheFile() atomically:NO encoding:NSUTF8StringEncoding error:nil];
 }
 
-// 读跨进程共享 UDID：优先共享域，其次落盘文件。键盘扩展据此拿到与签码一致的 UDID。
+// 读跨进程共享 UDID：优先 CFPreferences 共享域，其次落盘文件。键盘扩展据此拿到与签码一致的 UDID。
 static NSString *__wxkbReadCachedUDID(void) {
-    NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__wxkbUDIDSuite()];
-    NSString *u = d ? [d stringForKey:@"wxkb_device_udid"] : nil;
+    NSString *u = __wxkbReadPrefString(__wxkbUDIDDomain, __wxkbUDIDKey);
     if (u.length && ![u isEqualToString:@"unknown"]) return u;
     NSString *f = [NSString stringWithContentsOfFile:__udidCacheFile()
                                            encoding:NSUTF8StringEncoding error:nil];
@@ -167,8 +193,12 @@ static int my_store_read(int slot, char *buf, int cap) {
     if (slot == LK_SLOT_FILE) {
         val = [NSString stringWithContentsOfFile:__licFile() encoding:NSUTF8StringEncoding error:nil];
     } else {
-        NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__suite()];
-        val = [d objectForKey:[NSString stringWithFormat:@"lk_slot_%d", slot]];
+        // 优先 CFPreferences（经 cfprefsd，跨进程最稳，与设置下发同通道）
+        val = __wxkbReadPrefString(__suite(), [NSString stringWithFormat:@"lk_slot_%d", slot]);
+        if (!val.length) {
+            NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__suite()];
+            val = d ? [d objectForKey:[NSString stringWithFormat:@"lk_slot_%d", slot]] : nil;
+        }
     }
     if (!val || ![val isKindOfClass:[NSString class]] || !val.length) return -1;
     int n = (int)[val lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
@@ -183,6 +213,8 @@ static int my_store_write(int slot, const char *blob) {
     if (slot == LK_SLOT_FILE) {
         [s writeToFile:__licFile() atomically:NO encoding:NSUTF8StringEncoding error:nil];
     } else {
+        // 主通道 CFPreferences（跨进程必到），NSUserDefaults 作为兜底
+        __wxkbWritePrefString(__suite(), [NSString stringWithFormat:@"lk_slot_%d", slot], s);
         NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__suite()];
         if (blob) [d setObject:s forKey:[NSString stringWithFormat:@"lk_slot_%d", slot]];
         else      [d removeObjectForKey:[NSString stringWithFormat:@"lk_slot_%d", slot]];
