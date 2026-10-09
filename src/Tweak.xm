@@ -246,7 +246,6 @@ static NSString *gSkinName     = nil;    // 皮肤名（当前固定 rainbow）
 static NSInteger gCapStyle     = 0;      // 键帽风格（单选）：0=关闭 1=立体 2=彩虹 3=彩虹3D 4=玻璃态 5=霓虹
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
 static double    gLastLoad     = -1;
-static BOOL      gCompact      = NO;     // 系统键盘紧凑开关（仅作用于 com.apple.TextInput）
 
 static UIColor *WXKBColor(NSString *hex, CGFloat alpha) {
     if (![hex isKindOfClass:[NSString class]]) {
@@ -437,9 +436,6 @@ static void WXKBReload(BOOL force) {
     if (gKbOffset < -80.0 || gKbOffset > 80.0) {
         gKbOffset = 0.0;
     }
-
-    // ---- 系统键盘紧凑 ----
-    gCompact = [d[WXKB_KEY_COMPACT] boolValue];
 
 }
 
@@ -3124,36 +3120,13 @@ static void WXKBFireAction(int c) {
 
 %end
 
-#pragma mark - 系统键盘紧凑（仅作用于 com.apple.TextInput 守护进程）
-
-// 收窄系统键盘底部留白 + 把地球/听写键收进键盘本体。
-// 注意：这俩方法只管「底部留白」和「地球条是否分离」，管不到按键本身高度；
-// 要整体压矮需另 hook 键盘视图 frame/layout（本插件不做那层）。
-%hook UIKeyboardImpl
-- (UIEdgeInsets)deviceSpecificPaddingForInterfaceOrientation:(NSInteger)orientation inputMode:(id)mode {
-    UIEdgeInsets r = %orig;
-    if (gCompact && r.bottom > 2.0) {
-        r.bottom = 2.0;          // 压小底部留白，键盘更紧凑
-    }
-    return r;
-}
-- (BOOL)showsGlobeAndDictationKeysExternallyForInterfaceOrientation:(NSInteger)orientation {
-    if (gCompact) return NO;     // 地球/听写键收进键盘本体，不单独浮一条
-    return %orig;
-}
-- (BOOL)showsGlobeAndDictationKeysExternallyForInterfaceOrientation:(NSInteger)orientation inputMode:(id)mode {
-    if (gCompact) return NO;
-    return %orig;
-}
-%end
-
 %ctor {
     WXKBReload(YES);
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.4.8 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld compact=%d",
+    NSLog(@"[WxkbToolbar10] 2.4.10 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir, gCompact);
+          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir);
 }

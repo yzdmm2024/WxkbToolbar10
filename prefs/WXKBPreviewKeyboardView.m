@@ -168,7 +168,6 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     // 由 refresh 读出的偏好派生值（与 Tweak 的全局 g* 对应）
     BOOL  _gEnabled, _gBgEnabled, _gTransparent, _gKeyEnabled, _gSkinEnabled, _gGradEnabled;
     NSInteger _gBgMode, _gShape, _gSkinTheme, _gSkinDir, _gSkinBg;
-    double _gOffset;   // 键盘整体上下位移（pt，±80，带正负），预览实时跟随
     NSInteger _gCapStyle, _gEffCapStyle;
     CGFloat _gBgAlpha, _gCorner;
     UIColor *_gBgColor, *_gLetterBg, *_gDigitBg, *_gFuncLBg, *_gFuncRBg, *_gSpaceBg;
@@ -271,10 +270,6 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     _gSkinBg      = d[WXKB_KEY_SKIN_BG] ? [d[WXKB_KEY_SKIN_BG] integerValue] : 0;
     if (_gSkinBg < 0 || _gSkinBg > 3) _gSkinBg = 0;
 
-    // 键盘位置偏移（±80，带正负）
-    double off = d[WXKB_KEY_OFFSET] ? [d[WXKB_KEY_OFFSET] doubleValue] : 0.0;
-    if (off < -80.0 || off > 80.0) off = 0.0;
-    _gOffset = off;
     _gCapStyle    = d[WXKB_KEY_CAP_STYLE] ? [d[WXKB_KEY_CAP_STYLE] integerValue] : 0;
     // 与 WXKBCapStyle() 一致：皮肤 + 关 -> 默认彩虹3D
     _gEffCapStyle = _gCapStyle;
@@ -363,13 +358,7 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     CGFloat rowH = (H - 2 * topPad - rowGapTotal) / 4.0;
     if (rowH < 6) rowH = 6;
 
-    // 键盘位置偏移预览：把整块键盘按偏移量上下平移（clamp 到预览高度 40% 内，避免大片裁切）。
-    // 真机里正值=下移（被安全区限制），这里直接按比例平移，滑动滑块即可看到键盘上下移动。
-    CGFloat visOff = _gOffset;
-    if (visOff >  H * 0.40) visOff =  H * 0.40;
-    if (visOff < -H * 0.40) visOff = -H * 0.40;
-
-    CGFloat y = topPad + visOff;
+    CGFloat y = topPad;
     for (NSArray *row in rows) {
         CGFloat totalW = 0;
         for (NSDictionary *kd in row) totalW += [kd[@"w"] doubleValue];
@@ -387,21 +376,6 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
             x += slot;
         }
         y += rowH + gap;
-    }
-
-    // 偏移数值浮标（实时预览效果）：仅在偏移非 0 时显示，叠在顶部。
-    if (fabs(_gOffset) > 0.5) {
-        NSInteger iv = (NSInteger)lround(_gOffset);
-        NSString *txt = [NSString stringWithFormat:@"键盘位置 %@%ldpt（预览）",
-                         (iv > 0 ? @"+" : @""), (long)iv];
-        UILabel *lab = [[UILabel alloc] initWithFrame:CGRectMake(0, 1, W, 16)];
-        lab.text = txt;
-        lab.font = [UIFont systemFontOfSize:10];
-        lab.textColor = [UIColor whiteColor];
-        lab.textAlignment = NSTextAlignmentCenter;
-        lab.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.40];
-        lab.clipsToBounds = YES;
-        [self addSubview:lab];
     }
 }
 

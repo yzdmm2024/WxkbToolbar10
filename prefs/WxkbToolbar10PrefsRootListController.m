@@ -1,12 +1,9 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
 #import "WXKBPreviewKeyboardView.h"
-#import <spawn.h>
-#import <sys/wait.h>
 
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
-    BOOL _wxkbRebuilding;                    // 重建表视图重入保护
 }
 @end
 
@@ -75,86 +72,45 @@
     return tv;
 }
 
-// 彻底修复「切 app 回前台整表点不动」：reloadData / 手势 KVC 都救不活卡死的表，
-// 只有重建表视图（重进插件=新建实例）才行。这里重建一张新表（新表自带干净的滚动手势）。
-- (void)wxkbRebuildTable {
-    if (_wxkbRebuilding) return;          // 重入保护
-    _wxkbRebuilding = YES;
-    @try {
-        UITableView *old = [self wxkbTableView];
-        if (old && old.superview) {
-            // 先断开旧表回调：过渡期系统若仍回调旧表，不会再读到我们的 specifier，
-            // 这是避免「nil specifier -> EXC_BAD_ACCESS(0x38)」闪退的关键一步。
-            old.dataSource = nil;
-            old.delegate = nil;
-            CGRect frame = old.frame;
-            UITableViewStyle style = old.style;
-            CGPoint offset = old.contentOffset;
-            UITableView *newTv = [[UITableView alloc] initWithFrame:frame style:style];
-            newTv.autoresizingMask = old.autoresizingMask;
-            newTv.backgroundColor = old.backgroundColor;
-            newTv.separatorStyle = old.separatorStyle;
-            newTv.tableHeaderView = _previewView;
-            newTv.delegate = (id<UITableViewDelegate>)self;
-            newTv.dataSource = (id<UITableViewDataSource>)self;
-            newTv.contentOffset = offset;
-            newTv.userInteractionEnabled = YES;
-            newTv.scrollEnabled = YES;
-            [old.superview insertSubview:newTv belowSubview:old];
-            [old removeFromSuperview];
-            // 把 PSListController 内部指向旧表的指针重定向到新表（兼容不同 ivar/属性名）
-            for (NSString *k in @[@"tableView", @"_tableView", @"_table"]) {
-                @try { [self setValue:newTv forKey:k]; } @catch (NSException *e) {}
-            }
-            _specifiers = nil;            // 重建 specifiers，刷新右侧当前值
-            [newTv reloadData];
-        }
+// 彻底修复「切 app 回前台整表点不动 / 点刷新面板也卡死」且不闪退：
+// 不再重建 UITableView —— 重建会重定向 PSListController 内部表指针，导致 reloadData
+// 读到错位（nil）specifier 触发 EXC_BAD_ACCESS(0x38) 闪退（见崩溃日记）。
+// 改为：复位卡住的滚动手势（切后台系统不派发 touchesCancelled，pan 卡在追踪态吞掉点击）
+// + 用框架原生的 reloadSpecifiers 安全刷新（同一张表、数据源完全协调，不会 nil specifier）。
+- (void)wxkbUnfreeze {
+    UITableView *tv = [self wxkbTableView];
+    if (!tv) {
+        @try { [self reloadSpecifiers]; } @catch (NSException *e) {}
         [_previewView refresh];
-    } @catch (NSException *e) {
-        // 极端兜底：至少别白屏
-        @try { [self reloadSpecifiers]; } @catch (NSException *e2) {}
+        return;
     }
-    _wxkbRebuilding = NO;
+    // 复位卡住的滚动手势（关键：切后台回来整表点不动的真凶）
+    for (UIGestureRecognizer *g in tv.gestureRecognizers) {
+        g.enabled = NO;
+        g.enabled = YES;
+    }
+    tv.userInteractionEnabled = YES;
+    tv.scrollEnabled = YES;
+    @try { [self reloadSpecifiers]; } @catch (NSException *e) {}
+    [_previewView refresh];
 }
 
-// 回到前台：延迟到下一轮 runloop 再修，避开系统切 app 过渡期表视图状态不一致（崩溃来源）。
+// 回到前台：延迟到下一轮 runloop 再修，避开系统切 app 过渡期表视图状态不一致。
 - (void)wxkbDidBecomeActive:(NSNotification *)note {
     if (self.view.window == nil) return;       // 面板不在屏幕上（如子页在前）不处理
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.view.window == nil) return;
-        [self wxkbRebuildTable];
+        [self wxkbUnfreeze];
     });
 }
 
-// 逃生口按钮 + 回到前台通知都走这里：延迟到稳定态再重建表视图，彻底解除卡死且不闪退。
+// 逃生口按钮 + 回到前台通知都走这里：复位手势 + 安全刷新，解除卡死且不闪退。
 - (void)wxkbRefreshPanel:(id)sender {
     if (self.view.window == nil) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (self.view.window == nil) return;
-        [self wxkbRebuildTable];
+        [self wxkbUnfreeze];
     });
-}
-
-// 清除系统键盘缓存：杀掉键盘守护进程（com.apple.TextInput），已开的 App 重排键盘即生效。
-// 键盘布局被 iOS 缓存进进程——只改返回值不够，必须清缓存（这正是 ClassicKeyboardXS
-// 看似「没生效」的真因：hook 写对了，但已开的 app 还在用旧布局）。
-- (void)wxkbClearKBCache:(id)sender {
-    // 用 posix_spawn 调 /usr/bin/killall（system() 在 iOS SDK 被标记 unavailable，编译不过）。
-    pid_t pid = 0;
-    const char *argv[] = {"/usr/bin/killall", "-9", "TextInput", NULL};
-    int r = posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)argv, NULL);
-    if (r == 0) {
-        int status = 0;
-        waitpid(pid, &status, 0);
-    }
-    NSString *msg = (r == 0)
-        ? @"已杀掉键盘守护进程，已开的 App 会自动重排键盘，紧凑设置立即生效。"
-        : @"未找到 TextInput 守护进程（你的系统键盘可能运行在 App 进程内）。请直接杀掉并重开对应 App，或 Respring 后重试。";
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"已发送清缓存"
-                                                             message:msg
-                                                      preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:a animated:YES completion:nil];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -275,49 +231,9 @@
     [s addObject:g];
     [s addObject:[self wxkbLink:@"管理我的主题…" detailClass:@"WXKBThemeProfilesController"]];
 
-    // ---- 键盘位置 ----
-    g = [PSSpecifier groupSpecifierWithName:@"键盘位置"];
-    [g setProperty:[NSString stringWithFormat:
-                        @"拖动滑块整体上/下移动键盘（±80pt，带正负数值，滑动一次≈1pt），"
-                        @"改动立即生效（当前偏移 %+.0fpt）。顶部预览实时跟随；也可点「重置为 0」。",
-                        [self kbOffsetValue]]
-            forKey:@"footerText"];
-    [s addObject:g];
-    [s addObject:[self wxkbOffsetSlider]];
-    [s addObject:[self wxkbButton:@"重置为 0" action:@selector(kbReset:)]];
-
-    // ---- 系统键盘紧凑（作用于系统键盘，不是微信键盘）----
-    g = [PSSpecifier groupSpecifierWithName:@"系统键盘紧凑"];
-    [g setProperty:@"收窄系统键盘底部留白、把地球/听写键收进键盘本体。改完点下方「清除键盘缓存」立即生效（iOS 会缓存键盘布局，不清缓存已开的 App 不会变）。" forKey:@"footerText"];
-    [s addObject:g];
-    [s addObject:[self wxkbSwitch:@"启用紧凑键盘" key:WXKB_KEY_COMPACT def:NO]];
-    [s addObject:[self wxkbButton:@"清除键盘缓存（让改动立即生效）" action:@selector(wxkbClearKBCache:)]];
-
     _specifiers = s;
     return _specifiers;
 }
-
-#pragma mark - 键盘位置
-
-- (double)kbOffsetValue {
-    id v = WXKBGetPref(WXKB_KEY_OFFSET);
-    double d = [v respondsToSelector:@selector(doubleValue)] ? [v doubleValue] : 0.0;
-    if (d < -80.0 || d > 80.0) d = 0.0;
-    return d;
-}
-
-- (void)setKbOffset:(double)off {
-    if (off < -80.0) off = -80.0;
-    if (off > 80.0) off = 80.0;
-    WXKBSetPref(WXKB_KEY_OFFSET, @(off));
-    [[self class] wxkbNotifyChanged];
-    _specifiers = nil;               // 刷新 footer 里的当前值
-    [self reloadSpecifiers];
-}
-
-- (void)kbUp:(id)sender   { [self setKbOffset:[self kbOffsetValue] - 5]; }
-- (void)kbDown:(id)sender { [self setKbOffset:[self kbOffsetValue] + 5]; }
-- (void)kbReset:(id)sender{ [self setKbOffset:0]; }
 
 #pragma mark - 配色预设
 

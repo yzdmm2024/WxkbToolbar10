@@ -37,9 +37,6 @@ void WXKBSetLetterColor(NSInteger index, NSString *hex);
 - (PSSpecifier *)wxkbSlider:(NSString *)name key:(NSString *)key def:(double)def
                         min:(double)min max:(double)max;
 
-// 键盘位置滑块（整数步进、带正负数值、实时预览）：渲染由 WXKBOffsetSliderCell 负责。
-- (PSSpecifier *)wxkbOffsetSlider;
-
 // 点一下直接弹系统取色器（带色块预览）
 - (PSSpecifier *)wxkbColorRow:(NSString *)name key:(NSString *)key def:(NSString *)def;
 // 26 字母逐个配色行

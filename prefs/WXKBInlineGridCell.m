@@ -163,8 +163,10 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
 
     if (it[@"letter"]) {
         [b setTitle:it[@"label"] forState:UIControlStateNormal];
-        [b setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-        b.backgroundColor = WXKBColorFromHex([it[@"hex"] isKindOfClass:[NSString class]] ? it[@"hex"] : WXKB_DEF_LETTER_BG);
+        UIColor *bg = WXKBColorFromHex([it[@"hex"] isKindOfClass:[NSString class]] ? it[@"hex"] : WXKB_DEF_LETTER_BG);
+        b.backgroundColor = bg;
+        // 对比取色：背景偏暗用白字、偏亮用黑字，避免「黑底黑字」看不见字母
+        [b setTitleColor:[self wxkbTextOn:bg] forState:UIControlStateNormal];
     } else {
         [b setTitle:it[@"title"] forState:UIControlStateNormal];
         if ([mode isEqualToString:@"theme"]) {
@@ -301,7 +303,9 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
                 hex = [v isKindOfClass:[NSString class]] ? v : WXKB_DEF_LETTER_BG;
             }
             UIButton *b = it[@"button"];
-            b.backgroundColor = WXKBColorFromHex(hex.length ? hex : WXKB_DEF_LETTER_BG);
+            UIColor *bg = WXKBColorFromHex(hex.length ? hex : WXKB_DEF_LETTER_BG);
+            b.backgroundColor = bg;
+            [b setTitleColor:[self wxkbTextOn:bg] forState:UIControlStateNormal];
         }
     }
 }
