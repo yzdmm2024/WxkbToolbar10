@@ -69,9 +69,9 @@ extern const char *lk_reason_cstr(lk_reason r);
     NSMutableArray *s = [NSMutableArray array];
     PSSpecifier *g;
 
-    // ---- 解锁 / 验证 ----
-    g = [PSSpecifier groupSpecifierWithName:@"解锁 / 验证"];
-    [g setProperty:@"本插件需授权后生效：设备装正版母本（加密狗）自动解锁，或点下方「解锁」复制本机 UDID 发给作者签 16 位码后，再粘贴解锁。" forKey:@"footerText"];
+    // ---- 授权 / 状态 ----
+    g = [PSSpecifier groupSpecifierWithName:@"授权 / 状态"];
+    [g setProperty:@"本插件安装即可用，无需解锁（不检测母本、不要求解锁码）。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:[self _lkStatusTitle] action:@selector(_doUnlock:)]];
 
@@ -293,58 +293,12 @@ extern const char *lk_reason_cstr(lk_reason r);
 #pragma mark - 解锁 / 验证
 
 - (NSString *)_lkStatusTitle {
-    const lk_env *env = lk_get_env();
-    lk_reason why = LK_R_NONE;
-    long long exp = 0;
-    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) return @"解锁（母本已识别）";
-    if (lk_peek(env, &exp, &why) == LK_UNLOCKED) return @"解锁（已输码）";
-    return @"解锁（未授权）";
+    return @"已解锁（已安装）";
 }
 
 - (void)_doUnlock:(PSSpecifier *)spec {
     (void)spec;
-    const lk_env *env = lk_get_env();
-    lk_reason why = LK_R_NONE;
-    long long exp = 0;
-    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) {
-        [self _toast:@"已通过母本（加密狗）自动解锁，无需输入解锁码。"];
-        [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
-        return;
-    }
-    // 取出与验签同源的本机 UDID，供用户复制后发给作者签码
-    char udidBuf[160];
-    NSString *udid = @"";
-    if (env->device_id && env->device_id(udidBuf, (int)sizeof(udidBuf)) > 0) {
-        udid = [NSString stringWithUTF8String:udidBuf];
-    }
-    NSString *msg = [NSString stringWithFormat:
-        @"本机 UDID（点「复制 UDID」发给作者签码）：\n%@\n\n再把作者签发的 16 位解锁码粘贴到下方，点「解锁」。", udid];
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"解锁（输入解锁码）"
-        message:msg preferredStyle:UIAlertControllerStyleAlert];
-    [a addTextFieldWithConfigurationHandler:^(UITextField *tf){
-        tf.placeholder = @"16 位解锁码"; tf.clearButtonMode = UITextFieldViewModeWhileEditing;
-        tf.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
-        tf.autocorrectionType = UITextAutocorrectionTypeNo;
-    }];
-    [a addAction:[UIAlertAction actionWithTitle:@"复制 UDID" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
-        (void)act;
-        if (udid.length) {
-            [[UIPasteboard generalPasteboard] setString:udid];
-            [self _toast:@"已复制本机 UDID 到剪贴板"];
-        }
-    }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [a addAction:[UIAlertAction actionWithTitle:@"解锁" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
-        UITextField *tf = a.textFields.firstObject;
-        NSString *code = [[tf text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (code.length == 0) return;
-        lk_reason w = LK_R_NONE;
-        lk_status st = lk_submit(env, [code UTF8String], &w);
-        if (st == LK_UNLOCKED) [self _toast:@"解锁成功"];
-        else [self _toast:[NSString stringWithFormat:@"解锁失败：%s", lk_reason_cstr(w)]];
-        [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
-    }]];
-    [self presentViewController:a animated:YES completion:nil];
+    [self _toast:@"本插件安装即可用，无需解锁码。"];
 }
 
 - (void)_toast:(NSString *)msg {
