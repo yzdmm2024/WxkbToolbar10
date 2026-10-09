@@ -18,6 +18,9 @@
 #include "lk_keys.h"
 #include <string.h>
 #include <stdio.h>
+#if defined(__APPLE__)
+#include <ptrauth.h>   /* 仅在 Apple 平台用 ptrauth_strip 剥 PAC（见 lk_entry_hooked） */
+#endif
 
 /* ============================================================
  * 1. 密钥分片
@@ -181,10 +184,16 @@ int lk_entry_hooked(const void *fn) {
      *     函数使用，别拿去扫所有函数）
      *   - ldr xN,#imm + br xN：Substrate / ElleKit 的经典两指令 trampoline
      * 刻意不查 b.cond / br / adrp：那些在正常代码里太常见（尤其 adrp+add
-     * 是取全局地址的标配），加进来只会制造误报。 */
-    const uint32_t *p = (const uint32_t *)fn;
+     * 是取全局地址的标配），加进来只会制造误报。
+     *
+     * 重要（arm64e/PAC）：fn 是函数指针，在 arm64e 上带 PAC 签名（高位置为
+     * 签名残渣）。若不剥离直接当数据解引用 p[0]，地址会越界 → 崩溃。先用
+     * ptrauth_strip 还原裸地址再读前两条指令。ptrauth_strip 在非 PAC 平台是
+     * 空操作，可移植。 */
+    const uint32_t *p;
     uint32_t a, b;
-    if (!p) return 0;
+    if (!fn) return 0;
+    p = (const uint32_t *)ptrauth_strip(fn, ptrauth_key_function_pointer);
     a = p[0];
     b = p[1];
     if ((a & 0xFC000000u) == 0x14000000u) return 1;   /* b   */

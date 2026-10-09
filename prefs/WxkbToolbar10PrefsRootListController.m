@@ -56,59 +56,53 @@ extern const char *lk_reason_cstr(lk_reason r);
 
     [_previewView refresh];
 
-    // 切后台再回来时，嵌套在 cell 里的横向滑动条偶尔会卡在「手势追踪态」，
-    // 导致整行点不动也不能滑。回到前台时统一复位可见网格 cell 的滚动手势。
+    // 切后台再回到前台时，iOS 不会重发 viewWillAppear（视图从未离开层级），但表视图自身的
+    // 滚动手势可能卡在「追踪态」（系统未派发 touchesCancelled），导致整张表（开关/滑块/网格）
+    // 都点不动。回到前台时强制复位表视图手势 + 重建 cell，恢复可点。
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(wxkbAppBecameActive)
                                                  name:UIApplicationDidBecomeActiveNotification
                                                object:nil];
 }
 
-// 统一复位：表格自身（UITableView 即是 scrollView）与所有可见网格 cell 的 scrollView pan 手势。
-// Bug B 根因：切后台时表格/网格的 pan 手势偶尔卡在「追踪态」，吞掉触摸，导致整张表点不动，
-// 只有导航栏按钮能点。必须强制终态化（Ended）才能解除。
-- (void)wxkbUnstickScrollViews {
-    UITableView *tv = nil;
-    if ([self respondsToSelector:@selector(tableView)]) {
-        tv = self.tableView;
-    } else if ([self respondsToSelector:@selector(table)]) {
-        tv = (UITableView *)self.table;
-    }
-    if (!tv) {
-        for (UIView *v in self.view.subviews) {
-            if ([v isKindOfClass:[UITableView class]]) { tv = (UITableView *)v; break; }
-        }
-    }
-    if (tv) {
-        // 表格自身也是 scrollView，它的 pan 同样会卡死（整表不可点）
-        UIScrollView *sv = (UIScrollView *)tv;
-        UIGestureRecognizer *pan = sv.panGestureRecognizer;
-        @try {
-            UIGestureRecognizerState st = pan.state;
-            if (st == UIGestureRecognizerStateBegan || st == UIGestureRecognizerStateChanged) {
-                [pan setValue:@(UIGestureRecognizerStateEnded) forKey:@"state"];
-            }
-        } @catch (NSException *e) {}
-        pan.enabled = NO;
-        pan.enabled = YES;
-        sv.scrollEnabled = NO;
-        sv.scrollEnabled = YES;
-        for (UITableViewCell *c in tv.visibleCells) {
-            if ([c isKindOfClass:[WXKBInlineGridCell class]]) {
-                [(WXKBInlineGridCell *)c wxkbResetScroll];
-            }
-        }
-    }
-}
-
-- (void)wxkbAppBecameActive {
-    [self wxkbUnstickScrollViews];
-}
-
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self
                                                     name:UIApplicationDidBecomeActiveNotification
                                                   object:nil];
+}
+
+#pragma mark - 切后台回来复位
+
+// 兼容不同环境下表视图访问器（同 viewDidLoad）
+- (UITableView *)wxkbTableView {
+    if ([self respondsToSelector:@selector(tableView)]) {
+        UITableView *t = self.tableView;
+        if (t) return t;
+    }
+    if ([self respondsToSelector:@selector(table)]) {
+        UITableView *t = (UITableView *)self.table;
+        if (t) return t;
+    }
+    for (UIView *v in self.view.subviews) {
+        if ([v isKindOfClass:[UITableView class]]) return (UITableView *)v;
+    }
+    return nil;
+}
+
+// 回到前台：复位表视图滚动手势（开关 enabled 强制取消其卡住的跟踪态），并重建 specifiers/cell
+// 恢复交互态。这是「切换 app 再回来整张表点不动」的真正修复——2.5.8 删嵌套 scrollView 时把
+// 这个通知也一并删了，导致无人复位手势。
+- (void)wxkbAppBecameActive {
+    if (!self.isViewLoaded) return;          // 面板还没打开过，无需处理
+    UITableView *tv = [self wxkbTableView];
+    if (tv) {
+        tv.userInteractionEnabled = YES;     // 双保险：确保整张表在回前台时可交互（避免整表点不动）
+        for (UIGestureRecognizer *g in tv.gestureRecognizers) {
+            g.enabled = NO;
+            g.enabled = YES;
+        }
+    }
+    [self reloadSpecifiers];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -118,17 +112,11 @@ extern const char *lk_reason_cstr(lk_reason r);
     [_previewView refresh];           // 子页改完回来，预览立即同步
 }
 
-// 打开面板：尚未解锁（未输码且未识别母本）时自动弹出解锁界面
+// 打开面板：尚未解锁（未输码）时自动弹出解锁界面。任何设备都要解锁，母本自动解锁已移除。
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    // 每次面板显示（含切后台回来）都复位滚动手势，杜绝「整表/网格点不动」
-    [self wxkbUnstickScrollViews];
     if (_didPromptUnlock) return;
-    const lk_env *env = lk_get_env();
-    lk_reason why = LK_R_NONE;
-    long long exp = 0;
-    if (lk_master_verify(env, &why, &exp) != LK_UNLOCKED &&
-        lk_peek(env, &exp, &why) != LK_UNLOCKED) {
+    if (![self _wxkbUnlocked]) {
         _didPromptUnlock = YES;
         [self _doUnlock:nil];
     }
@@ -143,9 +131,11 @@ extern const char *lk_reason_cstr(lk_reason r);
 
     // ---- 解锁 / 验证 ----
     g = [PSSpecifier groupSpecifierWithName:@"解锁 / 验证"];
-    [g setProperty:@"本插件需授权后生效：设备装正版母本（加密狗）自动解锁，或点下方「解锁」复制本机 UDID 发给作者签 16 位码后，再粘贴解锁。" forKey:@"footerText"];
+    [g setProperty:@"本插件需输入解锁码后生效：点下方「解锁」复制本机 UDID 发给作者签 16 位码，再粘贴解锁。未解锁时面板内所有功能均不可用。" forKey:@"footerText"];
     [s addObject:g];
-    [s addObject:[self wxkbButton:[self _lkStatusTitle] action:@selector(_doUnlock:)]];
+    PSSpecifier *unlockBtn = [self wxkbButton:[self _lkStatusTitle] action:@selector(_doUnlock:)];
+    [unlockBtn setProperty:@YES forKey:@"wxkbUnlockEntry"];   // 解锁按钮永远可点（即便锁定）
+    [s addObject:unlockBtn];
 
     // ---- 总开关 ----
     g = [PSSpecifier groupSpecifierWithName:@"总开关"];
@@ -260,6 +250,10 @@ extern const char *lk_reason_cstr(lk_reason r);
     [s addObject:[self wxkbButton:@"下移 5pt" action:@selector(kbDown:)]];
     [s addObject:[self wxkbButton:@"重置为 0" action:@selector(kbReset:)]];
 
+    // 锁定态的「置灰 + 不可点」不在这里做——本 SDK 的 PSSpecifier 运行期无 setEnabled:
+    // （强行调用会 unrecognized selector 闪退）。改由基类 tableView:cellForRowAtIndexPath:
+    // 依据授权状态逐 cell 置灰并关交互（解锁按钮除外），对所有子页统一生效。
+
     _specifiers = s;
     return _specifiers;
 }
@@ -364,25 +358,22 @@ extern const char *lk_reason_cstr(lk_reason r);
 
 #pragma mark - 解锁 / 验证
 
-- (NSString *)_lkStatusTitle {
+// 仅 16 位码解锁（无母本自动解锁）。解锁状态由 license_kit 持久化（跨更新保留）。
+- (BOOL)_wxkbUnlocked {
     const lk_env *env = lk_get_env();
     lk_reason why = LK_R_NONE;
     long long exp = 0;
-    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) return @"解锁（母本已识别）";
-    if (lk_peek(env, &exp, &why) == LK_UNLOCKED) return @"解锁（已输码）";
-    return @"解锁（未授权）";
+    return lk_peek(env, &exp, &why) == LK_UNLOCKED;
+}
+
+- (NSString *)_lkStatusTitle {
+    if ([self _wxkbUnlocked]) return @"解锁（已授权）✓";
+    return @"解锁（未授权 · 点此解锁）";
 }
 
 - (void)_doUnlock:(PSSpecifier *)spec {
     (void)self; (void)spec;
     const lk_env *env = lk_get_env();
-    lk_reason why = LK_R_NONE;
-    long long exp = 0;
-    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) {
-        [self _toast:@"已通过母本（加密狗）自动解锁，无需输入解锁码。"];
-        [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
-        return;
-    }
     // 取出与验签同源的本机 UDID，供用户复制后发给作者签码
     char udidBuf[160];
     NSString *udid = @"";
@@ -407,6 +398,7 @@ extern const char *lk_reason_cstr(lk_reason r);
     }]];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"解锁" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
+        (void)act;
         UITextField *tf = a.textFields.firstObject;
         NSString *code = [[tf text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         if (code.length == 0) return;
@@ -414,6 +406,7 @@ extern const char *lk_reason_cstr(lk_reason r);
         lk_status st = lk_submit(env, [code UTF8String], &w);
         if (st == LK_UNLOCKED) [self _toast:@"解锁成功"];
         else [self _toast:[NSString stringWithFormat:@"解锁失败：%s", lk_reason_cstr(w)]];
+        _specifiers = nil;   // 重新计算「锁定」状态，解锁后所有功能开放
         [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
     }]];
     [self presentViewController:a animated:YES completion:nil];

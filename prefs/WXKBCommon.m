@@ -1,6 +1,16 @@
 // WXKBCommon.m — 偏好面板公共基类与读写工具
 #import "WXKBCommon.h"
+#import "WXKBInlineGridCell.h"   // 声明 setWxkbEnabled:，供 tableView:cellForRowAtIndexPath: 同步锁定态
+#import "lk.h"
 #import <objc/runtime.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+extern const lk_env *lk_get_env(void);
+#ifdef __cplusplus
+}
+#endif
 
 static NSUserDefaults *WXKBDefaults(void) {
     static NSUserDefaults *d = nil;
@@ -278,6 +288,47 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     if ([hex isKindOfClass:[NSString class]] && hex.length) {
         cell.imageView.image = WXKBSwatch(WXKBColorFromHex(hex), 29);
     }
+
+    // —— 锁定态置灰：未授权时，除「解锁」按钮外所有功能 cell 一律变灰且不可交互 ——
+    // 关键：本 SDK 的 PSSpecifier 运行期根本没有 setEnabled:/isEnabled（强调用会
+    // unrecognized selector 闪退），故绕开 specifier，直接在 cell 层做禁用。
+    BOOL isUnlock = [[sp propertyForKey:@"wxkbUnlockEntry"] boolValue];
+    BOOL licensed = NO;
+    {
+        const lk_env *env = lk_get_env();
+        if (env) {
+            long long exp = 0; lk_reason why = LK_R_NONE;
+            if (lk_peek(env, &exp, &why) == LK_UNLOCKED) licensed = YES;
+        }
+    }
+    if (!licensed && !isUnlock) {
+        cell.userInteractionEnabled = NO;                       // 整行不可选/不可点
+        if (cell.textLabel)       cell.textLabel.enabled = NO;  // 文字转灰
+        if (cell.detailTextLabel) cell.detailTextLabel.enabled = NO;
+        if (cell.imageView)       cell.imageView.alpha = 0.4;
+        for (UIView *v in cell.contentView.subviews) {          // 开关/滑块等子控件禁用+变灰
+            if ([v isKindOfClass:[UIControl class]]) { ((UIControl *)v).enabled = NO; v.alpha = 0.4; }
+        }
+    } else {
+        cell.userInteractionEnabled = YES;
+        if (cell.textLabel)       cell.textLabel.enabled = YES;
+        if (cell.detailTextLabel) cell.detailTextLabel.enabled = YES;
+        if (cell.imageView)       cell.imageView.alpha = 1.0;
+        for (UIView *v in cell.contentView.subviews) {
+            if ([v isKindOfClass:[UIControl class]]) { ((UIControl *)v).enabled = YES; v.alpha = 1.0; }
+        }
+    }
+
+    // 内联网格 cell：把锁定态透传给 cell，使其整格按钮置灰、不可点（解锁后恢复）。
+    // 直接用 cellClass 判断，避免引入头文件依赖；cell 此处类型是 UITableViewCell*，
+    // 转发前转 id 以绕过编译期 selector 检查（respondsToSelector 已保护）。
+    id cellObj = cell;
+    Class gridCls = [sp propertyForKey:@"cellClass"];
+    if (gridCls && [cellObj isKindOfClass:gridCls] &&
+        [cellObj respondsToSelector:@selector(setWxkbEnabled:)]) {
+        [cellObj setWxkbEnabled:(licensed || isUnlock)];
+    }
+
     return cell;
 }
 
@@ -422,8 +473,29 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     [sp setProperty:colors forKey:@"wxkbGridColors"];
     [sp setProperty:@(cols) forKey:@"wxkbGridColumns"];
     [sp setProperty:mode forKey:@"wxkbGridMode"];
-    // 紧凑：单行横向滑动条，高度压到一行，省空间（主题 32 个也能一屏扫到）
-    [sp setProperty:@(56.0) forKey:@"wxkbGridHeight"];
+    // 换行布局：按屏幕可用宽度估算行数，cell 高 = 行数 × chip高(40) + 间距与内边距。
+    // 宽度/高度公式必须与 WXKBInlineGridCell layoutSubviews 保持一致（chip 固定 40pt 高，
+    // 两侧都用 padX=12 / gapX=8 / gapY=8）。可用宽度取偏保守值（屏宽-56），确保估算行数
+    // ≥ 实际行数，不会裁掉最后一行；cell 侧另有 clipsToBounds 兜底。
+    CGFloat screenW = (CGFloat)[UIScreen mainScreen].bounds.size.width;
+    CGFloat avail = screenW - 56.0;            // 预留左右内边距（偏保守）
+    CGFloat padX = 12.0, padY = 8.0, gapX = 8.0, gapY = 8.0, chipH = 40.0;
+    CGFloat x = padX;
+    NSInteger rows = 1;
+    for (NSUInteger i = 0; i < titles.count; i++) {
+        NSString *t = [titles[i] isKindOfClass:[NSString class]] ? titles[i] : @"";
+        CGFloat w;
+        if ([mode isEqualToString:@"theme"]) {
+            w = 74.0;
+        } else {
+            CGSize s = [t sizeWithAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:12]}];
+            w = MAX(48.0, s.width + 26.0);
+        }
+        if (x + w > avail && x > padX) { x = padX; rows++; }
+        x += w + gapX;
+    }
+    CGFloat gridH = padY * 2.0 + rows * (chipH + gapY) - gapY + 2.0;   // +2 余量
+    [sp setProperty:@(gridH) forKey:@"wxkbGridHeight"];
     return sp;
 }
 

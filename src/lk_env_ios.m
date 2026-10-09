@@ -14,33 +14,104 @@
 
 #pragma mark - UDID（与母本 locsim_gen 同源）
 
-static NSString *__attribute__((noinline)) _UD(void) {
-    static NSString *uid = nil;
-    static dispatch_once_t o;
-    dispatch_once(&o, ^{
+/* 跨进程共享 UDID 缓存文件：解锁时（设置面板进程，MGCopyAnswer 能拿到真 UDID）把真 UDID
+ * 落盘；键盘扩展等 MGCopyAnswer 取不到真 UDID 的进程直接读这份缓存，保证「签码用的 UDID」
+ * 与「运行时验签用的 UDID」是同一个。
+ *
+ * 为什么必须有它：解锁码是用「解锁那一刻 device_id 拿到的 UDID」签的；但运行时（尤其键盘
+ * 扩展沙盒，以及切后台回前台后的面板）MGCopyAnswer 往往取不到真 UDID、回退成 "unknown"，
+ * 于是运行时拿 "unknown" 去验「绑了真 UDID 的码」→ 验签失败 → lk_peek 返回 LK_LOCKED →
+ * 整插件被误判未授权。表现正是用户报的两个 bug：键帽/形状在键盘上不生效（WXKBApplyCorner
+ * 被门禁跳过）、切后台回面板整张表置灰且只能点「解锁」按钮。
+ * 落盘缓存让所有进程都复用签码时的那个真 UDID，从根上消除跨进程/跨时刻的 UDID 不一致。 */
+// 与 Tweak.xm 的 WXKBJbrootPath 同源：从本 dylib 路径反推 jbroot 前缀。
+// 键盘扩展沙盒只能可靠读 jbroot 下的真实路径（frida 实测），license/udid 这类
+// 共享文件也必须走 jbroot 路径，否则键盘进程读不到面板写的解锁码 / 真 UDID。
+static NSString *__wxkbJbroot(void) {
+    static NSString *jb = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        Dl_info info;
+        if (dladdr((const void *)&__wxkbJbroot, &info) && info.dli_fname) {
+            NSString *p = [NSString stringWithUTF8String:info.dli_fname];
+            NSRange r = [p rangeOfString:@"/usr/lib/TweakInject"];
+            if (r.location != NSNotFound) jb = [p substringToIndex:r.location];
+        }
+    });
+    return jb;
+}
+
+static NSString *__udidCacheFile(void) {
+    NSString *jb = __wxkbJbroot();
+    NSMutableArray *cands = [NSMutableArray array];
+    if (jb.length) [cands addObject:[jb stringByAppendingString:
+        @"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.udid"]];
+    [cands addObjectsFromArray:@[
+        @"/var/jb/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.udid",
+        @"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.udid",
+    ]];
+    for (NSString *p in cands) {
+        if ([[NSFileManager defaultManager] fileExistsAtPath:p]) return p;
+    }
+    return cands.lastObject;
+}
+
+static void _wxkbCacheUDID(NSString *udid) {
+    if (!udid.length || [udid isEqualToString:@"unknown"]) return;
+    [udid writeToFile:__udidCacheFile() atomically:NO encoding:NSUTF8StringEncoding error:nil];
+}
+
+static NSString *__realUDID = nil;     // 本进程经 MGCopyAnswer 拿到的真 UDID（缓存，避免反复 dlopen）
+static BOOL __realUDIDTried = NO;
+
+static NSString *__attribute__((noinline)) _wxkbRealUDID(void) {
+    if (!__realUDIDTried) {
+        __realUDIDTried = YES;
         void *h = dlopen("/System/Library/PrivateFrameworks/"
                          "MobileKeyBag.framework/MobileKeyBag", RTLD_LAZY);
         if (h) {
             NSString *(*mg)(NSString *) = dlsym(h, "MGCopyAnswer");
-            if (mg) uid = mg(@"UniqueDeviceID");
-        }
-        if (!uid) {
-            id dev = [UIDevice currentDevice];
-            SEL s = NSSelectorFromString(@"uniqueIdentifier");
-            if ([dev respondsToSelector:s]) {
-                IMP imp = [dev methodForSelector:s];
-                uid = ((id (*)(id, SEL))imp)(dev, s);
+            if (mg) {
+                NSString *u = mg(@"UniqueDeviceID");
+                if (u.length && ![u isEqualToString:@"unknown"]) {
+                    __realUDID = u;
+                    _wxkbCacheUDID(u);   // 落盘，供键盘扩展复用
+                }
             }
         }
-        if (!uid) uid = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
-        if (!uid) uid = @"unknown";
-    });
-    return uid;
+    }
+    return __realUDID;
+}
+
+static NSString *__attribute__((noinline)) _wxkbFallbackUDID(void) {
+    NSString *ud = nil;
+    id dev = [UIDevice currentDevice];
+    SEL s = NSSelectorFromString(@"uniqueIdentifier");
+    if ([dev respondsToSelector:s]) {
+        IMP imp = [dev methodForSelector:s];
+        ud = ((id (*)(id, SEL))imp)(dev, s);
+    }
+    if (!ud) ud = [[dev identifierForVendor] UUIDString];
+    if (!ud) ud = @"unknown";
+    return ud;
 }
 
 static int my_device_id(char *buf, int cap) {
-    NSString *ud = _UD();
-    if (!ud || !ud.length) return -1;
+    NSString *ud = nil;
+    int src = 0;                                  // 1=本进程真值 2=落盘缓存 3=兜底
+    NSString *real = _wxkbRealUDID();            // 优先：本进程能拿到真 UDID（设置面板）
+    if (real.length) { ud = real; src = 1; }
+    if (!ud) {                                    // 拿不到：读落盘缓存（签码时的真 UDID）
+        ud = [NSString stringWithContentsOfFile:__udidCacheFile()
+                                       encoding:NSUTF8StringEncoding error:nil];
+        if (!ud.length || [ud isEqualToString:@"unknown"]) ud = nil;
+        else src = 2;
+    }
+    if (!ud) { ud = _wxkbFallbackUDID(); src = 3; }  // 仍没有：identifierForVendor / unknown
+    if (!ud || !ud.length) ud = @"unknown";
+    // 诊断日志（无 PII，只报来源与是否退化成 unknown，便于定位键盘扩展读不到真 UDID）
+    NSLog(@"[WXKB-lic] device_id src=%d isUnknown=%d cachePath=%@",
+          src, [ud isEqualToString:@"unknown"] ? 1 : 0, __udidCacheFile());
     const char *c = [ud UTF8String];
     int n = (int)strlen(c);
     if (n >= cap) n = cap - 1;
@@ -53,35 +124,11 @@ static int my_device_id(char *buf, int cap) {
 
 static NSString *__suite(void) { return @"com.yzdmm.wxkbtoolbar10.license"; }
 
-// roothide 的 jbroot：从本文件编译进的 dylib/bundle 路径反推（…/.jbroot-XXXX/usr/lib/TweakInject/…）。
-// 关键：键盘扩展是沙盒进程，直接读 /var/mobile/… 会被沙盒挡掉，而 /var/jb/… 在 roothide 下
-// 并不以这个名字存在 —— 于是键盘里读不到解锁文件，lk_master_verify 返回未授权，
-// 导致整个插件在「真实键盘」上被 WXKBIsLicensed() 闸刀静默关掉（面板预览却正常）。
-// 反推 jbroot 前缀后，键盘经 jbroot 挂载点能读到真实 /var/mobile/… 文件，授权才通过。
-// 面板（PreferenceBundle）的 dylib 路径不含 /usr/lib/TweakInject，jb 为 nil，自动回退原逻辑，不受影响。
-static NSString *__jbroot(void) {
-    static NSString *jb = nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        Dl_info info;
-        if (dladdr((const void *)&__jbroot, &info) && info.dli_fname) {
-            NSString *p = [NSString stringWithUTF8String:info.dli_fname];
-            NSRange r = [p rangeOfString:@"/usr/lib/TweakInject"];
-            if (r.location != NSNotFound) {
-                jb = [p substringToIndex:r.location];
-            }
-        }
-    });
-    return jb;
-}
-
 static NSString *__licFile(void) {
-    NSString *jb = __jbroot();
+    NSString *jb = __wxkbJbroot();
     NSMutableArray *cands = [NSMutableArray array];
-    if (jb.length) {
-        [cands addObject:[jb stringByAppendingString:
-            @"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.license.plist"]];
-    }
+    if (jb.length) [cands addObject:[jb stringByAppendingString:
+        @"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.license.plist"]];
     [cands addObjectsFromArray:@[
         @"/var/jb/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.license.plist",
         @"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.license.plist",

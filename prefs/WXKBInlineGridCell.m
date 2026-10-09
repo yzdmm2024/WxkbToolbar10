@@ -1,7 +1,7 @@
 // WXKBInlineGridCell.m — 内联网格 cell
 //
 // 用法（由 WXKBBaseListController 的 wxkbGrid: / wxkbLetterGrid 构造）：
-//   wxkbGridMode = @"theme"  / @"select" → 单行「横向滑动选择条」（色块/文字 chip），高度很矮，省空间
+//   wxkbGridMode = @"theme"  / @"select" → 自动换行的 chip 色板/单选条（固定 chip 高 40pt）
 //   wxkbGridMode = @"letter"            → 26 字母键盘（纵向 3 排），点字母直接弹取色器
 // 点击选择类 → 直接写偏好 + 通知预览刷新；点击字母 → 让所属控制器弹 UIColorPickerViewController。
 #import "WXKBInlineGridCell.h"
@@ -17,6 +17,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
 
 @interface WXKBInlineGridCell ()
 @property (nonatomic, assign) BOOL built;
+@property (nonatomic, assign) BOOL wxkbEnabled;            // 锁定（未授权）时为 NO：整格置灰、按钮不可点
 @property (nonatomic, strong) NSMutableArray *flatItems;   // 所有 item（NSMutableDictionary）
 @property (nonatomic, strong) NSArray *layoutRows;         // NSArray<NSArray<item>>（字母键盘用）
 @property (nonatomic, assign) NSInteger cols;
@@ -31,9 +32,11 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
     if (self) {
         self.selectionStyle = UITableViewCellSelectionStyleNone;
         self.backgroundColor = [UIColor clearColor];
+        self.clipsToBounds = YES;   // 兜底：万一高度估算偏少，溢出行被裁掉而不是叠到下一节
         self.textLabel.hidden = YES;
         self.detailTextLabel.hidden = YES;
         self.contentView.userInteractionEnabled = YES;   // 保证内嵌控件能收触摸
+        _wxkbEnabled = YES;
         _flatItems = [NSMutableArray array];
         _cols = 0;
     }
@@ -128,26 +131,20 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
             [self.contentView addSubview:b];
         }
     } else {
-        _scrollView = [[UIScrollView alloc] initWithFrame:CGRectZero];
-        _scrollView.showsHorizontalScrollIndicator = NO;
-        _scrollView.showsVerticalScrollIndicator = NO;
-        _scrollView.directionalLockEnabled = YES;
-        _scrollView.userInteractionEnabled = YES;
-        // 刻意不使用 delaysContentTouches = NO。iOS 在 app 切后台时偶尔不会把
-        // touchesCancelled 正确派发给嵌套 scrollView，delaysContentTouches=NO 时更易让
-        // 手势卡在「追踪中」，导致切回前台后整行点不动/滑不动。保持默认（YES）更稳。
-        _scrollView.canCancelContentTouches = YES;
-        [self.contentView addSubview:_scrollView];
+        // 不再内嵌 UIScrollView：嵌套 scrollView 在 app 切后台回来时极易卡在手势追踪态，
+        // 导致整行点不动/滑不动（本设备在 2.5.7 仍复现）。改用「自动换行」布局，所有
+        // chip 直接 add 到 contentView，可点性与滚动无关，切后台回来永不卡。
         for (NSMutableDictionary *it in _flatItems) {
             UIButton *b = [self wxkbMakeButton:it mode:mode];
             [b addTarget:self action:@selector(selectTap:) forControlEvents:UIControlEventTouchUpInside];
             it[@"button"] = b;
-            [_scrollView addSubview:b];
+            [self.contentView addSubview:b];
         }
     }
 
     [self wxkbUpdateSelection];
     _built = YES;
+    [self wxkbApplyEnabledState];   // 应用当前锁定状态（构建完成后统一置灰/恢复）
 
     if ([mode isEqualToString:@"letter"]) {
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
@@ -226,19 +223,24 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
             y += rowH + gap;
         }
     } else {
-        CGFloat padY = 8.0, gap = 8.0;
-        CGFloat h = b.size.height - 2.0 * padY;
-        if (h < 20.0) h = 20.0;
-        CGFloat y = padY;
-        CGFloat x = 12.0;
+        // 自动换行（flow）布局：chip 高度【固定 40pt】，行数由实际宽度决定。
+        // ⚠️ chip 高度绝不能从 cell 高度推导——cell 高度本身是按「行数×chip高」估算的，
+        // 若每颗 chip 都取整格高，就变成 2.5.8 的巨型色块回归（32 主题 → 8 行估算高度
+        // 366pt → 每颗 chip 350pt 高，铺满整屏）。
+        CGFloat padX = 12.0, padY = 8.0, gapX = 8.0, gapY = 8.0;
+        CGFloat chipH = 40.0;
+        CGFloat maxX = b.size.width - padX;
+        CGFloat x = padX, y = padY;
         for (NSMutableDictionary *it in _flatItems) {
-            UIButton *bt = it[@"button"];
             CGFloat w = [self wxkbChipWidth:it mode:mode];
-            bt.frame = CGRectMake(x, y, w, h);
-            x += w + gap;
+            if (x + w > maxX && x > padX) {   // 当前行放不下 → 换行
+                x = padX;
+                y += chipH + gapY;
+            }
+            UIButton *bt = it[@"button"];
+            bt.frame = CGRectMake(x, y, w, chipH);
+            x += w + gapX;
         }
-        _scrollView.frame = b;
-        _scrollView.contentSize = CGSizeMake(x + 12.0 - gap, b.size.height);
     }
 }
 
@@ -313,28 +315,22 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
     }
 }
 
-// 前台恢复时调用：让嵌套 scrollView 的手势状态复位，避免「切后台回来整行点不动/滑不动」
-// （iOS 偶尔在 app 中断触摸时不派发 touchesCancelled，使 pan 手势卡在追踪态）。
-// 关键修复：单纯反复切 enabled 无法把「已开始/追踪中」的手势复位，
-// 必须先把它的 state 强制终态化（Ended），再重新 enable，才能真正解除卡死。
-- (void)wxkbResetScroll {
-    UIScrollView *sv = _scrollView;
-    if (!sv) return;
-    UIGestureRecognizer *pan = sv.panGestureRecognizer;
-    @try {
-        UIGestureRecognizerState st = pan.state;
-        if (st == UIGestureRecognizerStateBegan || st == UIGestureRecognizerStateChanged) {
-            // 强制结束卡住的手势，使 touch 重新能派发到按钮
-            [pan setValue:@(UIGestureRecognizerStateEnded) forKey:@"state"];
-        }
-    } @catch (NSException *e) { /* KVC 失败则忽略，走下面兜底 */ }
-    pan.enabled = NO;
-    pan.enabled = YES;
-    sv.scrollEnabled = NO;
-    sv.scrollEnabled = YES;
-    [sv setContentOffset:sv.contentOffset animated:NO];
-    [sv setNeedsLayout];
-    [sv layoutIfNeeded];
+// 未授权时整格置灰、按钮不可点。该 SDK 的 PSTableCell 不暴露 setEnabled:，框架也不会
+// 调它；故由基类 tableView:cellForRowAtIndexPath: 显式调用 setWxkbEnabled: 同步锁定态。
+// 注意：按钮置为不可交互后，hitTest 会自然跳过它们（锁定态下整格不可选）。
+- (void)setWxkbEnabled:(BOOL)enabled {
+    _wxkbEnabled = enabled;
+    [self wxkbApplyEnabledState];
+}
+
+- (void)wxkbApplyEnabledState {
+    CGFloat a = _wxkbEnabled ? 1.0 : 0.35;   // 锁定：半透明置灰
+    for (NSMutableDictionary *it in _flatItems) {
+        UIButton *b = it[@"button"];
+        if (!b) continue;
+        b.userInteractionEnabled = _wxkbEnabled;
+        b.alpha = a;
+    }
 }
 
 - (UIColor *)wxkbTextOn:(UIColor *)c {
