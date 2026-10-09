@@ -7,4 +7,5 @@
 #import "WXKBCommon.h"
 
 @interface WXKBOffsetSliderCell : PSTableCell
+- (void)wxkbSyncFromPrefs;   // 由 changed 通知的 C 回调调用，需对外可见
 @end
