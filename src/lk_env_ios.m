@@ -109,26 +109,28 @@ static NSString *__wxkbReadCachedUDID(void) {
     return nil;
 }
 
-static NSString *__realUDID = nil;     // 本进程经 MGCopyAnswer 拿到的真 UDID（缓存，避免反复 dlopen）
-static BOOL __realUDIDTried = NO;
+static NSString *__realUDID = nil;     // 本进程经 MGCopyAnswer 拿到的真 UDID（仅成功后才缓存）
 
+// 取本进程真 UDID。**只在成功时缓存**；失败不缓存、下次调用再试（不永久锁定为兜底值）。
+// 之前的版本用 __realUDIDTried 永久锁：一旦首次 MGCopyAnswer 因 dlopen 时序返回 nil，
+// 就永远回退成 identifierForVendor，与「解锁时绑定的真 UDID」不一致 → lk_peek 验签失败
+// → 面板被误判未授权 → 整表除「解锁」外全部禁用（正是「只能点一个按钮」的根因）。
 static NSString *__attribute__((noinline)) _wxkbRealUDID(void) {
-    if (!__realUDIDTried) {
-        __realUDIDTried = YES;
-        void *h = dlopen("/System/Library/PrivateFrameworks/"
-                         "MobileKeyBag.framework/MobileKeyBag", RTLD_LAZY);
-        if (h) {
-            NSString *(*mg)(NSString *) = dlsym(h, "MGCopyAnswer");
-            if (mg) {
-                NSString *u = mg(@"UniqueDeviceID");
-                if (u.length && ![u isEqualToString:@"unknown"]) {
-                    __realUDID = u;
-                    _wxkbCacheUDID(u);   // 落盘，供键盘扩展复用
-                }
+    if (__realUDID) return __realUDID;   // 已成功拿到，直接返回
+    void *h = dlopen("/System/Library/PrivateFrameworks/"
+                     "MobileKeyBag.framework/MobileKeyBag", RTLD_LAZY);
+    if (h) {
+        NSString *(*mg)(NSString *) = dlsym(h, "MGCopyAnswer");
+        if (mg) {
+            NSString *u = mg(@"UniqueDeviceID");
+            if (u.length && ![u isEqualToString:@"unknown"]) {
+                __realUDID = u;
+                _wxkbCacheUDID(u);   // 落盘 + CFPreferences，供键盘扩展复用（Bug A 修复）
+                return u;
             }
         }
     }
-    return __realUDID;
+    return nil;   // 失败：让调用方回退到共享 UDID / 兜底，且下次重试（不会永久锁死）
 }
 
 static NSString *__attribute__((noinline)) _wxkbFallbackUDID(void) {
@@ -186,6 +188,9 @@ static NSString *__licFile(void) {
     return cands.lastObject;
 }
 
+// 授权状态存储：回退到 2.5.14 原版实现（NSUserDefaults 共享域 + 文件兜底），不引入 CFPreferences
+// 干预 license 通道——避免任何与旧版存储不兼容导致「面板自己读不到已存解锁码 → 误锁」。
+// 跨进程 UDID 共享仍走独立的 [WXKB_PREFS_DOMAIN] 通道（见上方 _wxkbCacheUDID），与此处无关。
 static int my_store_read(int slot, char *buf, int cap) {
     if (!buf || cap <= 0) return -1;
     buf[0] = 0;
@@ -193,12 +198,8 @@ static int my_store_read(int slot, char *buf, int cap) {
     if (slot == LK_SLOT_FILE) {
         val = [NSString stringWithContentsOfFile:__licFile() encoding:NSUTF8StringEncoding error:nil];
     } else {
-        // 优先 CFPreferences（经 cfprefsd，跨进程最稳，与设置下发同通道）
-        val = __wxkbReadPrefString(__suite(), [NSString stringWithFormat:@"lk_slot_%d", slot]);
-        if (!val.length) {
-            NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__suite()];
-            val = d ? [d objectForKey:[NSString stringWithFormat:@"lk_slot_%d", slot]] : nil;
-        }
+        NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__suite()];
+        val = d ? [d objectForKey:[NSString stringWithFormat:@"lk_slot_%d", slot]] : nil;
     }
     if (!val || ![val isKindOfClass:[NSString class]] || !val.length) return -1;
     int n = (int)[val lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
@@ -213,8 +214,6 @@ static int my_store_write(int slot, const char *blob) {
     if (slot == LK_SLOT_FILE) {
         [s writeToFile:__licFile() atomically:NO encoding:NSUTF8StringEncoding error:nil];
     } else {
-        // 主通道 CFPreferences（跨进程必到），NSUserDefaults 作为兜底
-        __wxkbWritePrefString(__suite(), [NSString stringWithFormat:@"lk_slot_%d", slot], s);
         NSUserDefaults *d = [[NSUserDefaults alloc] initWithSuiteName:__suite()];
         if (blob) [d setObject:s forKey:[NSString stringWithFormat:@"lk_slot_%d", slot]];
         else      [d removeObjectForKey:[NSString stringWithFormat:@"lk_slot_%d", slot]];

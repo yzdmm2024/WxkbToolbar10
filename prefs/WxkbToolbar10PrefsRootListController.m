@@ -96,6 +96,16 @@ extern const char *lk_reason_cstr(lk_reason r);
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     [self wxkbUnstickScrollViews];   // 进入面板即复位手势，避免「进面板就点不动」
+    // 诊断：打印面板授权态（抓包定位「只能点按钮」是不是 licensed=NO 误锁）
+    {
+        const lk_env *env = lk_get_env();
+        if (env) {
+            long long exp = 0; lk_reason why = LK_R_NONE;
+            lk_status st = lk_peek(env, &exp, &why);
+            NSLog(@"[WXKB-panel] lk_peek=%d why=%d unlocked=%d",
+                  (int)st, (int)why, (st == LK_UNLOCKED) ? 1 : 0);
+        }
+    }
     if (_didPromptUnlock) return;
     if (![self _wxkbUnlocked]) {
         _didPromptUnlock = YES;
@@ -165,7 +175,7 @@ extern const char *lk_reason_cstr(lk_reason r);
 
     // ---- 关于本插件（版本号 + 反馈，置于最底部）----
     g = [PSSpecifier groupSpecifierWithName:@"关于本插件"];
-    [g setProperty:@"WxkbToolbar10 v2.5.16\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
+    [g setProperty:@"WxkbToolbar10 v2.5.17\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"复制作者邮箱" action:@selector(copyEmail:)]];
