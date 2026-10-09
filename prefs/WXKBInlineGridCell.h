@@ -3,4 +3,5 @@
 #import "WXKBCommon.h"
 
 @interface WXKBInlineGridCell : PSTableCell
+- (void)wxkbRefreshLetterColors;
 @end

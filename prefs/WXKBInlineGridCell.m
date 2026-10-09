@@ -73,7 +73,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
                 NSString *hex = WXKBLetterColor(li);
                 if (!hex.length) {
                     id v = WXKBGetPref(WXKB_KEY_LETTER_BG);
-                    hex = [v isKindOfClass:NSString class] ? v : WXKB_DEF_LETTER_BG;
+                    hex = [v isKindOfClass:[NSString class]] ? v : WXKB_DEF_LETTER_BG;
                 }
                 NSMutableDictionary *d = [NSMutableDictionary dictionary];
                 d[@"letter"] = @(li);
@@ -138,7 +138,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         if (isLetter) {
             [b setTitle:it[@"label"] forState:UIControlStateNormal];
             [b setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-            b.backgroundColor = WXKBColorFromHex([it[@"hex"] isKindOfClass:NSString class] ? it[@"hex"] : WXKB_DEF_LETTER_BG);
+            b.backgroundColor = WXKBColorFromHex([it[@"hex"] isKindOfClass:[NSString class]] ? it[@"hex"] : WXKB_DEF_LETTER_BG);
             [b addTarget:self action:@selector(letterTap:) forControlEvents:UIControlEventTouchUpInside];
         } else {
             [b setTitle:it[@"title"] forState:UIControlStateNormal];
@@ -260,7 +260,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
             NSString *hex = WXKBLetterColor(li);
             if (!hex.length) {
                 id v = WXKBGetPref(WXKB_KEY_LETTER_BG);
-                hex = [v isKindOfClass:NSString class] ? v : WXKB_DEF_LETTER_BG;
+                hex = [v isKindOfClass:[NSString class]] ? v : WXKB_DEF_LETTER_BG;
             }
             UIButton *b = it[@"button"];
             b.backgroundColor = WXKBColorFromHex(hex.length ? hex : WXKB_DEF_LETTER_BG);

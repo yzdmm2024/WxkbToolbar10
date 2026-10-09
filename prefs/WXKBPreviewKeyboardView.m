@@ -346,12 +346,11 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
         [row2 addObject:@{@"t":[r2 substringWithRange:NSMakeRange(c,1)],
                           @"k":@"L", @"i":@(19 + c), @"w":@1.0}];
     [row2 addObject:@{@"t":@"⌫", @"k":@"R", @"i":@(-1), @"w":@1.3}];
-    NSMutableArray *row3 = [NSMutableArray array];   // 123 ， 空格 。 ↩
+    NSMutableArray *row3 = [NSMutableArray array];   // 123 ， 空格 。 （已去除地球/语音/返回键）
     [row3 addObject:@{@"t":@"123", @"k":@"L", @"i":@(-1), @"w":@1.3}];
     [row3 addObject:@{@"t":@"，", @"k":@"R", @"i":@(-1), @"w":@1.0}];
     [row3 addObject:@{@"t":@"",   @"k":@"S", @"i":@(-1), @"w":@4.4}];
     [row3 addObject:@{@"t":@"。", @"k":@"R", @"i":@(-1), @"w":@1.0}];
-    [row3 addObject:@{@"t":@"↩", @"k":@"R", @"i":@(-1), @"w":@1.5}];
     NSArray *rows = @[row0, row1, row2, row3];
 
     CGFloat rowGapTotal = gap * 3;
