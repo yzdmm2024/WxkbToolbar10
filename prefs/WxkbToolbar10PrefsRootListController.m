@@ -1,7 +1,8 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
 #import "WXKBPreviewKeyboardView.h"
-#import <stdlib.h>
+#import <spawn.h>
+#import <sys/wait.h>
 
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
@@ -109,7 +110,14 @@
 // 键盘布局被 iOS 缓存进进程——只改返回值不够，必须清缓存（这正是 ClassicKeyboardXS
 // 看似「没生效」的真因：hook 写对了，但已开的 app 还在用旧布局）。
 - (void)wxkbClearKBCache:(id)sender {
-    int r = system("killall -9 TextInput 2>/dev/null");
+    // 用 posix_spawn 调 /usr/bin/killall（system() 在 iOS SDK 被标记 unavailable，编译不过）。
+    pid_t pid = 0;
+    const char *argv[] = {"/usr/bin/killall", "-9", "TextInput", NULL};
+    int r = posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)argv, NULL);
+    if (r == 0) {
+        int status = 0;
+        waitpid(pid, &status, 0);
+    }
     NSString *msg = (r == 0)
         ? @"已杀掉键盘守护进程，已开的 App 会自动重排键盘，紧凑设置立即生效。"
         : @"未找到 TextInput 守护进程（你的系统键盘可能运行在 App 进程内）。请直接杀掉并重开对应 App，或 Respring 后重试。";
