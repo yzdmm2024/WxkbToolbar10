@@ -44,6 +44,50 @@
     }
 
     [_previewView refresh];
+
+    // 切到别的 app 再回到设置：系统常把表视图滚动手势卡在「追踪/变化」态，
+    // 导致整张表（含皮肤/键帽选择）点不动。注册回到前台通知，自动复位一次。
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(wxkbRefreshPanel:)
+                                                 name:UIApplicationDidBecomeActiveNotification
+                                               object:nil];
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+// 兼容不同环境取表视图（与 viewDidLoad 同一套兜底）
+- (UITableView *)wxkbTableView {
+    UITableView *tv = nil;
+    if ([self respondsToSelector:@selector(tableView)]) tv = self.tableView;
+    if (!tv && [self respondsToSelector:@selector(table)]) tv = (UITableView *)self.table;
+    if (!tv) {
+        for (UIView *v in self.view.subviews) {
+            if ([v isKindOfClass:[UITableView class]]) { tv = (UITableView *)v; break; }
+        }
+    }
+    return tv;
+}
+
+// 复位表视图交互：这是「切 app 回前台整表点不动」的真正修复。
+// 1) 确保整张表可交互；2) 把可能卡在追踪态的 pan 手势强制置 Ended（否则它一直吞掉点击）；
+// 3) 重建 specifiers 让所有 cell 重新可点；4) 预览同步。
+- (void)wxkbRefreshPanel:(id)sender {
+    UITableView *tv = [self wxkbTableView];
+    if (tv) {
+        tv.userInteractionEnabled = YES;
+        UIGestureRecognizer *pan = tv.panGestureRecognizer;
+        if (pan && (pan.state == UIGestureRecognizerStateBegan ||
+                    pan.state == UIGestureRecognizerStateChanged ||
+                    pan.state == UIGestureRecognizerStatePossible)) {
+            @try { [pan setValue:@(UIGestureRecognizerStateEnded) forKey:@"state"]; }
+            @catch (NSException *e) {}
+        }
+    }
+    _specifiers = nil;
+    [self reloadSpecifiers];
+    [_previewView refresh];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -65,6 +109,8 @@
     [g setProperty:@"改动后收起键盘再弹出即可生效。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用增强" key:WXKB_KEY_ENABLED def:YES]];
+    // 逃生口：切 app 回前台整张表点不动时，点这里立即复位（详见 wxkbRefreshPanel:）
+    [s addObject:[self wxkbButton:@"刷新面板（卡住时点这里）" action:@selector(wxkbRefreshPanel:)]];
 
     // ---- 主题与皮肤（紧跟顶部预览，改主题立刻在预览看到）----
     g = [PSSpecifier groupSpecifierWithName:@"主题与皮肤"];
