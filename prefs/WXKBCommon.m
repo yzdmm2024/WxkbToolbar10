@@ -142,6 +142,71 @@ static UIImage *WXKBSwatch(UIColor *color, CGFloat size) {
     return img;
 }
 
+#pragma mark - 主题族色板（与 Tweak 的 kThemeFam 同源，共 32 套）
+
+const double WXKBThemeFam[32][4] = {
+    {   0,   0, 0.00, 0.00},   // 0 百度彩虹（原图，读皮肤图，不参与渐变）
+    {   0, 352, 0.88, 0.72},   // 1 彩虹
+    {   0, 352, 0.82, 0.88},   // 2 马卡龙
+    {  18,  54, 0.90, 0.86},   // 3 蜜桃
+    { 128, 190, 0.72, 0.85},   // 4 薄荷
+    { 240, 332, 0.72, 0.86},   // 5 暮紫
+    { 182, 250, 0.80, 0.82},   // 6 海蓝
+    { 336,  42, 0.90, 0.80},   // 7 落日
+    {  66, 160, 0.70, 0.84},   // 8 森系
+    { 140, 200, 0.85, 0.60},   // 9 极光
+    { 300, 360, 0.95, 0.70},   // 10 霓粉
+    { 205, 255, 0.95, 0.62},   // 11 电蓝
+    {  20,  50, 0.95, 0.62},   // 12 柑橘
+    {  52,  78, 0.90, 0.70},   // 13 柠檬
+    { 270, 320, 0.72, 0.66},   // 14 葡萄
+    { 338,  18, 0.55, 0.80},   // 15 玫瑰金
+    { 140, 170, 0.50, 0.80},   // 16 薄雾
+    { 190, 220, 0.65, 0.78},   // 17 天空
+    {   2,  26, 0.85, 0.72},   // 18 珊瑚
+    { 258, 292, 0.82, 0.64},   // 19 紫罗兰
+    {  82, 112, 0.85, 0.66},   // 20 青柠
+    { 200, 242, 0.88, 0.46},   // 21 深海
+    { 280, 332, 0.92, 0.56},   // 22 暗霓
+    {  30,  60, 0.90, 0.75},   // 23 暖阳
+    { 182, 212, 0.55, 0.86},   // 24 冰蓝
+    { 326, 358, 0.82, 0.62},   // 25 莓果
+    {  60,  92, 0.55, 0.66},   // 26 橄榄
+    {  28,  48, 0.32, 0.56},   // 27 钨丝
+    { 262, 330, 0.70, 0.74},   // 28 蒸汽波
+    { 150, 182, 0.82, 0.58},   // 29 翡翠
+    {  24,  46, 0.92, 0.68},   // 30 蜜橙
+    { 208, 240, 0.38, 0.80}    // 31 雾蓝
+};
+
+UIColor *WXKBFromHSL(double h, double s, double l) {
+    double C = (1.0 - fabs(2.0 * l - 1.0)) * s;
+    double hp = fmod(h, 360.0) / 60.0;
+    if (hp < 0) hp += 6.0;
+    double X = C * (1.0 - fabs(fmod(hp, 2.0) - 1.0));
+    double r = 0, g = 0, b = 0;
+    if      (hp < 1) { r = C; g = X; }
+    else if (hp < 2) { r = X; g = C; }
+    else if (hp < 3) { g = C; b = X; }
+    else if (hp < 4) { g = X; b = C; }
+    else if (hp < 5) { r = X; b = C; }
+    else             { r = C; b = X; }
+    double m = l - C / 2.0;
+    return [UIColor colorWithRed:r + m green:g + m blue:b + m alpha:1.0];
+}
+
+// 主题代表色（用于面板色板缩略）：0=原图给个紫粉代表；其余取渐变中段色
+UIColor *WXKBThemeSwatchColor(NSInteger theme) {
+    if (theme < 0 || theme > 31) return nil;
+    if (theme == 0) {
+        return WXKBFromHSL(300, 0.55, 0.72);
+    }
+    const double *f = WXKBThemeFam[theme];
+    double h0 = f[0], h1 = f[1], s = f[2], l = f[3];
+    if (h1 < h0) h1 += 360.0;
+    return WXKBFromHSL(h0 + (h1 - h0) * 0.5, s, l);
+}
+
 @implementation WXKBBaseListController
 
 + (void)wxkbNotifyChanged {
@@ -214,6 +279,15 @@ static UIImage *WXKBSwatch(UIColor *color, CGFloat size) {
         cell.imageView.image = WXKBSwatch(WXKBColorFromHex(hex), 29);
     }
     return cell;
+}
+
+#pragma mark - 行高（内联网格用）
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    PSSpecifier *sp = [self specifierAtIndexPath:indexPath];
+    NSNumber *h = [sp propertyForKey:@"wxkbGridHeight"];
+    if (h) return [h doubleValue];
+    return [super tableView:tableView heightForRowAtIndexPath:indexPath];
 }
 
 #pragma mark - Specifier 构造
@@ -333,6 +407,69 @@ static UIImage *WXKBSwatch(UIColor *color, CGFloat size) {
     [sp setProperty:@(min) forKey:@"min"];
     [sp setProperty:@(max) forKey:@"max"];
     return sp;
+}
+
+#pragma mark - 内联网格（替代跳二级页的单选 / 主题色板 / 26 字母键盘）
+
+- (PSSpecifier *)wxkbGrid:(NSString *)key titles:(NSArray *)titles values:(NSArray *)values
+                    colors:(NSArray *)colors columns:(NSInteger)cols mode:(NSString *)mode {
+    PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:@"" target:self set:nil get:nil
+                                                    detail:nil cell:PSTableCell edit:nil];
+    [sp setProperty:NSClassFromString(@"WXKBInlineGridCell") forKey:@"cellClass"];
+    [sp setProperty:key forKey:@"key"];
+    [sp setProperty:titles forKey:@"wxkbGridTitles"];
+    [sp setProperty:values forKey:@"wxkbGridValues"];
+    [sp setProperty:colors forKey:@"wxkbGridColors"];
+    [sp setProperty:@(cols) forKey:@"wxkbGridColumns"];
+    [sp setProperty:mode forKey:@"wxkbGridMode"];
+    NSInteger nRows = (titles.count + cols - 1) / cols;
+    CGFloat h = nRows * 46 + (nRows - 1) * 6 + 16;
+    [sp setProperty:@(h) forKey:@"wxkbGridHeight"];
+    return sp;
+}
+
+- (PSSpecifier *)wxkbLetterGrid {
+    PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:@"" target:self set:nil get:nil
+                                                    detail:nil cell:PSTableCell edit:nil];
+    [sp setProperty:NSClassFromString(@"WXKBInlineGridCell") forKey:@"cellClass"];
+    [sp setProperty:@"letter" forKey:@"wxkbGridMode"];
+    [sp setProperty:@[@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9],
+                       @[@10,@11,@12,@13,@14,@15,@16,@17,@18],
+                       @[@19,@20,@21,@22,@23,@24,@25]] forKey:@"wxkbGridRows"];
+    [sp setProperty:@(170) forKey:@"wxkbGridHeight"];
+    return sp;
+}
+
+#pragma mark - 直接弹系统取色器（消灭 3 秒空白）
+
+- (void)wxkbPresentColorForLetter:(NSInteger)idx title:(NSString *)title {
+    self.wxkbPendingLetterIndex = idx;
+    self.wxkbPendingKey = nil;
+    UIColorPickerViewController *p = [[UIColorPickerViewController alloc] init];
+    p.delegate = self;
+    p.supportsAlpha = YES;
+    NSString *hex = WXKBLetterColor(idx);
+    if (!hex.length) {
+        id v = WXKBGetPref(WXKB_KEY_LETTER_BG);
+        hex = [v isKindOfClass:[NSString class]] ? v : WXKB_DEF_LETTER_BG;
+    }
+    p.selectedColor = WXKBColorFromHex(hex.length ? hex : @"#FFFFFF");
+    if (title.length) p.title = title;
+    [self presentViewController:p animated:YES completion:nil];
+}
+
+- (void)colorPickerViewControllerDidSelectColor:(UIColorPickerViewController *)vc {
+    if (self.wxkbPendingKey.length) {
+        WXKBSetPref(self.wxkbPendingKey, WXKBHexFromColor(vc.selectedColor));
+    } else if (self.wxkbPendingLetterIndex >= 0) {
+        WXKBSetLetterColor(self.wxkbPendingLetterIndex, WXKBHexFromColor(vc.selectedColor));
+    }
+    [[self class] wxkbNotifyChanged];
+}
+
+- (void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)vc {
+    [self colorPickerViewControllerDidSelectColor:vc];
+    [vc dismissViewControllerAnimated:YES completion:nil];
 }
 
 @end

@@ -30,6 +30,7 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 BUNDLE_NAME = WxkbToolbar10Prefs
 WxkbToolbar10Prefs_FILES = \
 	prefs/WXKBCommon.m \
+	prefs/WXKBInlineGridCell.m \
 	prefs/WxkbToolbar10PrefsRootListController.m \
 	prefs/WXKBPickerControllers.m \
 	prefs/WXKBLetterColors.m \

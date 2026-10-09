@@ -65,41 +65,14 @@ static UIBezierPath *wxkbPVWaterDrop(CGSize s) {
     return p;
 }
 
-// HSL -> UIColor（与 Tweak 的 WXKBFromHSL 一致）
-static UIColor *wxkbPVFromHSL(double h, double s, double l) {
-    double C = (1.0 - fabs(2.0 * l - 1.0)) * s;
-    double hp = fmod(h, 360.0) / 60.0;
-    if (hp < 0) hp += 6.0;
-    double X = C * (1.0 - fabs(fmod(hp, 2.0) - 1.0));
-    double r = 0, g = 0, b = 0;
-    if      (hp < 1) { r = C; g = X; }
-    else if (hp < 2) { r = X; g = C; }
-    else if (hp < 3) { g = C; b = X; }
-    else if (hp < 4) { g = X; b = C; }
-    else if (hp < 5) { r = X; b = C; }
-    else             { r = C; b = X; }
-    double m = l - C / 2.0;
-    return [UIColor colorWithRed:r + m green:g + m blue:b + m alpha:1.0];
-}
-
-// 主题族（与 Tweak 的 kThemeFam 一致）
-static const double kWXKBPVThemeFam[9][4] = {
-    {   0,   0, 0.00, 0.00},   // 0 百度彩虹（读原图）
-    {   0, 352, 0.88, 0.72},   // 1 彩虹
-    {   0, 352, 0.82, 0.88},   // 2 马卡龙
-    {  18,  54, 0.90, 0.86},   // 3 蜜桃
-    { 128, 190, 0.72, 0.85},   // 4 薄荷
-    { 240, 332, 0.72, 0.86},   // 5 暮紫
-    { 182, 250, 0.80, 0.82},   // 6 海蓝
-    { 336,  42, 0.90, 0.80},   // 7 落日
-    {  66, 160, 0.70, 0.84},   // 8 森系
-};
+// HSL -> UIColor（与 Tweak 的 WXKBFromHSL 一致；共用 WXKBCommon 的实现）
+// 主题族（与 Tweak 的 kThemeFam 一致）：现由 WXKBCommon 的 WXKBThemeFam[32][4] 提供
 
 // 主题渐变取色：row（0~2 字母行，3 空格行），tx 水平进度 0~1
 static UIColor *wxkbPVThemeGradientColor(NSInteger gSkinTheme, NSInteger gSkinDir,
                                          NSInteger row, CGFloat tx) {
-    if (gSkinTheme < 1 || gSkinTheme > 8) return nil;
-    const double *f = kWXKBPVThemeFam[gSkinTheme];
+    if (gSkinTheme < 1 || gSkinTheme > 31) return nil;
+    const double *f = WXKBThemeFam[gSkinTheme];
     double h0 = f[0], h1 = f[1], s = f[2], l = f[3];
     if (h1 < h0) h1 += 360.0;
     double ty = row / 3.0;
@@ -110,7 +83,7 @@ static UIColor *wxkbPVThemeGradientColor(NSInteger gSkinTheme, NSInteger gSkinDi
         default: t = tx; break;
     }
     if (t < 0.0) t = 0.0; if (t > 1.0) t = 1.0;
-    return wxkbPVFromHSL(h0 + (h1 - h0) * t, s, l);
+    return WXKBFromHSL(h0 + (h1 - h0) * t, s, l);
 }
 
 // 百度彩虹原图（theme 0）的真实键帽色：从 bundled 的 key26a.png 条带采样。
@@ -373,13 +346,11 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
         [row2 addObject:@{@"t":[r2 substringWithRange:NSMakeRange(c,1)],
                           @"k":@"L", @"i":@(19 + c), @"w":@1.0}];
     [row2 addObject:@{@"t":@"⌫", @"k":@"R", @"i":@(-1), @"w":@1.3}];
-    NSMutableArray *row3 = [NSMutableArray array];   // 123 🌐 ， 空格 。 🎤 ↩
+    NSMutableArray *row3 = [NSMutableArray array];   // 123 ， 空格 。 ↩
     [row3 addObject:@{@"t":@"123", @"k":@"L", @"i":@(-1), @"w":@1.3}];
-    [row3 addObject:@{@"t":@"🌐", @"k":@"L", @"i":@(-1), @"w":@1.3}];
     [row3 addObject:@{@"t":@"，", @"k":@"R", @"i":@(-1), @"w":@1.0}];
     [row3 addObject:@{@"t":@"",   @"k":@"S", @"i":@(-1), @"w":@4.4}];
     [row3 addObject:@{@"t":@"。", @"k":@"R", @"i":@(-1), @"w":@1.0}];
-    [row3 addObject:@{@"t":@"🎤", @"k":@"R", @"i":@(-1), @"w":@1.3}];
     [row3 addObject:@{@"t":@"↩", @"k":@"R", @"i":@(-1), @"w":@1.5}];
     NSArray *rows = @[row0, row1, row2, row3];
 

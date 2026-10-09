@@ -421,7 +421,7 @@ static void WXKBReload(BOOL force) {
     gSkinName = ([sn isKindOfClass:[NSString class]] && [sn length]) ? sn : @"rainbow";
     id stt = d[WXKB_KEY_SKIN_THEME];
     NSInteger stv = stt ? [stt integerValue] : 0;
-    if (stv < 0 || stv > 8) stv = 0;
+    if (stv < 0 || stv > 31) stv = 0;
     gSkinTheme = stv;
     id sd = d[WXKB_KEY_SKIN_DIR];
     NSInteger sdv = sd ? [sd integerValue] : 0;
@@ -2058,7 +2058,7 @@ static UIColor *WXKBSkinCanvasColor(void) {
 // 每族 = (色相起, 色相止, 饱和度, 亮度)，色相在 [起,止] 上线性插值；
 // 方向决定渐变沿哪根轴走：横向=按列、竖向=按行、斜向=两者取中。
 // 相比 2.3.8 的「10 色板套色」，这里是连续渐变，横向才是真正的彩虹过渡。
-static const double kThemeFam[9][4] = {
+static const double kThemeFam[32][4] = {
     {   0,   0, 0.00, 0.00},   // 0 百度彩虹（读原图，不参与）
     {   0, 352, 0.88, 0.72},   // 1 彩虹
     {   0, 352, 0.82, 0.88},   // 2 马卡龙
@@ -2068,6 +2068,29 @@ static const double kThemeFam[9][4] = {
     { 182, 250, 0.80, 0.82},   // 6 海蓝
     { 336,  42, 0.90, 0.80},   // 7 落日
     {  66, 160, 0.70, 0.84},   // 8 森系
+    { 140, 200, 0.85, 0.60},   // 9 极光
+    { 300, 360, 0.95, 0.70},   // 10 霓粉
+    { 205, 255, 0.95, 0.62},   // 11 电蓝
+    {  20,  50, 0.95, 0.62},   // 12 柑橘
+    {  52,  78, 0.90, 0.70},   // 13 柠檬
+    { 270, 320, 0.72, 0.66},   // 14 葡萄
+    { 338,  18, 0.55, 0.80},   // 15 玫瑰金
+    { 140, 170, 0.50, 0.80},   // 16 薄雾
+    { 190, 220, 0.65, 0.78},   // 17 天空
+    {   2,  26, 0.85, 0.72},   // 18 珊瑚
+    { 258, 292, 0.82, 0.64},   // 19 紫罗兰
+    {  82, 112, 0.85, 0.66},   // 20 青柠
+    { 200, 242, 0.88, 0.46},   // 21 深海
+    { 280, 332, 0.92, 0.56},   // 22 暗霓
+    {  30,  60, 0.90, 0.75},   // 23 暖阳
+    { 182, 212, 0.55, 0.86},   // 24 冰蓝
+    { 326, 358, 0.82, 0.62},   // 25 莓果
+    {  60,  92, 0.55, 0.66},   // 26 橄榄
+    {  28,  48, 0.32, 0.56},   // 27 钨丝
+    { 262, 330, 0.70, 0.74},   // 28 蒸汽波
+    { 150, 182, 0.82, 0.58},   // 29 翡翠
+    {  24,  46, 0.92, 0.68},   // 30 蜜橙
+    { 208, 240, 0.38, 0.80}    // 31 雾蓝
 };
 
 // HSL → UIColor（色相 0~360，饱和/亮度 0~1）
@@ -2105,7 +2128,7 @@ static BOOL WXKBThemeRowCol(NSInteger slot, NSInteger *row, CGFloat *tx) {
 
 // 主题渐变取色：row 行号（0~2 字母行，3 空格行），tx 水平进度 0~1
 static UIColor *WXKBThemeGradientColor(NSInteger row, CGFloat tx) {
-    if (gSkinTheme < 1 || gSkinTheme > 8) return nil;
+    if (gSkinTheme < 1 || gSkinTheme > 31) return nil;
     const double *f = kThemeFam[gSkinTheme];
     double h0 = f[0], h1 = f[1], s = f[2], l = f[3];
     if (h1 < h0) h1 += 360.0;                 // 跨 0° 的族（落日）绕回

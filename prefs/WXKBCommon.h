@@ -13,6 +13,12 @@ NSArray<NSString *> *WXKBColorPresets(void);
 UIColor *WXKBColorFromHex(NSString *hex);
 NSString *WXKBHexFromColor(UIColor *color);
 
+// 主题族色板（预览 / 面板共用，与 Tweak 的 kThemeFam 同源）：
+// 0 = 百度彩虹（原图，不在渐变族里）；1..31 = 渐变族 {色相起, 色相止, 饱和, 亮度}
+extern const double WXKBThemeFam[32][4];
+UIColor *WXKBFromHSL(double h, double s, double l);
+UIColor *WXKBThemeSwatchColor(NSInteger theme);
+
 // 26 字母逐个配色的读写
 NSString *WXKBLetterColor(NSInteger index);
 void WXKBSetLetterColor(NSInteger index, NSString *hex);
@@ -37,5 +43,15 @@ void WXKBSetLetterColor(NSInteger index, NSString *hex);
 - (PSSpecifier *)wxkbLetterRow:(NSString *)letter index:(NSInteger)index;
 // 按钮行
 - (PSSpecifier *)wxkbButton:(NSString *)name action:(SEL)action;
+
+// 内联网格：把「单选 / 主题色板 / 26 字母键盘」直接画在一个 cell 里，不跳二级页
+- (PSSpecifier *)wxkbGrid:(NSString *)key titles:(NSArray *)titles values:(NSArray *)values
+                    colors:(NSArray *)colors columns:(NSInteger)cols mode:(NSString *)mode;
+- (PSSpecifier *)wxkbLetterGrid;
+
+// 直接弹出系统取色器（不走二级页，消除 3 秒空白）；用于 26 字母逐个上色
+@property (nonatomic, assign) NSInteger wxkbPendingLetterIndex;
+@property (nonatomic, copy) NSString *wxkbPendingKey;
+- (void)wxkbPresentColorForLetter:(NSInteger)idx title:(NSString *)title;
 
 @end

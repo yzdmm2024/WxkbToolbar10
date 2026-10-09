@@ -71,27 +71,33 @@
     [g setProperty:@"一键套用内置彩虹键盘，顶部预览实时跟随。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
-    [s addObject:[self wxkbChoice:@"主题族" key:WXKB_KEY_SKIN_THEME def:@0
-                           values:@[@0, @1, @2, @3, @4, @5, @6, @7, @8]
-                           titles:@[@"百度彩虹（原图）", @"彩虹", @"马卡龙", @"蜜桃", @"薄荷",
-                                    @"暮紫", @"海蓝", @"落日", @"森系"]]];
-    [s addObject:[self wxkbChoice:@"变色方向" key:WXKB_KEY_SKIN_DIR def:@0
-                           values:@[@0, @1, @2]
-                           titles:@[@"横向渐变（左右）", @"竖向渐变（上下）", @"斜向渐变（对角）"]]];
-    [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
-                           values:@[@0, @1, @2, @3]
-                           titles:@[@"白底", @"全透明", @"灰色", @"白50%"]]];
+
+    // 主题色板：一行 6 个，直接点选，哪个亮哪个就变（点主题自动开皮肤）
+    [s addObject:[self wxkbGrid:WXKB_KEY_SKIN_THEME
+                         titles:@[@"原图",@"彩虹",@"马卡龙",@"蜜桃",@"薄荷",@"暮紫",@"海蓝",@"落日",@"森系",
+                                  @"极光",@"霓粉",@"电蓝",@"柑橘",@"柠檬",@"葡萄",@"玫瑰金",@"薄雾",@"天空",
+                                  @"珊瑚",@"紫罗兰",@"青柠",@"深海",@"暗霓",@"暖阳",@"冰蓝",@"莓果",@"橄榄",@"钨丝",@"蒸汽波",@"翡翠",@"蜜橙",@"雾蓝"]
+                         values:@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@11,@12,@13,@14,@15,@16,@17,@18,@19,@20,@21,@22,@23,@24,@25,@26,@27,@28,@29,@30,@31]
+                         colors:nil columns:6 mode:@"theme"]];
+
+    // 变色方向 / 皮肤背景：内联单选，不再跳二级页
+    [s addObject:[self wxkbGrid:WXKB_KEY_SKIN_DIR
+                         titles:@[@"横向",@"竖向",@"斜向"] values:@[@0,@1,@2]
+                         colors:nil columns:6 mode:@"select"]];
+    [s addObject:[self wxkbGrid:WXKB_KEY_SKIN_BG
+                         titles:@[@"白底",@"透明",@"灰色",@"白50%"] values:@[@0,@1,@2,@3]
+                         colors:nil columns:6 mode:@"select"]];
 
     // ---- 键帽与形状 ----
     g = [PSSpecifier groupSpecifierWithName:@"键帽与形状"];
     [g setProperty:@"仅改按键外观，不影响键盘布局。" forKey:@"footerText"];
     [s addObject:g];
-    [s addObject:[self wxkbChoice:@"键帽风格" key:WXKB_KEY_CAP_STYLE def:@0
-                           values:@[@0, @1, @2, @3, @4, @5]
-                           titles:@[@"关闭", @"立体键帽", @"彩虹键盘帽", @"彩虹3D键帽", @"卡通手绘", @"霓虹"]]];
-    [s addObject:[self wxkbChoice:@"按键形状" key:WXKB_KEY_SHAPE def:@0
-                           values:@[@0, @1, @2, @3]
-                           titles:@[@"默认圆角", @"圆形", @"六边形", @"水珠"]]];
+    [s addObject:[self wxkbGrid:WXKB_KEY_CAP_STYLE
+                         titles:@[@"关闭",@"立体",@"彩虹帽",@"3D帽",@"卡通",@"霓虹"]
+                         values:@[@0,@1,@2,@3,@4,@5] colors:nil columns:6 mode:@"select"]];
+    [s addObject:[self wxkbGrid:WXKB_KEY_SHAPE
+                         titles:@[@"圆角",@"圆形",@"六边形",@"水珠"]
+                         values:@[@0,@1,@2,@3] colors:nil columns:6 mode:@"select"]];
     [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
                               min:0.0 max:22.0]];
 
@@ -101,9 +107,8 @@
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用自定义背景" key:WXKB_KEY_BG_ENABLED def:NO]];
     [s addObject:[self wxkbSwitch:@"整键盘透明" key:WXKB_KEY_TRANSPARENT def:NO]];
-    [s addObject:[self wxkbChoice:@"背景类型" key:WXKB_KEY_BG_MODE def:@1
-                           values:@[@1, @2]
-                           titles:@[@"纯色", @"图片"]]];
+    [s addObject:[self wxkbGrid:WXKB_KEY_BG_MODE
+                         titles:@[@"纯色",@"图片"] values:@[@1,@2] colors:nil columns:6 mode:@"select"]];
     [s addObject:[self wxkbColorRow:@"背景颜色" key:WXKB_KEY_BG_COLOR def:@"#1C1C1E"]];
     [s addObject:[self wxkbLink:@"背景图片" detailClass:@"WXKBPhotoListController"]];
     [s addObject:[self wxkbSlider:@"背景透明度" key:WXKB_KEY_BG_ALPHA def:1.0
@@ -131,14 +136,14 @@
 
     // ---- 字母键进阶 ----
     g = [PSSpecifier groupSpecifierWithName:@"字母键进阶"];
-    [g setProperty:@"字母 A→Z 连续渐变，或 26 字母逐个单独上色。" forKey:@"footerText"];
+    [g setProperty:@"字母 A→Z 连续渐变，或点下方字母逐个上色（点字母直接取色，无空白等待）。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用字母渐变" key:WXKB_KEY_GRAD_ENABLED def:NO]];
     [s addObject:[self wxkbColorRow:@"渐变起始色" key:WXKB_KEY_GRAD_FROM
                                  def:WXKB_DEF_GRAD_FROM]];
     [s addObject:[self wxkbColorRow:@"渐变结束色" key:WXKB_KEY_GRAD_TO
                                  def:WXKB_DEF_GRAD_TO]];
-    [s addObject:[self wxkbLink:@"26 字母逐个配色" detailClass:@"WXKBLetterColorController"]];
+    [s addObject:[self wxkbLetterGrid]];
 
     // ---- 配色预设 ----
     g = [PSSpecifier groupSpecifierWithName:@"配色预设"];
