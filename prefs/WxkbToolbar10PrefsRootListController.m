@@ -85,32 +85,29 @@
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
 
-    // 主题色板：一行 6 个，直接点选，哪个亮哪个就变（点主题自动开皮肤）
-    [s addObject:[self wxkbGrid:WXKB_KEY_SKIN_THEME
-                         titles:@[@"原图",@"彩虹",@"马卡龙",@"蜜桃",@"薄荷",@"暮紫",@"海蓝",@"落日",@"森系",
-                                  @"极光",@"霓粉",@"电蓝",@"柑橘",@"柠檬",@"葡萄",@"玫瑰金",@"薄雾",@"天空",
-                                  @"珊瑚",@"紫罗兰",@"青柠",@"深海",@"暗霓",@"暖阳",@"冰蓝",@"莓果",@"橄榄",@"钨丝",@"蒸汽波",@"翡翠",@"蜜橙",@"雾蓝"]
-                         values:@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@11,@12,@13,@14,@15,@16,@17,@18,@19,@20,@21,@22,@23,@24,@25,@26,@27,@28,@29,@30,@31]
-                         colors:nil columns:6 mode:@"theme"]];
+    // 主题色板：点进去逐个选（原生单选列表，不用自定义网格，避免吞触摸）
+    [s addObject:[self wxkbChoice:@"主题"
+                             key:WXKB_KEY_SKIN_THEME
+                             def:@0
+                           values:@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@11,@12,@13,@14,@15,@16,@17,@18,@19,@20,@21,@22,@23,@24,@25,@26,@27,@28,@29,@30,@31]
+                           titles:@[@"原图",@"彩虹",@"马卡龙",@"蜜桃",@"薄荷",@"暮紫",@"海蓝",@"落日",@"森系",
+                                    @"极光",@"霓粉",@"电蓝",@"柑橘",@"柠檬",@"葡萄",@"玫瑰金",@"薄雾",@"天空",
+                                    @"珊瑚",@"紫罗兰",@"青柠",@"深海",@"暗霓",@"暖阳",@"冰蓝",@"莓果",@"橄榄",@"钨丝",@"蒸汽波",@"翡翠",@"蜜橙",@"雾蓝"]]];
 
-    // 变色方向 / 皮肤背景：内联单选，不再跳二级页
-    [s addObject:[self wxkbGrid:WXKB_KEY_SKIN_DIR
-                         titles:@[@"横向",@"竖向",@"斜向"] values:@[@0,@1,@2]
-                         colors:nil columns:6 mode:@"select"]];
-    [s addObject:[self wxkbGrid:WXKB_KEY_SKIN_BG
-                         titles:@[@"白底",@"透明",@"灰色",@"白50%"] values:@[@0,@1,@2,@3]
-                         colors:nil columns:6 mode:@"select"]];
+    // 变色方向 / 皮肤背景：原生单选列表（点进去选，不用自定义网格）
+    [s addObject:[self wxkbChoice:@"变色方向" key:WXKB_KEY_SKIN_DIR def:@0
+                           values:@[@0,@1,@2] titles:@[@"横向",@"竖向",@"斜向"]]];
+    [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
+                           values:@[@0,@1,@2,@3] titles:@[@"白底",@"透明",@"灰色",@"白50%"]]];
 
     // ---- 键帽与形状 ----
     g = [PSSpecifier groupSpecifierWithName:@"键帽与形状"];
     [g setProperty:@"仅改按键外观，不影响键盘布局。" forKey:@"footerText"];
     [s addObject:g];
-    [s addObject:[self wxkbGrid:WXKB_KEY_CAP_STYLE
-                         titles:@[@"关闭",@"立体",@"彩虹帽",@"3D帽",@"卡通",@"霓虹"]
-                         values:@[@0,@1,@2,@3,@4,@5] colors:nil columns:6 mode:@"select"]];
-    [s addObject:[self wxkbGrid:WXKB_KEY_SHAPE
-                         titles:@[@"圆角",@"圆形",@"六边形",@"水珠"]
-                         values:@[@0,@1,@2,@3] colors:nil columns:6 mode:@"select"]];
+    [s addObject:[self wxkbChoice:@"键帽样式" key:WXKB_KEY_CAP_STYLE def:@0
+                           values:@[@0,@1,@2,@3,@4,@5] titles:@[@"关闭",@"立体",@"彩虹帽",@"3D帽",@"卡通",@"霓虹"]]];
+    [s addObject:[self wxkbChoice:@"键帽形状" key:WXKB_KEY_SHAPE def:@0
+                           values:@[@0,@1,@2,@3] titles:@[@"圆角",@"圆形",@"六边形",@"水珠"]]];
     [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
                               min:0.0 max:22.0]];
 
@@ -120,8 +117,8 @@
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用自定义背景" key:WXKB_KEY_BG_ENABLED def:NO]];
     [s addObject:[self wxkbSwitch:@"整键盘透明" key:WXKB_KEY_TRANSPARENT def:NO]];
-    [s addObject:[self wxkbGrid:WXKB_KEY_BG_MODE
-                         titles:@[@"纯色",@"图片"] values:@[@1,@2] colors:nil columns:6 mode:@"select"]];
+    [s addObject:[self wxkbChoice:@"背景模式" key:WXKB_KEY_BG_MODE def:@1
+                           values:@[@1,@2] titles:@[@"纯色",@"图片"]]];
     [s addObject:[self wxkbColorRow:@"背景颜色" key:WXKB_KEY_BG_COLOR def:@"#1C1C1E"]];
     [s addObject:[self wxkbLink:@"背景图片" detailClass:@"WXKBPhotoListController"]];
     [s addObject:[self wxkbSlider:@"背景透明度" key:WXKB_KEY_BG_ALPHA def:1.0
@@ -156,7 +153,8 @@
                                  def:WXKB_DEF_GRAD_FROM]];
     [s addObject:[self wxkbColorRow:@"渐变结束色" key:WXKB_KEY_GRAD_TO
                                  def:WXKB_DEF_GRAD_TO]];
-    [s addObject:[self wxkbLetterGrid]];
+    // 26 字母逐个上色：点进去进原生子页，逐行用系统取色器（不再用自定义网格）
+    [s addObject:[self wxkbLink:@"逐个字母上色…" detailClass:@"WXKBLetterListController"]];
 
     // ---- 配色预设 ----
     g = [PSSpecifier groupSpecifierWithName:@"配色预设"];

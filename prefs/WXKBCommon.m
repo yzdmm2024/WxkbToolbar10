@@ -331,6 +331,9 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     [sp setProperty:def forKey:@"default"];
     [sp setProperty:values forKey:@"values"];
     [sp setProperty:titles forKey:@"titles"];
+    // 系统 PSLinkListCell 靠 validValues/validTitles 在行右侧显示当前选中项
+    [sp setProperty:values forKey:@"validValues"];
+    [sp setProperty:titles forKey:@"validTitles"];
     return sp;
 }
 
@@ -406,36 +409,6 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     [sp setProperty:@(def) forKey:@"default"];
     [sp setProperty:@(min) forKey:@"min"];
     [sp setProperty:@(max) forKey:@"max"];
-    return sp;
-}
-
-#pragma mark - 内联网格（替代跳二级页的单选 / 主题色板 / 26 字母键盘）
-
-- (PSSpecifier *)wxkbGrid:(NSString *)key titles:(NSArray *)titles values:(NSArray *)values
-                    colors:(NSArray *)colors columns:(NSInteger)cols mode:(NSString *)mode {
-    PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:@"" target:self set:nil get:nil
-                                                    detail:nil cell:PSLinkCell edit:nil];
-    [sp setProperty:NSClassFromString(@"WXKBInlineGridCell") forKey:@"cellClass"];
-    [sp setProperty:key forKey:@"key"];
-    [sp setProperty:titles forKey:@"wxkbGridTitles"];
-    [sp setProperty:values forKey:@"wxkbGridValues"];
-    [sp setProperty:colors forKey:@"wxkbGridColors"];
-    [sp setProperty:@(cols) forKey:@"wxkbGridColumns"];
-    [sp setProperty:mode forKey:@"wxkbGridMode"];
-    // 紧凑：单行横向滑动条，高度压到一行，省空间（主题 32 个也能一屏扫到）
-    [sp setProperty:@(56.0) forKey:@"wxkbGridHeight"];
-    return sp;
-}
-
-- (PSSpecifier *)wxkbLetterGrid {
-    PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:@"" target:self set:nil get:nil
-                                                    detail:nil cell:PSLinkCell edit:nil];
-    [sp setProperty:NSClassFromString(@"WXKBInlineGridCell") forKey:@"cellClass"];
-    [sp setProperty:@"letter" forKey:@"wxkbGridMode"];
-    [sp setProperty:@[@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9],
-                       @[@10,@11,@12,@13,@14,@15,@16,@17,@18],
-                       @[@19,@20,@21,@22,@23,@24,@25]] forKey:@"wxkbGridRows"];
-    [sp setProperty:@(170) forKey:@"wxkbGridHeight"];
     return sp;
 }
 

@@ -44,11 +44,6 @@ void WXKBSetLetterColor(NSInteger index, NSString *hex);
 // 按钮行
 - (PSSpecifier *)wxkbButton:(NSString *)name action:(SEL)action;
 
-// 内联网格：把「单选 / 主题色板 / 26 字母键盘」直接画在一个 cell 里，不跳二级页
-- (PSSpecifier *)wxkbGrid:(NSString *)key titles:(NSArray *)titles values:(NSArray *)values
-                    colors:(NSArray *)colors columns:(NSInteger)cols mode:(NSString *)mode;
-- (PSSpecifier *)wxkbLetterGrid;
-
 // 直接弹出系统取色器（不走二级页，消除 3 秒空白）；用于 26 字母逐个上色
 @property (nonatomic, assign) NSInteger wxkbPendingLetterIndex;
 @property (nonatomic, copy) NSString *wxkbPendingKey;
