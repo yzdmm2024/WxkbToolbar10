@@ -422,9 +422,8 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     [sp setProperty:colors forKey:@"wxkbGridColors"];
     [sp setProperty:@(cols) forKey:@"wxkbGridColumns"];
     [sp setProperty:mode forKey:@"wxkbGridMode"];
-    NSInteger nRows = (titles.count + cols - 1) / cols;
-    CGFloat h = nRows * 46 + (nRows - 1) * 6 + 16;
-    [sp setProperty:@(h) forKey:@"wxkbGridHeight"];
+    // 紧凑：单行横向滑动条，高度压到一行，省空间（主题 32 个也能一屏扫到）
+    [sp setProperty:@(56.0) forKey:@"wxkbGridHeight"];
     return sp;
 }
 

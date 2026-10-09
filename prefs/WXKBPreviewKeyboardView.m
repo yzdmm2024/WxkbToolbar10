@@ -264,7 +264,7 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     if (sh < 0 || sh > 3) sh = 0; _gShape = sh;
     _gSkinEnabled = [d[WXKB_KEY_SKIN_ENABLED] boolValue];
     _gSkinTheme   = d[WXKB_KEY_SKIN_THEME] ? [d[WXKB_KEY_SKIN_THEME] integerValue] : 0;
-    if (_gSkinTheme < 0 || _gSkinTheme > 8) _gSkinTheme = 0;
+    if (_gSkinTheme < 0 || _gSkinTheme > 31) _gSkinTheme = 0;
     _gSkinDir     = d[WXKB_KEY_SKIN_DIR] ? [d[WXKB_KEY_SKIN_DIR] integerValue] : 0;
     if (_gSkinDir < 0 || _gSkinDir > 2) _gSkinDir = 0;
     _gSkinBg      = d[WXKB_KEY_SKIN_BG] ? [d[WXKB_KEY_SKIN_BG] integerValue] : 0;

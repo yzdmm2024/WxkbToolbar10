@@ -1,9 +1,8 @@
 // WXKBInlineGridCell.m — 内联网格 cell
 //
 // 用法（由 WXKBBaseListController 的 wxkbGrid: / wxkbLetterGrid 构造）：
-//   wxkbGridMode = @"theme"  → 32 主题色板（色块 + 名称，点击即选，自动开皮肤）
-//   wxkbGridMode = @"select" → 普通单选（文字 chip，统一列数）
-//   wxkbGridMode = @"letter" → 26 字母键盘（点击字母直接弹取色器）
+//   wxkbGridMode = @"theme"  / @"select" → 单行「横向滑动选择条」（色块/文字 chip），高度很矮，省空间
+//   wxkbGridMode = @"letter"            → 26 字母键盘（纵向 3 排），点字母直接弹取色器
 // 点击选择类 → 直接写偏好 + 通知预览刷新；点击字母 → 让所属控制器弹 UIColorPickerViewController。
 #import "WXKBInlineGridCell.h"
 
@@ -19,9 +18,10 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
 @interface WXKBInlineGridCell ()
 @property (nonatomic, assign) BOOL built;
 @property (nonatomic, strong) NSMutableArray *flatItems;   // 所有 item（NSMutableDictionary）
-@property (nonatomic, strong) NSArray *layoutRows;         // NSArray<NSArray<item>>
+@property (nonatomic, strong) NSArray *layoutRows;         // NSArray<NSArray<item>>（字母键盘用）
 @property (nonatomic, assign) NSInteger cols;
 @property (nonatomic, weak)   PSSpecifier *lastSpecifier;
+@property (nonatomic, strong) UIScrollView *scrollView;    // 横向滑动容器（select/theme 用）
 @end
 
 @implementation WXKBInlineGridCell
@@ -33,7 +33,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         self.backgroundColor = [UIColor clearColor];
         self.textLabel.hidden = YES;
         self.detailTextLabel.hidden = YES;
-        self.contentView.userInteractionEnabled = YES;   // 保证内嵌按钮能收触摸
+        self.contentView.userInteractionEnabled = YES;   // 保证内嵌控件能收触摸
         _flatItems = [NSMutableArray array];
         _cols = 0;
     }
@@ -52,6 +52,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         for (UIView *v in self.contentView.subviews) [v removeFromSuperview];
         [_flatItems removeAllObjects];
         _layoutRows = nil;
+        _scrollView = nil;
         _built = NO;
         _lastSpecifier = specifier;
     }
@@ -101,16 +102,9 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         }
     }
 
-    // 排版：select 按列数自动换行；letter 用显式行
-    NSMutableArray *layout = [NSMutableArray array];
-    if (_cols > 0) {
-        NSMutableArray *cur = [NSMutableArray array];
-        for (NSMutableDictionary *it in _flatItems) {
-            [cur addObject:it];
-            if ((NSInteger)cur.count == _cols) { [layout addObject:cur]; cur = [NSMutableArray array]; }
-        }
-        if (cur.count) [layout addObject:cur];
-    } else {
+    // 构造按钮
+    if ([mode isEqualToString:@"letter"]) {
+        NSMutableArray *layout = [NSMutableArray array];
         NSArray *rows = [sp propertyForKey:@"wxkbGridRows"];
         for (NSArray *row in rows) {
             NSMutableArray *r = [NSMutableArray array];
@@ -122,42 +116,26 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
             }
             [layout addObject:r];
         }
-    }
-    _layoutRows = layout;
-
-    // 生成按钮
-    for (NSMutableDictionary *it in _flatItems) {
-        UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
-        b.layer.cornerRadius = 8.0;
-        b.clipsToBounds = YES;
-        b.titleLabel.font = [UIFont systemFontOfSize:11];
-        b.titleLabel.adjustsFontSizeToFitWidth = YES;
-        b.titleLabel.minimumScaleFactor = 0.5;
-        b.titleLabel.textAlignment = NSTextAlignmentCenter;
-
-        BOOL isLetter = (it[@"letter"] != nil);
-        if (isLetter) {
-            [b setTitle:it[@"label"] forState:UIControlStateNormal];
-            [b setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
-            b.backgroundColor = WXKBColorFromHex([it[@"hex"] isKindOfClass:[NSString class]] ? it[@"hex"] : WXKB_DEF_LETTER_BG);
+        _layoutRows = layout;
+        for (NSMutableDictionary *it in _flatItems) {
+            UIButton *b = [self wxkbMakeButton:it mode:mode];
             [b addTarget:self action:@selector(letterTap:) forControlEvents:UIControlEventTouchUpInside];
-        } else {
-            [b setTitle:it[@"title"] forState:UIControlStateNormal];
-            if ([mode isEqualToString:@"theme"]) {
-                NSInteger tv = [it[@"value"] integerValue];
-                UIColor *c = WXKBThemeSwatchColor(tv);
-                b.backgroundColor = c ?: [UIColor lightGrayColor];
-                [b setTitleColor:[self wxkbTextOn:c] forState:UIControlStateNormal];
-            } else {
-                b.backgroundColor = [UIColor colorWithWhite:0.92 alpha:1.0];
-                [b setTitleColor:[UIColor darkGrayColor] forState:UIControlStateNormal];
-                b.layer.borderWidth = 1.0;
-                b.layer.borderColor = [UIColor colorWithWhite:0.80 alpha:1.0].CGColor;
-            }
-            [b addTarget:self action:@selector(selectTap:) forControlEvents:UIControlEventTouchUpInside];
+            it[@"button"] = b;
+            [self.contentView addSubview:b];
         }
-        it[@"button"] = b;
-        [self.contentView addSubview:b];
+    } else {
+        _scrollView = [[UIScrollView alloc] initWithFrame:CGRectZero];
+        _scrollView.showsHorizontalScrollIndicator = NO;
+        _scrollView.showsVerticalScrollIndicator = NO;
+        _scrollView.directionalLockEnabled = YES;
+        _scrollView.userInteractionEnabled = YES;
+        [self.contentView addSubview:_scrollView];
+        for (NSMutableDictionary *it in _flatItems) {
+            UIButton *b = [self wxkbMakeButton:it mode:mode];
+            [b addTarget:self action:@selector(selectTap:) forControlEvents:UIControlEventTouchUpInside];
+            it[@"button"] = b;
+            [_scrollView addSubview:b];
+        }
     }
 
     [self wxkbUpdateSelection];
@@ -172,43 +150,88 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
     }
 }
 
+- (UIButton *)wxkbMakeButton:(NSMutableDictionary *)it mode:(NSString *)mode {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+    b.layer.cornerRadius = 8.0;
+    b.clipsToBounds = YES;
+    b.titleLabel.font = [UIFont systemFontOfSize:12];
+    b.titleLabel.adjustsFontSizeToFitWidth = YES;
+    b.titleLabel.minimumScaleFactor = 0.5;
+    b.titleLabel.textAlignment = NSTextAlignmentCenter;
+    b.userInteractionEnabled = YES;
+
+    if (it[@"letter"]) {
+        [b setTitle:it[@"label"] forState:UIControlStateNormal];
+        [b setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+        b.backgroundColor = WXKBColorFromHex([it[@"hex"] isKindOfClass:[NSString class]] ? it[@"hex"] : WXKB_DEF_LETTER_BG);
+    } else {
+        [b setTitle:it[@"title"] forState:UIControlStateNormal];
+        if ([mode isEqualToString:@"theme"]) {
+            NSInteger tv = [it[@"value"] integerValue];
+            UIColor *c = WXKBThemeSwatchColor(tv);
+            b.backgroundColor = c ?: [UIColor lightGrayColor];
+            [b setTitleColor:[self wxkbTextOn:c] forState:UIControlStateNormal];
+        } else {
+            b.backgroundColor = [UIColor colorWithWhite:0.92 alpha:1.0];
+            [b setTitleColor:[UIColor darkGrayColor] forState:UIControlStateNormal];
+            b.layer.borderWidth = 1.0;
+            b.layer.borderColor = [UIColor colorWithWhite:0.80 alpha:1.0].CGColor;
+        }
+    }
+    return b;
+}
+
+- (CGFloat)wxkbChipWidth:(NSMutableDictionary *)it mode:(NSString *)mode {
+    if ([mode isEqualToString:@"theme"]) {
+        return 74.0;
+    }
+    NSString *t = it[@"title"] ?: @"";
+    CGSize s = [t sizeWithAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:12]}];
+    return MAX(48.0, s.width + 26.0);
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     if (!_built) return;
+    NSString *mode = [self.specifier propertyForKey:@"wxkbGridMode"] ?: @"select";
     CGRect b = self.contentView.bounds;
-    CGFloat padX = 12.0, padY = 8.0, gap = 6.0;
-    NSInteger nRows = _layoutRows.count;
-    if (nRows < 1) return;
-    CGFloat totalH = b.size.height - 2.0 * padY;
-    CGFloat rowH = (totalH - gap * (nRows - 1)) / (CGFloat)nRows;
-    if (rowH < 8.0) rowH = 8.0;
-    CGFloat y = padY;
-    for (NSArray *row in _layoutRows) {
-        NSInteger n = row.count;
-        CGFloat totalW = b.size.width - 2.0 * padX;
-        CGFloat bw = (totalW - gap * (n - 1)) / (CGFloat)n;
-        if (bw < 2.0) bw = 2.0;
-        CGFloat x = padX;
-        for (NSMutableDictionary *it in row) {
-            UIButton *b = it[@"button"];
-            b.frame = CGRectMake(x, y, bw, rowH);
-            x += bw + gap;
-        }
-        y += rowH + gap;
-    }
-}
 
-// 关键修复：PSTableCell 对 PSLinkCell 会接管整行触摸，导致 contentView 内的 UIButton
-// 收不到 TouchUpInside。这里让落在按钮矩形内的触摸优先交给按钮，其余区域回落到 cell。
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    for (UIView *sub in self.contentView.subviews) {
-        if (!sub.userInteractionEnabled || sub.hidden) continue;
-        CGPoint p = [sub convertPoint:point fromView:self];
-        if ([sub pointInside:p withEvent:event]) {
-            return sub;
+    if ([mode isEqualToString:@"letter"]) {
+        CGFloat padX = 12.0, padY = 8.0, gap = 6.0;
+        NSInteger nRows = _layoutRows.count;
+        if (nRows < 1) return;
+        CGFloat totalH = b.size.height - 2.0 * padY;
+        CGFloat rowH = (totalH - gap * (nRows - 1)) / (CGFloat)nRows;
+        if (rowH < 8.0) rowH = 8.0;
+        CGFloat y = padY;
+        for (NSArray *row in _layoutRows) {
+            NSInteger n = row.count;
+            CGFloat totalW = b.size.width - 2.0 * padX;
+            CGFloat bw = (totalW - gap * (n - 1)) / (CGFloat)n;
+            if (bw < 2.0) bw = 2.0;
+            CGFloat x = padX;
+            for (NSMutableDictionary *it in row) {
+                UIButton *bt = it[@"button"];
+                bt.frame = CGRectMake(x, y, bw, rowH);
+                x += bw + gap;
+            }
+            y += rowH + gap;
         }
+    } else {
+        CGFloat padY = 8.0, gap = 8.0;
+        CGFloat h = b.size.height - 2.0 * padY;
+        if (h < 20.0) h = 20.0;
+        CGFloat y = padY;
+        CGFloat x = 12.0;
+        for (NSMutableDictionary *it in _flatItems) {
+            UIButton *bt = it[@"button"];
+            CGFloat w = [self wxkbChipWidth:it mode:mode];
+            bt.frame = CGRectMake(x, y, w, h);
+            x += w + gap;
+        }
+        _scrollView.frame = b;
+        _scrollView.contentSize = CGSizeMake(x + 12.0 - gap, b.size.height);
     }
-    return [super hitTest:point withEvent:event];
 }
 
 - (void)wxkbUpdateSelection {
@@ -289,6 +312,19 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         return (lum > 0.62) ? [UIColor blackColor] : [UIColor whiteColor];
     }
     return [UIColor whiteColor];
+}
+
+// 关键修复：PSTableCell 对 PSLinkCell 会接管整行触摸，导致 contentView 内的控件
+// 收不到 TouchUpInside。这里让落在按钮/滚动容器内的触摸优先交给它们，其余回落到 cell。
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    for (UIView *sub in self.contentView.subviews) {
+        if (!sub.userInteractionEnabled || sub.hidden) continue;
+        CGPoint p = [sub convertPoint:point fromView:self];
+        if ([sub pointInside:p withEvent:event]) {
+            return sub;
+        }
+    }
+    return [super hitTest:point withEvent:event];
 }
 
 @end
