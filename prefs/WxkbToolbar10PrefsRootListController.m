@@ -66,12 +66,38 @@
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用增强" key:WXKB_KEY_ENABLED def:YES]];
 
+    // ---- 主题与皮肤（紧跟顶部预览，改主题立刻在预览看到）----
+    g = [PSSpecifier groupSpecifierWithName:@"主题与皮肤"];
+    [g setProperty:@"一键套用内置彩虹键盘，顶部预览实时跟随。" forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
+    [s addObject:[self wxkbChoice:@"主题族" key:WXKB_KEY_SKIN_THEME def:@0
+                           values:@[@0, @1, @2, @3, @4, @5, @6, @7, @8]
+                           titles:@[@"百度彩虹（原图）", @"彩虹", @"马卡龙", @"蜜桃", @"薄荷",
+                                    @"暮紫", @"海蓝", @"落日", @"森系"]]];
+    [s addObject:[self wxkbChoice:@"变色方向" key:WXKB_KEY_SKIN_DIR def:@0
+                           values:@[@0, @1, @2]
+                           titles:@[@"横向渐变（左右）", @"竖向渐变（上下）", @"斜向渐变（对角）"]]];
+    [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
+                           values:@[@0, @1, @2, @3]
+                           titles:@[@"白底", @"全透明", @"灰色", @"白50%"]]];
+
+    // ---- 键帽与形状 ----
+    g = [PSSpecifier groupSpecifierWithName:@"键帽与形状"];
+    [g setProperty:@"仅改按键外观，不影响键盘布局。" forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbChoice:@"键帽风格" key:WXKB_KEY_CAP_STYLE def:@0
+                           values:@[@0, @1, @2, @3, @4, @5]
+                           titles:@[@"关闭", @"立体键帽", @"彩虹键盘帽", @"彩虹3D键帽", @"卡通手绘", @"霓虹"]]];
+    [s addObject:[self wxkbChoice:@"按键形状" key:WXKB_KEY_SHAPE def:@0
+                           values:@[@0, @1, @2, @3]
+                           titles:@[@"默认圆角", @"圆形", @"六边形", @"水珠"]]];
+    [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
+                              min:0.0 max:22.0]];
+
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];
-    [g setProperty:@"「整键盘透明」会清掉键盘自带的背景层，透出后面的内容；"
-                  @"按键底色与按键文字色不受影响，默认仍是黑字。"
-                  @"「图片」请到「背景图片」里从相册选，会按键盘比例自动横向裁剪。"
-            forKey:@"footerText"];
+    [g setProperty:@"透明 / 纯色 / 图片三种背景，图片按键盘比例自动裁剪。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用自定义背景" key:WXKB_KEY_BG_ENABLED def:NO]];
     [s addObject:[self wxkbSwitch:@"整键盘透明" key:WXKB_KEY_TRANSPARENT def:NO]];
@@ -85,8 +111,7 @@
 
     // ---- 按键配色 ----
     g = [PSSpecifier groupSpecifierWithName:@"按键配色"];
-    [g setProperty:@"点每一行用系统颜色面板选色。五组底色分别对应：字母键 / 数字·符号键（数字符号面板中间的主键）/ 左侧功能键（大小写·数字·符号）/ 右侧功能键（删除·中英切换·发送）/ 空格。"
-            forKey:@"footerText"];
+    [g setProperty:@"精细调节五组按键底色与文字色（需开启「启用自定义配色」）。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用自定义配色" key:WXKB_KEY_KEY_ENABLED def:NO]];
     [s addObject:[self wxkbColorRow:@"字母键底色" key:WXKB_KEY_LETTER_BG
@@ -104,32 +129,9 @@
     [s addObject:[self wxkbColorRow:@"按下高亮色" key:WXKB_KEY_KEY_HIGHLIGHT
                                  def:WXKB_DEF_HIGHLIGHT]];
 
-    // ---- 皮肤（内置）----
-    g = [PSSpecifier groupSpecifierWithName:@"皮肤（内置）"];
-    [g setProperty:@"开启后把键盘渲染成内置皮肤。"
-                  @"「主题族」= 百度彩虹（原图取色）/ 彩虹 / 马卡龙 / 蜜桃 / 薄荷 / 暮紫 / 海蓝 / 落日 / 森系，"
-                  @"后八套是内置配套主题，色相按方向做连续渐变，选了即用，不依赖皮肤图。"
-                  @"「变色方向」= 横向（左右渐变）/ 竖向（上下渐变）/ 斜向（对角）。"
-                  @"「皮肤背景」单独控制键盘底色（白底/全透明/灰色/白50%）。"
-                  @"关闭总开关则恢复上方普通按键配色。"
-            forKey:@"footerText"];
-    [s addObject:g];
-    [s addObject:[self wxkbSwitch:@"启用彩虹按键皮肤" key:WXKB_KEY_SKIN_ENABLED def:NO]];
-    [s addObject:[self wxkbChoice:@"主题族" key:WXKB_KEY_SKIN_THEME def:@0
-                           values:@[@0, @1, @2, @3, @4, @5, @6, @7, @8]
-                           titles:@[@"百度彩虹（原图）", @"彩虹", @"马卡龙", @"蜜桃", @"薄荷",
-                                    @"暮紫", @"海蓝", @"落日", @"森系"]]];
-    [s addObject:[self wxkbChoice:@"变色方向" key:WXKB_KEY_SKIN_DIR def:@0
-                           values:@[@0, @1, @2]
-                           titles:@[@"横向渐变（左右）", @"竖向渐变（上下）", @"斜向渐变（对角）"]]];
-    [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
-                           values:@[@0, @1, @2, @3]
-                           titles:@[@"白底", @"全透明", @"灰色", @"白50%"]]];
-
-    // ---- 字母渐变 / 逐个 ----
+    // ---- 字母键进阶 ----
     g = [PSSpecifier groupSpecifierWithName:@"字母键进阶"];
-    [g setProperty:@"字母键支持 A→Z 渐变，以及 26 字母逐个单独上色。"
-            forKey:@"footerText"];
+    [g setProperty:@"字母 A→Z 连续渐变，或 26 字母逐个单独上色。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbSwitch:@"启用字母渐变" key:WXKB_KEY_GRAD_ENABLED def:NO]];
     [s addObject:[self wxkbColorRow:@"渐变起始色" key:WXKB_KEY_GRAD_FROM
@@ -139,9 +141,8 @@
     [s addObject:[self wxkbLink:@"26 字母逐个配色" detailClass:@"WXKBLetterColorController"]];
 
     // ---- 配色预设 ----
-    g = [PSSpecifier groupSpecifierWithName:@"配色预设（一键套用）"];
-    [g setProperty:@"点一下即套用整套配色，之后仍可在上方逐项微调。开启「启用自定义配色」后预设才会显示。"
-            forKey:@"footerText"];
+    g = [PSSpecifier groupSpecifierWithName:@"配色预设"];
+    [g setProperty:@"点一下即套用整套配色，之后仍可在「按键配色」里微调。" forKey:@"footerText"];
     [s addObject:g];
     for (NSString *nm in @[@"极光", @"莫兰迪", @"暗夜", @"清新"]) {
         PSSpecifier *b = [self wxkbButton:[NSString stringWithFormat:@"应用「%@」", nm]
@@ -150,35 +151,16 @@
         [s addObject:b];
     }
 
-    // ---- 我的主题（存档 / 切换）----
-    g = [PSSpecifier groupSpecifierWithName:@"我的主题（存档 / 切换）"];
-    [g setProperty:@"把当前整套外观（背景 / 按键配色 / 皮肤 / 键帽 / 字母渐变 …）"
-                  @"存成具名主题，随时一键套用。顶部的预览会实时跟着你的改动变。"
-            forKey:@"footerText"];
+    // ---- 我的主题 ----
+    g = [PSSpecifier groupSpecifierWithName:@"我的主题"];
+    [g setProperty:@"把当前整套外观存档，随时一键套用，顶部预览实时跟随。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbLink:@"管理我的主题…" detailClass:@"WXKBThemeProfilesController"]];
-
-    // ---- 按键形状 ----
-    g = [PSSpecifier groupSpecifierWithName:@"按键形状 / 键帽风格"];
-    [g setProperty:@"「默认圆角」由下方滑块决定；「圆形 / 六边形 / 水珠」会忽略圆角滑块，直接把按键裁成对应形状。"
-                  @"「键帽风格」单选：关闭 / 立体键帽（电脑键盘风）/ 彩虹键盘帽（柔和凸起）/ 彩虹3D键帽（百度同款，粉彩+3D深度）/ 卡通手绘（大圆角+柔和弧面+浮起阴影）/ 霓虹（深色+发光边缘）。"
-                  @"开启皮肤时默认 = 彩虹3D键帽。以上都只改视觉，不影响键盘布局。"
-            forKey:@"footerText"];
-    [s addObject:g];
-    [s addObject:[self wxkbChoice:@"按键形状" key:WXKB_KEY_SHAPE def:@0
-                           values:@[@0, @1, @2, @3]
-                           titles:@[@"默认圆角", @"圆形", @"六边形", @"水珠"]]];
-    [s addObject:[self wxkbChoice:@"键帽风格" key:WXKB_KEY_CAP_STYLE def:@0
-                           values:@[@0, @1, @2, @3, @4, @5]
-                           titles:@[@"关闭", @"立体键帽", @"彩虹键盘帽", @"彩虹3D键帽", @"卡通手绘", @"霓虹"]]];
-    [s addObject:[self wxkbSlider:@"按键圆角" key:WXKB_KEY_CORNER def:0.0
-                              min:0.0 max:22.0]];
 
     // ---- 键盘位置 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘位置"];
     [g setProperty:[NSString stringWithFormat:
-                        @"整体上移 / 下移键盘（正在输入的这块），改动立即生效。"
-                        @"当前偏移：%.0fpt（正数 = 下移，范围 ±80）。",
+                        @"整体上/下移键盘，改动立即生效（当前偏移 %.0fpt，范围 ±80）。",
                         [self kbOffsetValue]]
             forKey:@"footerText"];
     [s addObject:g];

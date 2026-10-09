@@ -207,9 +207,10 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
 }
 
 + (CGFloat)preferredHeightForWidth:(CGFloat)width {
-    CGFloat h = width * 0.62;
-    if (h < 150.0) h = 150.0;
-    if (h > 240.0) h = 240.0;
+    // 紧凑一些：在较小的高度内画完整 4 行键盘，避免占用太多设置空间。
+    CGFloat h = width * 0.46;
+    if (h < 120.0) h = 120.0;
+    if (h > 200.0) h = 200.0;
     return h;
 }
 
@@ -347,65 +348,61 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
         return;
     }
 
-    // 键盘内边距 + 行间距
+    // 键盘内边距 + 行间距（紧凑）
     CGFloat sideMargin = W * 0.018;
-    CGFloat gap = W * 0.010;
+    CGFloat gap = W * 0.009;
     CGFloat topPad = H * 0.05;
     CGFloat usableW = W - 2 * sideMargin;
 
-    // 四行：行0=10字母，行1=9字母，行2=7字母，行3=功能(2)+空格(1长)+功能(2)
-    NSInteger counts[4] = {10, 9, 7, 5};
-    // 第3行空格的宽度权重（约等于 4 个普通键 + 间隔）
-    CGFloat spaceWeight = 4.0;
-    // 计算每行总权重
-    CGFloat weights[4];
-    for (int r = 0; r < 4; r++) {
-        if (r == 3) {
-            weights[r] = 1.0 + 1.0 + spaceWeight + 1.0 + 1.0; // ⇧ 123 空格 ⌫ ⏎
-        } else {
-            weights[r] = (CGFloat)counts[r];
-        }
-    }
-    CGFloat totalWeight = weights[0] + weights[1] + weights[2] + weights[3];
+    // 完整微信输入法全键盘（4 行）：每行是 @[ @{t,k,i,w}, ... ]
+    //   t=标签  k=种类(L字母/S空格/R功能)  i=字母序号(-1=非字母)  w=宽度权重
+    NSMutableArray *row0 = [NSMutableArray array];
+    NSString *r0 = @"QWERTYUIOP";
+    for (int c = 0; c < 10; c++)
+        [row0 addObject:@{@"t":[r0 substringWithRange:NSMakeRange(c,1)],
+                          @"k":@"L", @"i":@(c), @"w":@1.0}];
+    NSMutableArray *row1 = [NSMutableArray array];
+    NSString *r1 = @"ASDFGHJKL";
+    for (int c = 0; c < 9; c++)
+        [row1 addObject:@{@"t":[r1 substringWithRange:NSMakeRange(c,1)],
+                          @"k":@"L", @"i":@(10 + c), @"w":@1.0}];
+    NSMutableArray *row2 = [NSMutableArray array];   // ⇧ ZXCVBNM ⌫
+    [row2 addObject:@{@"t":@"⇧", @"k":@"L", @"i":@(-1), @"w":@1.3}];
+    NSString *r2 = @"ZXCVBNM";
+    for (int c = 0; c < 7; c++)
+        [row2 addObject:@{@"t":[r2 substringWithRange:NSMakeRange(c,1)],
+                          @"k":@"L", @"i":@(19 + c), @"w":@1.0}];
+    [row2 addObject:@{@"t":@"⌫", @"k":@"R", @"i":@(-1), @"w":@1.3}];
+    NSMutableArray *row3 = [NSMutableArray array];   // 123 🌐 ， 空格 。 🎤 ↩
+    [row3 addObject:@{@"t":@"123", @"k":@"L", @"i":@(-1), @"w":@1.3}];
+    [row3 addObject:@{@"t":@"🌐", @"k":@"L", @"i":@(-1), @"w":@1.3}];
+    [row3 addObject:@{@"t":@"，", @"k":@"R", @"i":@(-1), @"w":@1.0}];
+    [row3 addObject:@{@"t":@"",   @"k":@"S", @"i":@(-1), @"w":@4.4}];
+    [row3 addObject:@{@"t":@"。", @"k":@"R", @"i":@(-1), @"w":@1.0}];
+    [row3 addObject:@{@"t":@"🎤", @"k":@"R", @"i":@(-1), @"w":@1.3}];
+    [row3 addObject:@{@"t":@"↩", @"k":@"R", @"i":@(-1), @"w":@1.5}];
+    NSArray *rows = @[row0, row1, row2, row3];
+
     CGFloat rowGapTotal = gap * 3;
     CGFloat rowH = (H - 2 * topPad - rowGapTotal) / 4.0;
-    if (rowH < 8) rowH = 8;
+    if (rowH < 6) rowH = 6;
 
     CGFloat y = topPad;
-    for (int r = 0; r < 4; r++) {
-        CGFloat x = sideMargin;
-        CGFloat kw = (usableW - gap * (counts[r] - 1)) / counts[r]; // 普通键宽
-        if (r == 3) {
-            // 功能行：每个普通键宽 = kw（与上面一致），空格宽 = spaceWeight*kw + (spaceWeight-1)*gap
-            CGFloat fw = kw;
-            NSArray *row3 = @[
-                @{@"t":@"⇧", @"k":@"L"},
-                @{@"t":@"123", @"k":@"L"},
-                @{@"t":@"空格", @"k":@"S"},
-                @{@"t":@"⌫", @"k":@"R"},
-                @{@"t":@"⏎", @"k":@"R"},
-            ];
-            for (NSDictionary *kd in row3) {
-                BOOL isSpace = [kd[@"k"] isEqualToString:@"S"];
-                CGFloat w = isSpace ? (fw * spaceWeight + gap * (spaceWeight - 1.0)) : fw;
-                CGRect f = CGRectMake(x, y, w, rowH);
-                [self wxkbAddKey:f label:kd[@"t"] kind:[kd[@"k"] characterAtIndex:0]
-                       letterIdx:-1 slot:-1 isSpace:isSpace];
-                x += w + gap;
-            }
-        } else {
-            // 字母行
-            static NSString *rows[3] = {@"QWERTYUIOP", @"ASDFGHJKL", @"ZXCVBNM"};
-            NSString *line = rows[r];
-            for (int c = 0; c < (int)line.length; c++) {
-                unichar ch = [line characterAtIndex:c];
-                int letterIdx = (int)(ch - 'A');           // A=0..Z=25
-                int slot = (r == 0 ? 0 : (r == 1 ? 10 : 19)) + c;
-                CGRect f = CGRectMake(x, y, kw, rowH);
-                [self wxkbAddKey:f label:[NSString stringWithCharacters:&ch length:1]
-                            kind:'L' letterIdx:letterIdx slot:slot isSpace:NO];
-                x += kw + gap;
-            }
+    for (NSArray *row in rows) {
+        CGFloat totalW = 0;
+        for (NSDictionary *kd in row) totalW += [kd[@"w"] doubleValue];
+        CGFloat slotUnit = usableW / totalW;          // 每权重单位的槽宽（含间距配额）
+        CGFloat x = sideMargin + gap * 0.5;            // 行内左右留半距，视觉居中
+        for (NSDictionary *kd in row) {
+            CGFloat wgt = [kd[@"w"] doubleValue];
+            CGFloat slot = slotUnit * wgt;
+            CGRect f = CGRectMake(x, y, slot - gap, rowH);
+            char kind = [kd[@"k"] characterAtIndex:0];
+            NSInteger idx = [kd[@"i"] integerValue];
+            [self wxkbAddKey:f label:kd[@"t"] kind:kind
+                      letterIdx:(int)idx slot:(idx >= 0 ? (int)idx : -1)
+                      isSpace:(kind == 'S')];
+            x += slot;
         }
         y += rowH + gap;
     }
