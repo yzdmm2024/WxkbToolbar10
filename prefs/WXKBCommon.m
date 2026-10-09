@@ -409,6 +409,17 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     return sp;
 }
 
+// 键盘位置滑块：整数步进、带正负数值、实时预览。由 WXKBOffsetSliderCell 负责渲染与读写，
+// 这里只挂一个 cellClass 注入到 PSLinkCell 槽位（同 WXKBInlineGridCell 的注入方式）。
+- (PSSpecifier *)wxkbOffsetSlider {
+    PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:@"" target:self set:nil get:nil
+                                                    detail:nil cell:PSLinkCell edit:nil];
+    [sp setProperty:NSClassFromString(@"WXKBOffsetSliderCell") forKey:@"cellClass"];
+    [sp setProperty:WXKB_KEY_OFFSET forKey:@"key"];
+    [sp setProperty:@(76.0) forKey:@"wxkbGridHeight"];   // 行高够放滑块
+    return sp;
+}
+
 #pragma mark - 内联网格（替代跳二级页的单选 / 主题色板 / 26 字母键盘）
 
 - (PSSpecifier *)wxkbGrid:(NSString *)key titles:(NSArray *)titles values:(NSArray *)values

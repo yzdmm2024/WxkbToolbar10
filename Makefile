@@ -31,6 +31,7 @@ BUNDLE_NAME = WxkbToolbar10Prefs
 WxkbToolbar10Prefs_FILES = \
 	prefs/WXKBCommon.m \
 	prefs/WXKBInlineGridCell.m \
+	prefs/WXKBOffsetSliderCell.m \
 	prefs/WxkbToolbar10PrefsRootListController.m \
 	prefs/WXKBPickerControllers.m \
 	prefs/WXKBLetterColors.m \

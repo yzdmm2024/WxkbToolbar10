@@ -6,6 +6,7 @@
 
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
+    BOOL _wxkbRebuilding;                    // 重建表视图重入保护
 }
 @end
 
@@ -48,9 +49,11 @@
     [_previewView refresh];
 
     // 切到别的 app 再回到设置：系统常把表视图滚动手势卡在「追踪/变化」态，
-    // 导致整张表（含皮肤/键帽选择）点不动。注册回到前台通知，自动复位一次。
+    // 导致整张表（含皮肤/键帽选择）点不动。注册回到前台通知，回到稳定态后再复位一次。
+    // 注意：不能在通知里同步重建——切 app 过渡期表视图内部行数据/ specifier 还未一致，
+    // 同步 reloadData 会读到错位（nil）specifier 触发 EXC_BAD_ACCESS(0x38) 闪退（见崩溃日记）。
     [[NSNotificationCenter defaultCenter] addObserver:self
-                                             selector:@selector(wxkbRefreshPanel:)
+                                             selector:@selector(wxkbDidBecomeActive:)
                                                  name:UIApplicationDidBecomeActiveNotification
                                                object:nil];
 }
@@ -73,37 +76,63 @@
 }
 
 // 彻底修复「切 app 回前台整表点不动」：reloadData / 手势 KVC 都救不活卡死的表，
-// 只有重建表视图（重进插件=新建实例）才行。这里在回到前台时直接重建一张新表。
+// 只有重建表视图（重进插件=新建实例）才行。这里重建一张新表（新表自带干净的滚动手势）。
 - (void)wxkbRebuildTable {
-    UITableView *old = [self wxkbTableView];
-    if (!old || !old.superview) return;
-    CGRect frame = old.frame;
-    UITableViewStyle style = old.style;
-    CGPoint offset = old.contentOffset;
-    UITableView *newTv = [[UITableView alloc] initWithFrame:frame style:style];
-    newTv.autoresizingMask = old.autoresizingMask;
-    newTv.backgroundColor = old.backgroundColor;
-    newTv.separatorStyle = old.separatorStyle;
-    newTv.tableHeaderView = _previewView;
-    newTv.delegate = (id<UITableViewDelegate>)self;
-    newTv.dataSource = (id<UITableViewDataSource>)self;
-    newTv.contentOffset = offset;
-    newTv.userInteractionEnabled = YES;
-    newTv.scrollEnabled = YES;
-    [old.superview insertSubview:newTv belowSubview:old];
-    [old removeFromSuperview];
-    // 把 PSListController 内部指向旧表的指针重定向到新表（兼容不同 ivar/属性名）
-    for (NSString *k in @[@"tableView", @"_tableView", @"_table"]) {
-        @try { [self setValue:newTv forKey:k]; } @catch (NSException *e) {}
+    if (_wxkbRebuilding) return;          // 重入保护
+    _wxkbRebuilding = YES;
+    @try {
+        UITableView *old = [self wxkbTableView];
+        if (old && old.superview) {
+            // 先断开旧表回调：过渡期系统若仍回调旧表，不会再读到我们的 specifier，
+            // 这是避免「nil specifier -> EXC_BAD_ACCESS(0x38)」闪退的关键一步。
+            old.dataSource = nil;
+            old.delegate = nil;
+            CGRect frame = old.frame;
+            UITableViewStyle style = old.style;
+            CGPoint offset = old.contentOffset;
+            UITableView *newTv = [[UITableView alloc] initWithFrame:frame style:style];
+            newTv.autoresizingMask = old.autoresizingMask;
+            newTv.backgroundColor = old.backgroundColor;
+            newTv.separatorStyle = old.separatorStyle;
+            newTv.tableHeaderView = _previewView;
+            newTv.delegate = (id<UITableViewDelegate>)self;
+            newTv.dataSource = (id<UITableViewDataSource>)self;
+            newTv.contentOffset = offset;
+            newTv.userInteractionEnabled = YES;
+            newTv.scrollEnabled = YES;
+            [old.superview insertSubview:newTv belowSubview:old];
+            [old removeFromSuperview];
+            // 把 PSListController 内部指向旧表的指针重定向到新表（兼容不同 ivar/属性名）
+            for (NSString *k in @[@"tableView", @"_tableView", @"_table"]) {
+                @try { [self setValue:newTv forKey:k]; } @catch (NSException *e) {}
+            }
+            _specifiers = nil;            // 重建 specifiers，刷新右侧当前值
+            [newTv reloadData];
+        }
+        [_previewView refresh];
+    } @catch (NSException *e) {
+        // 极端兜底：至少别白屏
+        @try { [self reloadSpecifiers]; } @catch (NSException *e2) {}
     }
-    _specifiers = nil;            // 重建 specifiers，刷新右侧当前值
-    [newTv reloadData];
-    [_previewView refresh];
+    _wxkbRebuilding = NO;
 }
 
-// 逃生口按钮 + 回到前台通知都走这里：重建表视图，彻底解除卡死。
+// 回到前台：延迟到下一轮 runloop 再修，避开系统切 app 过渡期表视图状态不一致（崩溃来源）。
+- (void)wxkbDidBecomeActive:(NSNotification *)note {
+    if (self.view.window == nil) return;       // 面板不在屏幕上（如子页在前）不处理
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.view.window == nil) return;
+        [self wxkbRebuildTable];
+    });
+}
+
+// 逃生口按钮 + 回到前台通知都走这里：延迟到稳定态再重建表视图，彻底解除卡死且不闪退。
 - (void)wxkbRefreshPanel:(id)sender {
-    [self wxkbRebuildTable];
+    if (self.view.window == nil) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.view.window == nil) return;
+        [self wxkbRebuildTable];
+    });
 }
 
 // 清除系统键盘缓存：杀掉键盘守护进程（com.apple.TextInput），已开的 App 重排键盘即生效。
@@ -249,12 +278,12 @@
     // ---- 键盘位置 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘位置"];
     [g setProperty:[NSString stringWithFormat:
-                        @"整体上/下移键盘，改动立即生效（当前偏移 %.0fpt，范围 ±80）。",
+                        @"拖动滑块整体上/下移动键盘（±80pt，带正负数值，滑动一次≈1pt），"
+                        @"改动立即生效（当前偏移 %+.0fpt）。顶部预览实时跟随；也可点「重置为 0」。",
                         [self kbOffsetValue]]
             forKey:@"footerText"];
     [s addObject:g];
-    [s addObject:[self wxkbButton:@"上移 5pt" action:@selector(kbUp:)]];
-    [s addObject:[self wxkbButton:@"下移 5pt" action:@selector(kbDown:)]];
+    [s addObject:[self wxkbOffsetSlider]];
     [s addObject:[self wxkbButton:@"重置为 0" action:@selector(kbReset:)]];
 
     // ---- 系统键盘紧凑（作用于系统键盘，不是微信键盘）----
