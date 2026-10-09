@@ -1,0 +1,348 @@
+build	Set up job	﻿2026-10-09T03:28:09.6726330Z Current runner version: '2.337.0'
+build	Set up job	2026-10-09T03:28:09.6759030Z ##[group]Runner Image Provisioner
+build	Set up job	2026-10-09T03:28:09.6759650Z Hosted Compute Agent
+build	Set up job	2026-10-09T03:28:09.6760020Z Version: 20260828.587
+build	Set up job	2026-10-09T03:28:09.6760420Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+build	Set up job	2026-10-09T03:28:09.6760910Z Build Date: 2026-08-28T16:44:25Z
+build	Set up job	2026-10-09T03:28:09.6761650Z Worker ID: {8938dae8-7da0-4baf-8980-5f674898f417}
+build	Set up job	2026-10-09T03:28:09.6762140Z Azure Region: westus
+build	Set up job	2026-10-09T03:28:09.6762600Z ##[endgroup]
+build	Set up job	2026-10-09T03:28:09.6764270Z ##[group]Operating System
+build	Set up job	2026-10-09T03:28:09.6764760Z macOS
+build	Set up job	2026-10-09T03:28:09.6765190Z 26.6.2
+build	Set up job	2026-10-09T03:28:09.6765630Z 25G83
+build	Set up job	2026-10-09T03:28:09.6765980Z ##[endgroup]
+build	Set up job	2026-10-09T03:28:09.6766340Z ##[group]Runner Image
+build	Set up job	2026-10-09T03:28:09.6766750Z Image: macos-26-arm64
+build	Set up job	2026-10-09T03:28:09.6767170Z Version: 20260907.0351.1
+build	Set up job	2026-10-09T03:28:09.6768040Z Included Software: https://github.com/actions/runner-images/blob/macos-26-arm64/20260907.0351/images/macos/macos-26-arm64-Readme.md
+build	Set up job	2026-10-09T03:28:09.6769330Z Image Release: https://github.com/actions/runner-images/releases/tag/macos-26-arm64%2F20260907.0351
+build	Set up job	2026-10-09T03:28:09.6770380Z ##[endgroup]
+build	Set up job	2026-10-09T03:28:09.6771350Z ##[group]GITHUB_TOKEN Permissions
+build	Set up job	2026-10-09T03:28:09.6773170Z Contents: read
+build	Set up job	2026-10-09T03:28:09.6773560Z Metadata: read
+build	Set up job	2026-10-09T03:28:09.6774270Z Packages: read
+build	Set up job	2026-10-09T03:28:09.6775790Z ##[endgroup]
+build	Set up job	2026-10-09T03:28:09.6777950Z Secret source: Actions
+build	Set up job	2026-10-09T03:28:09.6778600Z Cache mode: write
+build	Set up job	2026-10-09T03:28:09.6779390Z Prepare workflow directory
+build	Set up job	2026-10-09T03:28:09.7123550Z Prepare all required actions
+build	Set up job	2026-10-09T03:28:09.7172160Z Getting action download info
+build	Set up job	2026-10-09T03:28:09.9113270Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+build	Set up job	2026-10-09T03:28:10.2561100Z Download action repository 'beerpiss/theos-action@v1' (SHA:e27e8335ec3777c2daabedec89a9178b1d4e70c0)
+build	Set up job	2026-10-09T03:28:10.7491620Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+build	Set up job	2026-10-09T03:28:11.0344750Z Getting action download info
+build	Set up job	2026-10-09T03:28:11.1223550Z Download action repository 'actions/cache@v3' (SHA:6f8efc29b200d32929f49075959781ed54ec270c)
+build	Set up job	2026-10-09T03:28:11.3212940Z Complete job name: build
+build	Run actions/checkout@v4	﻿2026-10-09T03:28:11.4120270Z ##[group]Run actions/checkout@v4
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4121070Z with:
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4121440Z   repository: yzdmm2024/WxkbToolbar10
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4124290Z   token: ***
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4124670Z   ssh-strict: true
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4125050Z   ssh-user: git
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4125380Z   persist-credentials: true
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4125770Z   clean: true
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4126160Z   sparse-checkout-cone-mode: true
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4126540Z   fetch-depth: 1
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4126860Z   fetch-tags: false
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4127230Z   show-progress: true
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4127760Z   lfs: false
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4128070Z   submodules: false
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4128410Z   set-safe-directory: true
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4128980Z   allow-unsafe-pr-checkout: false
+build	Run actions/checkout@v4	2026-10-09T03:28:11.4129780Z ##[endgroup]
+build	Run actions/checkout@v4	2026-10-09T03:28:12.0913140Z Syncing repository: yzdmm2024/WxkbToolbar10
+build	Run actions/checkout@v4	2026-10-09T03:28:12.0915780Z ##[group]Getting Git version info
+build	Run actions/checkout@v4	2026-10-09T03:28:12.0916920Z Working directory is '/Users/runner/work/WxkbToolbar10/WxkbToolbar10'
+build	Run actions/checkout@v4	2026-10-09T03:28:12.0919170Z [command]/opt/homebrew/bin/git version
+build	Run actions/checkout@v4	2026-10-09T03:28:12.1986690Z git version 2.55.0
+build	Run actions/checkout@v4	2026-10-09T03:28:12.2125220Z ##[endgroup]
+build	Run actions/checkout@v4	2026-10-09T03:28:12.2147970Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/d03d0a6a-f5fc-435b-8f15-21de714edcb5/.gitconfig'
+build	Run actions/checkout@v4	2026-10-09T03:28:12.2152330Z Temporarily overriding HOME='/Users/runner/work/_temp/d03d0a6a-f5fc-435b-8f15-21de714edcb5' before making global git config changes
+build	Run actions/checkout@v4	2026-10-09T03:28:12.2180370Z Adding repository directory to the temporary git global config as a safe directory
+build	Run actions/checkout@v4	2026-10-09T03:28:12.2209300Z [command]/opt/homebrew/bin/git config --global --add safe.directory /Users/runner/work/WxkbToolbar10/WxkbToolbar10
+build	Run actions/checkout@v4	2026-10-09T03:28:12.2427250Z Deleting the contents of '/Users/runner/work/WxkbToolbar10/WxkbToolbar10'
+build	Run actions/checkout@v4	2026-10-09T03:28:12.2441780Z ##[group]Initializing the repository
+build	Run actions/checkout@v4	2026-10-09T03:28:12.2445190Z [command]/opt/homebrew/bin/git init /Users/runner/work/WxkbToolbar10/WxkbToolbar10
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3172150Z hint: Using 'master' as the name for the initial branch. This default branch name
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3199140Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3207650Z hint: to use in all of your new repositories, which will suppress this warning,
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3260260Z hint: call:
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3267160Z hint:
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3274340Z hint: 	git config --global init.defaultBranch <name>
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3276130Z hint:
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3294410Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3305580Z hint: 'development'. The just-created branch can be renamed via this command:
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3349400Z hint:
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3459160Z hint: 	git branch -m <name>
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3483440Z hint:
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3506080Z hint: Disable this message with "git config set advice.defaultBranchName false"
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3555340Z Initialized empty Git repository in /Users/runner/work/WxkbToolbar10/WxkbToolbar10/.git/
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3640280Z [command]/opt/homebrew/bin/git remote add origin https://github.com/yzdmm2024/WxkbToolbar10
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3801840Z ##[endgroup]
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3828570Z ##[group]Disabling automatic garbage collection
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3834500Z [command]/opt/homebrew/bin/git config --local gc.auto 0
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3846800Z ##[endgroup]
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3859400Z ##[group]Setting up auth
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3894770Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+build	Run actions/checkout@v4	2026-10-09T03:28:12.3966200Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build	Run actions/checkout@v4	2026-10-09T03:28:12.6608290Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build	Run actions/checkout@v4	2026-10-09T03:28:12.6833350Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build	Run actions/checkout@v4	2026-10-09T03:28:12.8457060Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+build	Run actions/checkout@v4	2026-10-09T03:28:12.8588740Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+build	Run actions/checkout@v4	2026-10-09T03:28:13.0052820Z [command]/opt/homebrew/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+build	Run actions/checkout@v4	2026-10-09T03:28:13.0268110Z ##[endgroup]
+build	Run actions/checkout@v4	2026-10-09T03:28:13.0284000Z ##[group]Fetching the repository
+build	Run actions/checkout@v4	2026-10-09T03:28:13.0326360Z [command]/opt/homebrew/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +f8f5d81ad118f483e2fadc82ae283541ce014cbf:refs/remotes/origin/main
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9049110Z From https://github.com/yzdmm2024/WxkbToolbar10
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9054600Z  * [new ref]         f8f5d81ad118f483e2fadc82ae283541ce014cbf -> origin/main
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9057600Z ##[endgroup]
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9058130Z ##[group]Determining the checkout info
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9063000Z ##[endgroup]
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9075590Z [command]/opt/homebrew/bin/git sparse-checkout disable
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9254450Z [command]/opt/homebrew/bin/git config --local --unset-all extensions.worktreeConfig
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9376340Z ##[group]Checking out the ref
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9382020Z [command]/opt/homebrew/bin/git checkout --progress --force -B main refs/remotes/origin/main
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9833420Z Switched to a new branch 'main'
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9840770Z branch 'main' set up to track 'origin/main'.
+build	Run actions/checkout@v4	2026-10-09T03:28:13.9843940Z ##[endgroup]
+build	Run actions/checkout@v4	2026-10-09T03:28:14.0030600Z [command]/opt/homebrew/bin/git log -1 --format=%H
+build	Run actions/checkout@v4	2026-10-09T03:28:14.0190960Z f8f5d81ad118f483e2fadc82ae283541ce014cbf
+build	Fix perms for theos-action cache (arm64 /usr/local 不可写)	﻿2026-10-09T03:28:14.0604470Z ##[group]Run sudo mkdir -p /usr/local/opt && sudo chown -R "$(whoami)" /usr/local/opt
+build	Fix perms for theos-action cache (arm64 /usr/local 不可写)	2026-10-09T03:28:14.0605320Z ^[[36;1msudo mkdir -p /usr/local/opt && sudo chown -R "$(whoami)" /usr/local/opt^[[0m
+build	Fix perms for theos-action cache (arm64 /usr/local 不可写)	2026-10-09T03:28:14.0678870Z shell: /bin/bash -e {0}
+build	Fix perms for theos-action cache (arm64 /usr/local 不可写)	2026-10-09T03:28:14.0680010Z ##[endgroup]
+build	Setup Theos	﻿2026-10-09T03:28:14.2523870Z ##[group]Run beerpiss/theos-action@v1
+build	Setup Theos	2026-10-09T03:28:14.2524380Z with:
+build	Setup Theos	2026-10-09T03:28:14.2524790Z   theos-sdks: https://github.com/theos/sdks
+build	Setup Theos	2026-10-09T03:28:14.2526580Z   theos-dir: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Setup Theos	2026-10-09T03:28:14.2528360Z   theos-src: https://github.com/theos/theos
+build	Setup Theos	2026-10-09T03:28:14.2529590Z   theos-ref: master
+build	Setup Theos	2026-10-09T03:28:14.2530540Z   theos-sdks-ref: master
+build	Setup Theos	2026-10-09T03:28:14.2532970Z   cache: true
+build	Setup Theos	2026-10-09T03:28:14.2533300Z   cache-dir-theos: /usr/local/opt/__theos_cache
+build	Setup Theos	2026-10-09T03:28:14.2535050Z   cache-dir-sdks: /usr/local/opt/__theos_sdks_cache
+build	Setup Theos	2026-10-09T03:28:14.2535420Z ##[endgroup]
+build	Setup Theos	2026-10-09T03:28:14.2696910Z ##[start-action display=Run echo "::set-output name=theos::`if [ master = "master" %5D%3B then \;id=__beerpiss_theos-action.information]
+build	Setup Theos	2026-10-09T03:28:14.2736070Z ##[group]Run echo "::set-output name=theos::`if [ master = "master" ]; then \
+build	Setup Theos	2026-10-09T03:28:14.2736710Z ^[[36;1mecho "::set-output name=theos::`if [ master = "master" ]; then \^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2737380Z ^[[36;1m    git ls-remote https://github.com/theos/theos | head -n 1 | cut -f 1; \^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2737840Z ^[[36;1m  else \^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2738100Z ^[[36;1m    echo master; \^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2738390Z ^[[36;1m  fi`"^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2738710Z ^[[36;1mecho "::set-output name=theos-sdks::`if [ master = "master" ]; then \^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2739280Z ^[[36;1m    git ls-remote https://github.com/theos/sdks | head -n 1 | cut -f 1; \^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2739650Z ^[[36;1m  else \^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2739880Z ^[[36;1m    echo master; \^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2740110Z ^[[36;1m  fi`"^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2740610Z ^[[36;1mecho "::set-output name=theos-dir-basename::`basename /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos`"^[[0m
+build	Setup Theos	2026-10-09T03:28:14.2783470Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+build	Setup Theos	2026-10-09T03:28:14.2784010Z ##[endgroup]
+build	Setup Theos	2026-10-09T03:28:14.8854570Z ##[warning]The `set-output` command is deprecated and will be disabled soon. Please upgrade to using Environment Files. For more information see: https://github.blog/changelog/2022-10-11-github-actions-deprecating-save-state-and-set-output-commands/
+build	Setup Theos	2026-10-09T03:28:15.3347700Z ##[warning]The `set-output` command is deprecated and will be disabled soon. Please upgrade to using Environment Files. For more information see: https://github.blog/changelog/2022-10-11-github-actions-deprecating-save-state-and-set-output-commands/
+build	Setup Theos	2026-10-09T03:28:15.3402140Z ##[warning]The `set-output` command is deprecated and will be disabled soon. Please upgrade to using Environment Files. For more information see: https://github.blog/changelog/2022-10-11-github-actions-deprecating-save-state-and-set-output-commands/
+build	Setup Theos	2026-10-09T03:28:15.3416170Z ##[end-action id=__beerpiss_theos-action.information;outcome=success;conclusion=success;duration_ms=1071]
+build	Setup Theos	2026-10-09T03:28:15.3421850Z ##[start-action display=Run actions/cache@v3;id=__beerpiss_theos-action.theos-cache]
+build	Setup Theos	2026-10-09T03:28:15.3482180Z ##[group]Run actions/cache@v3
+build	Setup Theos	2026-10-09T03:28:15.3482470Z with:
+build	Setup Theos	2026-10-09T03:28:15.3482650Z   path: /usr/local/opt/__theos_cache
+build	Setup Theos	2026-10-09T03:28:15.3482950Z   key: macOS-304e0799973e8145f32e4ca2de6c747a84b758ce-theos2
+build	Setup Theos	2026-10-09T03:28:15.3483380Z   enableCrossOsArchive: false
+build	Setup Theos	2026-10-09T03:28:15.3483720Z   fail-on-cache-miss: false
+build	Setup Theos	2026-10-09T03:28:15.3484020Z   lookup-only: false
+build	Setup Theos	2026-10-09T03:28:15.3484510Z ##[endgroup]
+build	Setup Theos	2026-10-09T03:28:15.5642680Z (node:1427) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+build	Setup Theos	2026-10-09T03:28:15.5643900Z (Use `node --trace-deprecation ...` to show where the warning was created)
+build	Setup Theos	2026-10-09T03:28:15.6989740Z Cache hit for: macOS-304e0799973e8145f32e4ca2de6c747a84b758ce-theos2
+build	Setup Theos	2026-10-09T03:28:15.7104100Z (node:1427) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+build	Setup Theos	2026-10-09T03:28:16.0882090Z Received 16654391 of 16654391 (100.0%), 49.3 MBs/sec
+build	Setup Theos	2026-10-09T03:28:16.0922820Z Cache Size: ~16 MB (16654391 B)
+build	Setup Theos	2026-10-09T03:28:16.1002240Z [command]/opt/homebrew/bin/gtar -xf /Users/runner/work/_temp/f2d3f520-f6ed-4112-b77f-fe77dc36600a/cache.tzst -P -C /Users/runner/work/WxkbToolbar10/WxkbToolbar10 --delay-directory-restore --use-compress-program unzstd
+build	Setup Theos	2026-10-09T03:28:16.6819240Z Cache restored successfully
+build	Setup Theos	2026-10-09T03:28:16.7174180Z Cache restored from key: macOS-304e0799973e8145f32e4ca2de6c747a84b758ce-theos2
+build	Setup Theos	2026-10-09T03:28:16.7293150Z ##[end-action id=__beerpiss_theos-action.theos-cache;outcome=success;conclusion=success;duration_ms=1386]
+build	Setup Theos	2026-10-09T03:28:16.7300370Z ##[start-action display=Install Theos dependencies;id=__beerpiss_theos-action.__run]
+build	Setup Theos	2026-10-09T03:28:16.7335870Z ##[group]Run brew install ldid make
+build	Setup Theos	2026-10-09T03:28:16.7336160Z ^[[36;1mbrew install ldid make^[[0m
+build	Setup Theos	2026-10-09T03:28:16.7336560Z ^[[36;1mecho "/usr/local/opt/make/libexec/gnubin" >> $GITHUB_PATH^[[0m
+build	Setup Theos	2026-10-09T03:28:16.7373660Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+build	Setup Theos	2026-10-09T03:28:16.7374000Z ##[endgroup]
+build	Setup Theos	2026-10-09T03:28:20.4607960Z ^[[32m==>^[[0m ^[[1mDownloading bottle manifests^[[0m
+build	Setup Theos	2026-10-09T03:28:20.4772680Z ✔︎ Bottle Manifest ldid (2.1.5_1)
+build	Setup Theos	2026-10-09T03:28:20.4774040Z ✔︎ Bottle Manifest make (4.4.1)
+build	Setup Theos	2026-10-09T03:28:20.4775440Z ^[[34m==>^[[0m ^[[1mWould install 2 formulae:^[[0m
+build	Setup Theos	2026-10-09T03:28:20.4776850Z ldid make
+build	Setup Theos	2026-10-09T03:28:20.5851050Z ^[[34m==>^[[0m ^[[1mWould install 1 dependency for ldid:^[[0m
+build	Setup Theos	2026-10-09T03:28:20.5864650Z libplist
+build	Setup Theos	2026-10-09T03:28:20.6191150Z ^[[32m==>^[[0m ^[[1mFetching downloads for: ^[[32mldid^[[39m and ^[[32mmake^[[39m^[[0m
+build	Setup Theos	2026-10-09T03:28:20.9691040Z ✔︎ Bottle Manifest libplist (2.7.0)
+build	Setup Theos	2026-10-09T03:28:20.9727010Z ✔︎ Bottle ldid (2.1.5_1)
+build	Setup Theos	2026-10-09T03:28:20.9780610Z ✔︎ Bottle make (4.4.1)
+build	Setup Theos	2026-10-09T03:28:20.9863300Z ✔︎ Bottle libplist (2.7.0)
+build	Setup Theos	2026-10-09T03:28:21.0018720Z ^[[32m==>^[[0m ^[[1mInstalling ldid dependency: ^[[32mlibplist^[[39m^[[0m
+build	Setup Theos	2026-10-09T03:28:21.0111360Z ^[[34m==>^[[0m ^[[1mPouring libplist--2.7.0.arm64_tahoe.bottle.tar.gz^[[0m
+build	Setup Theos	2026-10-09T03:28:21.2301870Z 🍺  /opt/homebrew/Cellar/libplist/2.7.0: 32 files, 605.5KB
+build	Setup Theos	2026-10-09T03:28:21.2304100Z ^[[32m==>^[[0m ^[[1mInstalling ^[[32mldid^[[39m^[[0m
+build	Setup Theos	2026-10-09T03:28:21.2306660Z ^[[34m==>^[[0m ^[[1mPouring ldid--2.1.5_1.arm64_tahoe.bottle.1.tar.gz^[[0m
+build	Setup Theos	2026-10-09T03:28:21.2649450Z 🍺  /opt/homebrew/Cellar/ldid/2.1.5_1: 6 files, 271KB
+build	Setup Theos	2026-10-09T03:28:21.2673030Z ^[[34m==>^[[0m ^[[1mPouring make--4.4.1.arm64_tahoe.bottle.1.tar.gz^[[0m
+build	Setup Theos	2026-10-09T03:28:21.3019640Z 🍺  /opt/homebrew/Cellar/make/4.4.1: 17 files, 1.3MB
+build	Setup Theos	2026-10-09T03:28:21.3024410Z ^[[32m==>^[[0m ^[[1mCaveats^[[0m
+build	Setup Theos	2026-10-09T03:28:21.3025650Z ^[[34m==>^[[0m ^[[1mmake^[[0m
+build	Setup Theos	2026-10-09T03:28:21.3026540Z GNU "make" has been installed as "gmake".
+build	Setup Theos	2026-10-09T03:28:21.3027450Z If you need to use it as "make", you can add a "gnubin" directory
+build	Setup Theos	2026-10-09T03:28:21.3028530Z to your PATH from your bashrc like:
+build	Setup Theos	2026-10-09T03:28:21.3029040Z 
+build	Setup Theos	2026-10-09T03:28:21.3029560Z     PATH="/opt/homebrew/opt/make/libexec/gnubin:$PATH"
+build	Setup Theos	2026-10-09T03:28:21.3204820Z ##[end-action id=__beerpiss_theos-action.__run;outcome=success;conclusion=success;duration_ms=4587]
+build	Setup Theos	2026-10-09T03:28:21.3213220Z ##[start-action display=prepare environment;id=__beerpiss_theos-action.__run_2]
+build	Setup Theos	2026-10-09T03:28:21.3248810Z ##[group]Run echo "THEOS=/Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos" >> $GITHUB_ENV
+build	Setup Theos	2026-10-09T03:28:21.3252090Z ^[[36;1mecho "THEOS=/Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos" >> $GITHUB_ENV^[[0m
+build	Setup Theos	2026-10-09T03:28:21.3301700Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+build	Setup Theos	2026-10-09T03:28:21.3302200Z ##[endgroup]
+build	Setup Theos	2026-10-09T03:28:21.3939960Z ##[end-action id=__beerpiss_theos-action.__run_2;outcome=success;conclusion=success;duration_ms=72]
+build	Setup Theos	2026-10-09T03:28:21.3943440Z ##[start-action display=get theos (uncached);id=__beerpiss_theos-action.__run_3]
+build	Setup Theos	2026-10-09T03:28:21.4002450Z ##[end-action id=__beerpiss_theos-action.__run_3;outcome=skipped;conclusion=skipped;duration_ms=0]
+build	Setup Theos	2026-10-09T03:28:21.4006050Z ##[start-action display=get toolchain on linux;id=__beerpiss_theos-action.__run_4]
+build	Setup Theos	2026-10-09T03:28:21.4012670Z ##[end-action id=__beerpiss_theos-action.__run_4;outcome=skipped;conclusion=skipped;duration_ms=0]
+build	Setup Theos	2026-10-09T03:28:21.4014830Z ##[start-action display=restore theos from cache;id=__beerpiss_theos-action.__run_5]
+build	Setup Theos	2026-10-09T03:28:21.4050120Z ##[group]Run sudo rsync -aWlHh --inplace /usr/local/opt/__theos_cache/theos/ /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Setup Theos	2026-10-09T03:28:21.4051000Z ^[[36;1msudo rsync -aWlHh --inplace /usr/local/opt/__theos_cache/theos/ /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos^[[0m
+build	Setup Theos	2026-10-09T03:28:21.4086200Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+build	Setup Theos	2026-10-09T03:28:21.4086670Z env:
+build	Setup Theos	2026-10-09T03:28:21.4087060Z   THEOS: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Setup Theos	2026-10-09T03:28:21.4087550Z ##[endgroup]
+build	Setup Theos	2026-10-09T03:28:22.4956920Z ##[end-action id=__beerpiss_theos-action.__run_5;outcome=success;conclusion=success;duration_ms=1093]
+build	Setup Theos	2026-10-09T03:28:22.4961030Z ##[start-action display=cache theos;id=__beerpiss_theos-action.__run_6]
+build	Setup Theos	2026-10-09T03:28:22.4969070Z ##[end-action id=__beerpiss_theos-action.__run_6;outcome=skipped;conclusion=skipped;duration_ms=0]
+build	Setup Theos	2026-10-09T03:28:22.4971120Z ##[start-action display=Run actions/cache@v3;id=__beerpiss_theos-action.theos-sdks-cache]
+build	Setup Theos	2026-10-09T03:28:22.5015920Z ##[group]Run actions/cache@v3
+build	Setup Theos	2026-10-09T03:28:22.5016180Z with:
+build	Setup Theos	2026-10-09T03:28:22.5016390Z   path: /usr/local/opt/__theos_sdks_cache
+build	Setup Theos	2026-10-09T03:28:22.5016770Z   key: macOS-0222fd5413cf4b9af096f37b4621afa2688572f7-theos
+build	Setup Theos	2026-10-09T03:28:22.5017370Z   enableCrossOsArchive: false
+build	Setup Theos	2026-10-09T03:28:22.5017670Z   fail-on-cache-miss: false
+build	Setup Theos	2026-10-09T03:28:22.5017890Z   lookup-only: false
+build	Setup Theos	2026-10-09T03:28:22.5018080Z env:
+build	Setup Theos	2026-10-09T03:28:22.5018310Z   THEOS: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Setup Theos	2026-10-09T03:28:22.5018610Z ##[endgroup]
+build	Setup Theos	2026-10-09T03:28:22.6901890Z (node:1632) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+build	Setup Theos	2026-10-09T03:28:22.6903780Z (Use `node --trace-deprecation ...` to show where the warning was created)
+build	Setup Theos	2026-10-09T03:28:22.7702950Z Cache hit for: macOS-0222fd5413cf4b9af096f37b4621afa2688572f7-theos
+build	Setup Theos	2026-10-09T03:28:22.7820490Z (node:1632) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+build	Setup Theos	2026-10-09T03:28:23.8525840Z Received 100663296 of 147739659 (68.1%), 94.4 MBs/sec
+build	Setup Theos	2026-10-09T03:28:24.5470320Z Received 147739659 of 147739659 (100.0%), 82.6 MBs/sec
+build	Setup Theos	2026-10-09T03:28:24.5494060Z Cache Size: ~141 MB (147739659 B)
+build	Setup Theos	2026-10-09T03:28:24.5572200Z [command]/opt/homebrew/bin/gtar -xf /Users/runner/work/_temp/b8a5345a-baa7-47a1-a8f6-499d15cee3d1/cache.tzst -P -C /Users/runner/work/WxkbToolbar10/WxkbToolbar10 --delay-directory-restore --use-compress-program unzstd
+build	Setup Theos	2026-10-09T03:28:46.1102900Z Cache restored successfully
+build	Setup Theos	2026-10-09T03:28:46.1256720Z Cache restored from key: macOS-0222fd5413cf4b9af096f37b4621afa2688572f7-theos
+build	Setup Theos	2026-10-09T03:28:46.1610970Z ##[end-action id=__beerpiss_theos-action.theos-sdks-cache;outcome=success;conclusion=success;duration_ms=23651]
+build	Setup Theos	2026-10-09T03:28:46.1648280Z ##[start-action display=get sdks (uncached);id=__beerpiss_theos-action.__run_7]
+build	Setup Theos	2026-10-09T03:28:46.1680420Z ##[end-action id=__beerpiss_theos-action.__run_7;outcome=skipped;conclusion=skipped;duration_ms=0]
+build	Setup Theos	2026-10-09T03:28:46.1684170Z ##[start-action display=restore theos sdks from cache;id=__beerpiss_theos-action.__run_8]
+build	Setup Theos	2026-10-09T03:28:46.1738260Z ##[group]Run sudo rsync -aWlHh --inplace /usr/local/opt/__theos_sdks_cache/sdks /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Setup Theos	2026-10-09T03:28:46.1739320Z ^[[36;1msudo rsync -aWlHh --inplace /usr/local/opt/__theos_sdks_cache/sdks /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos^[[0m
+build	Setup Theos	2026-10-09T03:28:46.2584590Z shell: /bin/bash --noprofile --norc -e -o pipefail {0}
+build	Setup Theos	2026-10-09T03:28:46.2590750Z env:
+build	Setup Theos	2026-10-09T03:28:46.2591090Z   THEOS: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Setup Theos	2026-10-09T03:28:46.2591540Z ##[endgroup]
+build	Setup Theos	2026-10-09T03:29:39.8845040Z ##[end-action id=__beerpiss_theos-action.__run_8;outcome=success;conclusion=success;duration_ms=53689]
+build	Setup Theos	2026-10-09T03:29:39.8855380Z ##[start-action display=cache sdks;id=__beerpiss_theos-action.__run_9]
+build	Setup Theos	2026-10-09T03:29:39.8904350Z ##[end-action id=__beerpiss_theos-action.__run_9;outcome=skipped;conclusion=skipped;duration_ms=0]
+build	Ensure GNU make on PATH (arm64 homebrew 在 /opt/homebrew)	﻿2026-10-09T03:29:39.9181040Z ##[group]Run echo "/opt/homebrew/opt/make/libexec/gnubin" >> "$GITHUB_PATH"
+build	Ensure GNU make on PATH (arm64 homebrew 在 /opt/homebrew)	2026-10-09T03:29:39.9184100Z ^[[36;1mecho "/opt/homebrew/opt/make/libexec/gnubin" >> "$GITHUB_PATH"^[[0m
+build	Ensure GNU make on PATH (arm64 homebrew 在 /opt/homebrew)	2026-10-09T03:29:40.1071010Z shell: /bin/bash -e {0}
+build	Ensure GNU make on PATH (arm64 homebrew 在 /opt/homebrew)	2026-10-09T03:29:40.1071360Z env:
+build	Ensure GNU make on PATH (arm64 homebrew 在 /opt/homebrew)	2026-10-09T03:29:40.1071750Z   THEOS: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Ensure GNU make on PATH (arm64 homebrew 在 /opt/homebrew)	2026-10-09T03:29:40.1072180Z ##[endgroup]
+build	Ensure script exec bits (Windows checkout 丢可执行位)	﻿2026-10-09T03:29:40.1870030Z ##[group]Run chmod 0755 layout/DEBIAN/postinst
+build	Ensure script exec bits (Windows checkout 丢可执行位)	2026-10-09T03:29:40.1870590Z ^[[36;1mchmod 0755 layout/DEBIAN/postinst^[[0m
+build	Ensure script exec bits (Windows checkout 丢可执行位)	2026-10-09T03:29:40.1918180Z shell: /bin/bash -e {0}
+build	Ensure script exec bits (Windows checkout 丢可执行位)	2026-10-09T03:29:40.1918460Z env:
+build	Ensure script exec bits (Windows checkout 丢可执行位)	2026-10-09T03:29:40.1918800Z   THEOS: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Ensure script exec bits (Windows checkout 丢可执行位)	2026-10-09T03:29:40.1919210Z ##[endgroup]
+build	Build package (rootless)	﻿2026-10-09T03:29:40.2440220Z ##[group]Run make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+build	Build package (rootless)	2026-10-09T03:29:40.2440930Z ^[[36;1mmake package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless^[[0m
+build	Build package (rootless)	2026-10-09T03:29:40.2486480Z shell: /bin/bash -e {0}
+build	Build package (rootless)	2026-10-09T03:29:40.2486900Z env:
+build	Build package (rootless)	2026-10-09T03:29:40.2487250Z   THEOS: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos
+build	Build package (rootless)	2026-10-09T03:29:40.2487850Z ##[endgroup]
+build	Build package (rootless)	2026-10-09T03:29:50.3572440Z ^[[1;31m> ^[[1;3;39mMaking all for tweak WxkbToolbar10…^[[m
+build	Build package (rootless)	2026-10-09T03:29:52.5143980Z ^[[0;31m==> ^[[1;39mPreprocessing src/Tweak.xm…^[[m
+build	Build package (rootless)	2026-10-09T03:29:52.5247210Z ^[[0;31m==> ^[[1;39mPreprocessing src/Tweak.xm…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.2556780Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_alg.c (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.2589660Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_alg.c (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.3344030Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_issue.c (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.3557630Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_core.c (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.4062760Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_master.c (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.4220190Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_core.c (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.4899500Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_sha256.c (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.4975840Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_issue.c (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.5005590Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_obf.c (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.5680650Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_master.c (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.6858650Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_obf.c (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:53.7766610Z ^[[0;32m==> ^[[1;39mCompiling license_kit/src/lk_sha256.c (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:54.2438550Z ^[[0;32m==> ^[[1;39mCompiling license_kit/ios_glue/lk_master_ios.m (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:54.2794880Z ^[[0;32m==> ^[[1;39mCompiling license_kit/ios_glue/lk_master_ios.m (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:55.3506990Z ^[[0;32m==> ^[[1;39mCompiling src/lk_env_ios.m (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:55.3676660Z ^[[0;32m==> ^[[1;39mCompiling src/lk_env_ios.m (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:56.6101280Z ^[[0;32m==> ^[[1;39mCompiling src/Tweak.xm (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.3041060Z ld: warning: -multiply_defined is obsolete
+build	Build package (rootless)	2026-10-09T03:29:57.3041820Z ^[[0;33m==> ^[[1;39mLinking tweak WxkbToolbar10 (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.3043860Z ^[[0;34m==> ^[[1;39mGenerating debug symbols for WxkbToolbar10…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.3045470Z ^[[0;34m==> ^[[1;39mStripping WxkbToolbar10 (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.5841040Z ^[[0;32m==> ^[[1;39mCompiling src/Tweak.xm (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.6869580Z ld: warning: -multiply_defined is obsolete
+build	Build package (rootless)	2026-10-09T03:29:57.6870410Z ^[[0;33m==> ^[[1;39mLinking tweak WxkbToolbar10 (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.6870970Z ^[[0;34m==> ^[[1;39mGenerating debug symbols for WxkbToolbar10…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.6871460Z ^[[0;34m==> ^[[1;39mStripping WxkbToolbar10 (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.6936620Z ^[[0;34m==> ^[[1;39mMerging tweak WxkbToolbar10…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.7246410Z ^[[0;34m==> ^[[1;39mSigning WxkbToolbar10…^[[m
+build	Build package (rootless)	2026-10-09T03:29:57.7624870Z ^[[1;31m> ^[[1;3;39mMaking all for bundle WxkbToolbar10Prefs…^[[m
+build	Build package (rootless)	2026-10-09T03:29:58.1455450Z ^[[0;35m==> ^[[1;39mCopying resource directories into the bundle wrapper…^[[m
+build	Build package (rootless)	2026-10-09T03:30:00.0395110Z ^[[0;32m==> ^[[1;39mCompiling prefs/WXKBCommon.m (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:30:00.0399040Z ^[[0;32m==> ^[[1;39mCompiling prefs/WXKBCommon.m (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:30:00.1580330Z ^[[1mprefs/WxkbToolbar10PrefsRootListController.m:332:23: ^[[0m^[[0;1;31merror: ^[[0m^[[1massignment to readonly property^[[0m
+build	Build package (rootless)	2026-10-09T03:30:00.1581570Z ^[[0;32m==> ^[[1;39mCompiling prefs/WxkbToolbar10PrefsRootListController.m (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:30:00.1583240Z   332 |             act.title = @"已复制 ✓";   // 原地反馈，不 dismiss，方便继续粘贴解锁码^[[0m
+build	Build package (rootless)	2026-10-09T03:30:00.1583920Z       | ^[[0;1;32m            ~~~~~~~~~ ^ ~~~~~~~~~~~
+build	Build package (rootless)	2026-10-09T03:30:00.1584350Z ^[[0m1 error generated.
+build	Build package (rootless)	2026-10-09T03:30:00.1585390Z make[3]: *** [/Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos/makefiles/instance/rules.mk:305: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/.theos/obj/arm64/prefs/WxkbToolbar10PrefsRootListController.m.84913818.o] Error 1
+build	Build package (rootless)	2026-10-09T03:30:00.1587340Z make[3]: *** Waiting for unfinished jobs....
+build	Build package (rootless)	2026-10-09T03:30:00.2169600Z ^[[1mprefs/WxkbToolbar10PrefsRootListController.m:332:23: ^[[0m^[[0;1;31merror: ^[[0m^[[1massignment to readonly property^[[0m
+build	Build package (rootless)	2026-10-09T03:30:00.2170590Z ^[[0;32m==> ^[[1;39mCompiling prefs/WxkbToolbar10PrefsRootListController.m (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:30:00.2174160Z   332 |             act.title = @"已复制 ✓";   // 原地反馈，不 dismiss，方便继续粘贴解锁码^[[0m
+build	Build package (rootless)	2026-10-09T03:30:00.2174830Z ^[[0;32m==> ^[[1;39mCompiling prefs/WXKBInlineGridCell.m (arm64e)…^[[m
+build	Build package (rootless)	2026-10-09T03:30:00.2259140Z       | ^[[0;1;32m            ~~~~~~~~~ ^ ~~~~~~~~~~~
+build	Build package (rootless)	2026-10-09T03:30:00.2267550Z ^[[0m1 error generated.
+build	Build package (rootless)	2026-10-09T03:30:00.2268680Z make[3]: *** [/Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos/makefiles/instance/rules.mk:305: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/.theos/obj/arm64e/prefs/WxkbToolbar10PrefsRootListController.m.3f67ee4a.o] Error 1
+build	Build package (rootless)	2026-10-09T03:30:00.2273960Z make[3]: *** Waiting for unfinished jobs....
+build	Build package (rootless)	2026-10-09T03:30:00.2275090Z make[2]: *** [/Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos/makefiles/instance/bundle.mk:37: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/.theos/obj/arm64e/WxkbToolbar10Prefs.bundle/WxkbToolbar10Prefs] Error 2
+build	Build package (rootless)	2026-10-09T03:30:00.2277480Z make[2]: *** Waiting for unfinished jobs....
+build	Build package (rootless)	2026-10-09T03:30:00.3074120Z ^[[0;32m==> ^[[1;39mCompiling prefs/WXKBInlineGridCell.m (arm64)…^[[m
+build	Build package (rootless)	2026-10-09T03:30:00.3077550Z make[2]: *** [/Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos/makefiles/instance/bundle.mk:37: /Users/runner/work/WxkbToolbar10/WxkbToolbar10/.theos/obj/arm64/WxkbToolbar10Prefs.bundle/WxkbToolbar10Prefs] Error 2
+build	Build package (rootless)	2026-10-09T03:30:00.3079150Z make[1]: *** [/Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos/makefiles/instance/bundle.mk:26: internal-bundle-all_] Error 2
+build	Build package (rootless)	2026-10-09T03:30:00.3085380Z make: *** [/Users/runner/work/WxkbToolbar10/WxkbToolbar10/theos/makefiles/master/rules.mk:146: WxkbToolbar10Prefs.all.bundle.variables] Error 2
+build	Build package (rootless)	2026-10-09T03:30:00.3102410Z ##[error]Process completed with exit code 2.
+build	Post Setup Theos	﻿2026-10-09T03:30:00.3274220Z Post job cleanup.
+build	Post Setup Theos	2026-10-09T03:30:00.3278730Z ##[start-action display=Run actions/cache@v3;id=__1afeaf61-2011-49b1-9637-6b0bcd2cefba.theos-sdks-cache]
+build	Post Setup Theos	2026-10-09T03:30:00.3281120Z ##[end-action id=__1afeaf61-2011-49b1-9637-6b0bcd2cefba.theos-sdks-cache;outcome=skipped;conclusion=skipped;duration_ms=0]
+build	Post Setup Theos	2026-10-09T03:30:00.3282940Z ##[start-action display=Run actions/cache@v3;id=__1afeaf61-2011-49b1-9637-6b0bcd2cefba.theos-cache]
+build	Post Setup Theos	2026-10-09T03:30:00.3284820Z ##[end-action id=__1afeaf61-2011-49b1-9637-6b0bcd2cefba.theos-cache;outcome=skipped;conclusion=skipped;duration_ms=0]
+build	Post Run actions/checkout@v4	﻿2026-10-09T03:30:00.3357900Z Post job cleanup.
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.6857380Z [command]/opt/homebrew/bin/git version
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.7443370Z git version 2.55.0
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.7472500Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/804ec9d7-c55a-4846-a0d5-26f306743e21/.gitconfig'
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.7486240Z Temporarily overriding HOME='/Users/runner/work/_temp/804ec9d7-c55a-4846-a0d5-26f306743e21' before making global git config changes
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.7488270Z Adding repository directory to the temporary git global config as a safe directory
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.7510420Z [command]/opt/homebrew/bin/git config --global --add safe.directory /Users/runner/work/WxkbToolbar10/WxkbToolbar10
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.7790640Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.7857490Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.8706330Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.8755650Z http.https://github.com/.extraheader
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.8762800Z [command]/opt/homebrew/bin/git config --local --unset-all http.https://github.com/.extraheader
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.8833900Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.9625600Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+build	Post Run actions/checkout@v4	2026-10-09T03:30:00.9689090Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+build	Complete job	﻿2026-10-09T03:30:01.0508560Z Cleaning up orphan processes
+build	Complete job	2026-10-09T03:30:01.3349530Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/cache@v3, actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

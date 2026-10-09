@@ -327,9 +327,10 @@ extern const char *lk_reason_cstr(lk_reason r);
         tf.autocorrectionType = UITextAutocorrectionTypeNo;
     }];
     [a addAction:[UIAlertAction actionWithTitle:@"复制 UDID" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
+        (void)act;
         if (udid.length) {
             [[UIPasteboard generalPasteboard] setString:udid];
-            act.title = @"已复制 ✓";   // 原地反馈，不 dismiss，方便继续粘贴解锁码
+            [self _toast:@"已复制本机 UDID 到剪贴板"];
         }
     }]];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
