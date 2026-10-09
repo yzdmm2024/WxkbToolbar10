@@ -14,33 +14,78 @@
 
 #pragma mark - UDID（与母本 locsim_gen 同源）
 
-static NSString *__attribute__((noinline)) _UD(void) {
-    static NSString *uid = nil;
-    static dispatch_once_t o;
-    dispatch_once(&o, ^{
+/* 跨进程共享 UDID 缓存文件：解锁时（设置面板进程，MGCopyAnswer 能拿到真 UDID）把真 UDID
+ * 落盘；键盘扩展等 MGCopyAnswer 取不到真 UDID 的进程直接读这份缓存，保证「签码用的 UDID」
+ * 与「运行时验签用的 UDID」是同一个。
+ *
+ * 为什么必须有它：解锁码是用「解锁那一刻 device_id 拿到的 UDID」签的；但运行时（尤其键盘
+ * 扩展沙盒，以及切后台回前台后的面板）MGCopyAnswer 往往取不到真 UDID、回退成 "unknown"，
+ * 于是运行时拿 "unknown" 去验「绑了真 UDID 的码」→ 验签失败 → lk_peek 返回 LK_LOCKED →
+ * 整插件被误判未授权。表现正是用户报的两个 bug：键帽/形状在键盘上不生效（WXKBApplyCorner
+ * 被门禁跳过）、切后台回面板整张表置灰且只能点「解锁」按钮。
+ * 落盘缓存让所有进程都复用签码时的那个真 UDID，从根上消除跨进程/跨时刻的 UDID 不一致。 */
+static NSString *__udidCacheFile(void) {
+    NSArray *cands = @[
+        @"/var/jb/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.udid",
+        @"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.udid",
+    ];
+    for (NSString *p in cands) {
+        if ([[NSFileManager defaultManager] fileExistsAtPath:p]) return p;
+    }
+    return cands.lastObject;
+}
+
+static void _wxkbCacheUDID(NSString *udid) {
+    if (!udid.length || [udid isEqualToString:@"unknown"]) return;
+    [udid writeToFile:__udidCacheFile() atomically:NO encoding:NSUTF8StringEncoding error:nil];
+}
+
+static NSString *__realUDID = nil;     // 本进程经 MGCopyAnswer 拿到的真 UDID（缓存，避免反复 dlopen）
+static BOOL __realUDIDTried = NO;
+
+static NSString *__attribute__((noinline)) _wxkbRealUDID(void) {
+    if (!__realUDIDTried) {
+        __realUDIDTried = YES;
         void *h = dlopen("/System/Library/PrivateFrameworks/"
                          "MobileKeyBag.framework/MobileKeyBag", RTLD_LAZY);
         if (h) {
             NSString *(*mg)(NSString *) = dlsym(h, "MGCopyAnswer");
-            if (mg) uid = mg(@"UniqueDeviceID");
-        }
-        if (!uid) {
-            id dev = [UIDevice currentDevice];
-            SEL s = NSSelectorFromString(@"uniqueIdentifier");
-            if ([dev respondsToSelector:s]) {
-                IMP imp = [dev methodForSelector:s];
-                uid = ((id (*)(id, SEL))imp)(dev, s);
+            if (mg) {
+                NSString *u = mg(@"UniqueDeviceID");
+                if (u.length && ![u isEqualToString:@"unknown"]) {
+                    __realUDID = u;
+                    _wxkbCacheUDID(u);   // 落盘，供键盘扩展复用
+                }
             }
         }
-        if (!uid) uid = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
-        if (!uid) uid = @"unknown";
-    });
-    return uid;
+    }
+    return __realUDID;
+}
+
+static NSString *__attribute__((noinline)) _wxkbFallbackUDID(void) {
+    NSString *ud = nil;
+    id dev = [UIDevice currentDevice];
+    SEL s = NSSelectorFromString(@"uniqueIdentifier");
+    if ([dev respondsToSelector:s]) {
+        IMP imp = [dev methodForSelector:s];
+        ud = ((id (*)(id, SEL))imp)(dev, s);
+    }
+    if (!ud) ud = [[dev identifierForVendor] UUIDString];
+    if (!ud) ud = @"unknown";
+    return ud;
 }
 
 static int my_device_id(char *buf, int cap) {
-    NSString *ud = _UD();
-    if (!ud || !ud.length) return -1;
+    NSString *ud = nil;
+    NSString *real = _wxkbRealUDID();            // 优先：本进程能拿到真 UDID（设置面板）
+    if (real.length) ud = real;
+    if (!ud) {                                    // 拿不到：读落盘缓存（签码时的真 UDID）
+        ud = [NSString stringWithContentsOfFile:__udidCacheFile()
+                                       encoding:NSUTF8StringEncoding error:nil];
+        if (!ud.length || [ud isEqualToString:@"unknown"]) ud = nil;
+    }
+    if (!ud) ud = _wxkbFallbackUDID();            // 仍没有：identifierForVendor / unknown
+    if (!ud || !ud.length) ud = @"unknown";
     const char *c = [ud UTF8String];
     int n = (int)strlen(c);
     if (n >= cap) n = cap - 1;

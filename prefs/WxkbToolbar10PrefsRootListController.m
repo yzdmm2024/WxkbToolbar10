@@ -96,6 +96,7 @@ extern const char *lk_reason_cstr(lk_reason r);
     if (!self.isViewLoaded) return;          // 面板还没打开过，无需处理
     UITableView *tv = [self wxkbTableView];
     if (tv) {
+        tv.userInteractionEnabled = YES;     // 双保险：确保整张表在回前台时可交互（避免整表点不动）
         for (UIGestureRecognizer *g in tv.gestureRecognizers) {
             g.enabled = NO;
             g.enabled = YES;
