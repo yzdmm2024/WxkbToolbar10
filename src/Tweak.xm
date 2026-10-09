@@ -112,6 +112,28 @@
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import "WXKBShared.h"
+#import "lk.h"
+extern const lk_env *lk_get_env(void);
+
+/* —— 授权校验（license_kit：母本加密狗 / 16 位解锁码）——
+ * 母本 com.locsim.generator 在场，或已提交有效解锁码 → 视为已授权。
+ * 未授权时本插件所有增强（外观 / 工具栏动作）一律不生效。
+ * 结果缓存 5s，避免每次 layoutSubviews 都扫一遍已装 App。 */
+static BOOL WXKBIsLicensed(void) {
+    static int gLkCached = -1;   // -1 未知, 0 未授权, 1 已授权
+    static CFAbsoluteTime gLkTs = 0;
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    if (gLkCached >= 0 && now - gLkTs < 5.0) return gLkCached == 1;
+    const lk_env *env = lk_get_env();
+    lk_reason why = LK_R_NONE;
+    long long exp = 0;
+    BOOL ok = NO;
+    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) ok = YES;
+    else if (lk_peek(env, &exp, &why) == LK_UNLOCKED) ok = YES;
+    gLkCached = ok ? 1 : 0;
+    gLkTs = now;
+    return ok;
+}
 
 #pragma mark - 私有类声明（实现由原 App 提供）
 
@@ -1173,6 +1195,7 @@ static void WXKBDarkenSiblingIcons(UIView *label) {
 }
 
 static void WXKBApplyCorner(UIView *v) {
+    if (!WXKBIsLicensed()) return;
     WXKBApplyCornerInner(v);
     if (!v) return;
     WXKBApplyCap(v, WXKBFindBgLeaf(v, 0));
@@ -1317,6 +1340,7 @@ static void WXKBRestoreBgTree(UIView *v) {
 // 按键子树 / 增强按钮条 / 自绘背景层在 WXKBClearBgTree 里照常跳过。
 static void WXKBApplyTransparency(UIView *host) {
     if (!host) return;
+    if (!WXKBIsLicensed()) { WXKBRestoreBgTree(host.window ?: host); return; }
     UIView *top = host.window ?: host;
     if (!gEnabled || !gTransparent) {
         WXKBRestoreBgTree(top);
@@ -1385,6 +1409,7 @@ static void WXKBRestoreAncestorBg(UIView *root) {
 
 static void WXKBApplyOffset(UIView *root) {
     if (!root) return;
+    if (!WXKBIsLicensed()) { root.transform = CGAffineTransformIdentity; return; }
     @try {
         CGFloat off = (gEnabled ? gKbOffset : 0.0);
         if (off > 0.5) {
@@ -2302,6 +2327,12 @@ static void WXKBApplyBackground(UIView *host) {
         return;
     }
     UIView *bg = [host viewWithTag:kWXKBBgViewTag];
+    if (!WXKBIsLicensed()) {
+        if (bg) {
+            [bg removeFromSuperview];
+        }
+        return;
+    }
     if (!gEnabled || (!gBgEnabled && !gTransparent && !gSkinEnabled)) {
         if (bg) {
             [bg removeFromSuperview];
@@ -2525,6 +2556,7 @@ static void WXKBActDeleteAllLocal(void) {
 // 并在滚动视图上挂一个「只识别点按、不拦截触摸」的 UITapGestureRecognizer
 // 来触发（见下方 WXKBInstallTap）。
 static void WXKBFireAction(int c) {
+    if (!WXKBIsLicensed()) return;
     @try {
         switch (c) {
             case WXKB_ACT_CURSOR_LEFT:  WXKBActCursorMove(-1); break;
@@ -3126,7 +3158,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.3.9 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld",
+    NSLog(@"[WxkbToolbar10] 2.5.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld licensed=%d",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir);
+          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir, WXKBIsLicensed());
 }

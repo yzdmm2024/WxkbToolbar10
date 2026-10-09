@@ -1,6 +1,9 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
 #import "WXKBPreviewKeyboardView.h"
+#import "lk.h"
+extern const lk_env *lk_get_env(void);
+extern const char *lk_reason_cstr(lk_reason r);
 
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
@@ -59,6 +62,12 @@
     }
     NSMutableArray *s = [NSMutableArray array];
     PSSpecifier *g;
+
+    // ---- 解锁 / 验证 ----
+    g = [PSSpecifier groupSpecifierWithName:@"解锁 / 验证"];
+    [g setProperty:@"本插件需授权后生效：设备装正版母本（加密狗）自动解锁，或点下方「解锁」输入 16 位码。" forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbButton:[self _lkStatusTitle] action:@selector(_doUnlock:)]];
 
     // ---- 总开关 ----
     g = [PSSpecifier groupSpecifierWithName:@"总开关"];
@@ -272,6 +281,52 @@
     [a addAction:[UIAlertAction actionWithTitle:@"好"
                                           style:UIAlertActionStyleDefault
                                         handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+
+#pragma mark - 解锁 / 验证
+
+- (NSString *)_lkStatusTitle {
+    const lk_env *env = lk_get_env();
+    lk_reason why = LK_R_NONE;
+    long long exp = 0;
+    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) return @"解锁（母本已识别）";
+    if (lk_peek(env, &exp, &why) == LK_UNLOCKED) return @"解锁（已输码）";
+    return @"解锁（未授权）";
+}
+
+- (void)_doUnlock:(PSSpecifier *)spec {
+    (void)spec;
+    const lk_env *env = lk_get_env();
+    lk_reason why = LK_R_NONE;
+    long long exp = 0;
+    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) {
+        [self _toast:@"已通过母本（加密狗）自动解锁，无需输入解锁码。"];
+        [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
+        return;
+    }
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"输入解锁码"
+        message:@"粘贴作者签发的 16 位解锁码，点「解锁」完成验证。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addTextFieldWithConfigurationHandler:^(UITextField *tf){
+        tf.placeholder = @"16 位解锁码"; tf.clearButtonMode = UITextFieldViewModeWhileEditing;
+    }];
+    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:@"解锁" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
+        UITextField *tf = a.textFields.firstObject;
+        NSString *code = [[tf text] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (code.length == 0) return;
+        lk_reason w = LK_R_NONE;
+        lk_status st = lk_submit(env, [code UTF8String], &w);
+        if (st == LK_UNLOCKED) [self _toast:@"解锁成功"];
+        else [self _toast:[NSString stringWithFormat:@"解锁失败：%s", lk_reason_cstr(w)]];
+        [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+
+- (void)_toast:(NSString *)msg {
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:nil message:msg preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
 

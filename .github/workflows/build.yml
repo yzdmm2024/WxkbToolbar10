@@ -27,3 +27,22 @@ jobs:
           name: Tweak-deb
           path: packages/*.deb
           if-no-files-found: error
+      # 自动发布到越狱源 yzdmm2024/repo（debs/ + 重算 Packages）。
+      # 需在仓库 Settings → Secrets 配置 REPO_DEPLOY_TOKEN（对 yzdmm2024/repo 有写权限的 PAT）。
+      # 未配置该 secret 时本步自动跳过，仍可走手动发布流程。
+      - name: publish to source repo (yzdmm2024/repo)
+        if: ${{ success() && secrets.REPO_DEPLOY_TOKEN != '' }}
+        env:
+          TOKEN: ${{ secrets.REPO_DEPLOY_TOKEN }}
+        run: |
+          set -e
+          DEB=$(ls packages/*.deb | head -1)
+          BASE=$(basename "$DEB")
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/yzdmm2024/repo.git" _src
+          cp "$DEB" "_src/debs/$BASE"
+          cd _src
+          python3 gen_packages.py
+          git add -A
+          git diff --cached --quiet || { git commit -m "ci: publish $BASE"; git push origin HEAD:main; }
