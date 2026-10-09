@@ -140,7 +140,7 @@
 
     // ---- 关于本插件（版本号 + 反馈，置于最底部）----
     g = [PSSpecifier groupSpecifierWithName:@"关于本插件"];
-    [g setProperty:@"WxkbToolbar10 v2.5.18\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
+    [g setProperty:@"WxkbToolbar10 v2.5.19\n如有问题或建议，可邮件反馈作者：wacljcr@qq.com（请附设备型号与系统版本）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"复制作者邮箱" action:@selector(copyEmail:)]];

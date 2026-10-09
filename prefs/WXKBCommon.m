@@ -1,16 +1,7 @@
 // WXKBCommon.m — 偏好面板公共基类与读写工具
 #import "WXKBCommon.h"
 #import "WXKBInlineGridCell.h"   // 声明 setWxkbEnabled:，供 tableView:cellForRowAtIndexPath: 同步锁定态
-#import "lk.h"
 #import <objc/runtime.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-extern const lk_env *lk_get_env(void);
-#ifdef __cplusplus
-}
-#endif
 
 static NSUserDefaults *WXKBDefaults(void) {
     static NSUserDefaults *d = nil;
@@ -289,44 +280,21 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
         cell.imageView.image = WXKBSwatch(WXKBColorFromHex(hex), 29);
     }
 
-    // —— 锁定态置灰：未授权时，除「解锁」按钮外所有功能 cell 一律变灰且不可交互 ——
-    // 关键：本 SDK 的 PSSpecifier 运行期根本没有 setEnabled:/isEnabled（强调用会
-    // unrecognized selector 闪退），故绕开 specifier，直接在 cell 层做禁用。
-    BOOL isUnlock = [[sp propertyForKey:@"wxkbUnlockEntry"] boolValue];
-    BOOL licensed = NO;
-    {
-        const lk_env *env = lk_get_env();
-        if (env) {
-            long long exp = 0; lk_reason why = LK_R_NONE;
-            if (lk_peek(env, &exp, &why) == LK_UNLOCKED) licensed = YES;
-        }
-    }
-    if (!licensed && !isUnlock) {
-        cell.userInteractionEnabled = NO;                       // 整行不可选/不可点
-        if (cell.textLabel)       cell.textLabel.enabled = NO;  // 文字转灰
-        if (cell.detailTextLabel) cell.detailTextLabel.enabled = NO;
-        if (cell.imageView)       cell.imageView.alpha = 0.4;
-        for (UIView *v in cell.contentView.subviews) {          // 开关/滑块等子控件禁用+变灰
-            if ([v isKindOfClass:[UIControl class]]) { ((UIControl *)v).enabled = NO; v.alpha = 0.4; }
-        }
-    } else {
-        cell.userInteractionEnabled = YES;
-        if (cell.textLabel)       cell.textLabel.enabled = YES;
-        if (cell.detailTextLabel) cell.detailTextLabel.enabled = YES;
-        if (cell.imageView)       cell.imageView.alpha = 1.0;
-        for (UIView *v in cell.contentView.subviews) {
-            if ([v isKindOfClass:[UIControl class]]) { ((UIControl *)v).enabled = YES; v.alpha = 1.0; }
-        }
+    // 验证系统已移除：所有功能 cell 一律启用、可交互（不再有锁定置灰）。
+    cell.userInteractionEnabled = YES;
+    if (cell.textLabel)       cell.textLabel.enabled = YES;
+    if (cell.detailTextLabel) cell.detailTextLabel.enabled = YES;
+    if (cell.imageView)       cell.imageView.alpha = 1.0;
+    for (UIView *v in cell.contentView.subviews) {
+        if ([v isKindOfClass:[UIControl class]]) { ((UIControl *)v).enabled = YES; v.alpha = 1.0; }
     }
 
-    // 内联网格 cell：把锁定态透传给 cell，使其整格按钮置灰、不可点（解锁后恢复）。
-    // 直接用 cellClass 判断，避免引入头文件依赖；cell 此处类型是 UITableViewCell*，
-    // 转发前转 id 以绕过编译期 selector 检查（respondsToSelector 已保护）。
+    // 内联网格 cell：始终启用。
     id cellObj = cell;
     Class gridCls = [sp propertyForKey:@"cellClass"];
     if (gridCls && [cellObj isKindOfClass:gridCls] &&
         [cellObj respondsToSelector:@selector(setWxkbEnabled:)]) {
-        [cellObj setWxkbEnabled:(licensed || isUnlock)];
+        [cellObj setWxkbEnabled:YES];
     }
 
     return cell;
