@@ -71,7 +71,7 @@ extern const char *lk_reason_cstr(lk_reason r);
 
     // ---- 解锁 / 验证 ----
     g = [PSSpecifier groupSpecifierWithName:@"解锁 / 验证"];
-    [g setProperty:@"本插件需授权后生效：设备装正版母本（加密狗）自动解锁，或点下方「解锁」输入 16 位码。" forKey:@"footerText"];
+    [g setProperty:@"本插件需授权后生效：设备装正版母本（加密狗）自动解锁，或点下方「解锁」复制本机 UDID 发给作者签 16 位码后，再粘贴解锁。" forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:[self _lkStatusTitle] action:@selector(_doUnlock:)]];
 
@@ -311,11 +311,27 @@ extern const char *lk_reason_cstr(lk_reason r);
         [self performSelector:@selector(reloadSpecifiers) withObject:nil afterDelay:0.2];
         return;
     }
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"输入解锁码"
-        message:@"粘贴作者签发的 16 位解锁码，点「解锁」完成验证。" preferredStyle:UIAlertControllerStyleAlert];
+    // 取出与验签同源的本机 UDID，供用户复制后发给作者签码
+    char udidBuf[160];
+    NSString *udid = @"";
+    if (env->device_id && env->device_id(udidBuf, (int)sizeof(udidBuf)) > 0) {
+        udid = [NSString stringWithUTF8String:udidBuf];
+    }
+    NSString *msg = [NSString stringWithFormat:
+        @"本机 UDID（点「复制 UDID」发给作者签码）：\n%@\n\n再把作者签发的 16 位解锁码粘贴到下方，点「解锁」。", udid];
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"解锁（输入解锁码）"
+        message:msg preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *tf){
         tf.placeholder = @"16 位解锁码"; tf.clearButtonMode = UITextFieldViewModeWhileEditing;
+        tf.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters;
+        tf.autocorrectionType = UITextAutocorrectionTypeNo;
     }];
+    [a addAction:[UIAlertAction actionWithTitle:@"复制 UDID" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
+        if (udid.length) {
+            [[UIPasteboard generalPasteboard] setString:udid];
+            act.title = @"已复制 ✓";   // 原地反馈，不 dismiss，方便继续粘贴解锁码
+        }
+    }]];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"解锁" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
         UITextField *tf = a.textFields.firstObject;
