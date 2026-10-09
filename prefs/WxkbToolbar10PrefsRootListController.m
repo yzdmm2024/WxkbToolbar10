@@ -2,8 +2,14 @@
 #import "WXKBCommon.h"
 #import "WXKBPreviewKeyboardView.h"
 #import "lk.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern const lk_env *lk_get_env(void);
 extern const char *lk_reason_cstr(lk_reason r);
+#ifdef __cplusplus
+}
+#endif
 
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览

@@ -113,7 +113,13 @@
 #import <dlfcn.h>
 #import "WXKBShared.h"
 #import "lk.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern const lk_env *lk_get_env(void);
+#ifdef __cplusplus
+}
+#endif
 
 /* —— 授权校验（license_kit：母本加密狗 / 16 位解锁码）——
  * 母本 com.locsim.generator 在场，或已提交有效解锁码 → 视为已授权。
