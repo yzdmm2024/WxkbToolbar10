@@ -473,8 +473,27 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     [sp setProperty:colors forKey:@"wxkbGridColors"];
     [sp setProperty:@(cols) forKey:@"wxkbGridColumns"];
     [sp setProperty:mode forKey:@"wxkbGridMode"];
-    // 紧凑：单行横向滑动条，高度压到一行，省空间（主题 32 个也能一屏扫到）
-    [sp setProperty:@(56.0) forKey:@"wxkbGridHeight"];
+    // 换行布局：按屏幕可用宽度自动折行，高度随之计算（不再内嵌 scrollView，避免切后台卡死）。
+    // 宽度公式与 WXKBInlineGridCell 的 wxkbChipWidth 保持一致；可用宽度取偏保守值，
+    // 确保实际折行不会超出估算行数而裁掉最后一行。
+    CGFloat screenW = (CGFloat)[UIScreen mainScreen].bounds.size.width;
+    CGFloat avail = screenW - 56.0;            // 预留左右内边距
+    CGFloat padX = 12.0, padY = 8.0, gapX = 8.0, gapY = 8.0, rowH = 36.0;
+    CGFloat x = padX, y = padY;
+    for (NSUInteger i = 0; i < titles.count; i++) {
+        NSString *t = [titles[i] isKindOfClass:[NSString class]] ? titles[i] : @"";
+        CGFloat w;
+        if ([mode isEqualToString:@"theme"]) {
+            w = 74.0;
+        } else {
+            CGSize s = [t sizeWithAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:12]}];
+            w = MAX(48.0, s.width + 26.0);
+        }
+        if (x + w > avail && x > padX) { x = padX; y += rowH + gapY; }
+        x += w + gapX;
+    }
+    CGFloat gridH = y + rowH + padY + 6.0;      // +6 余量，防估算偏差裁行
+    [sp setProperty:@(gridH) forKey:@"wxkbGridHeight"];
     return sp;
 }
 

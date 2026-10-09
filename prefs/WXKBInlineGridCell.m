@@ -130,21 +130,14 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
             [self.contentView addSubview:b];
         }
     } else {
-        _scrollView = [[UIScrollView alloc] initWithFrame:CGRectZero];
-        _scrollView.showsHorizontalScrollIndicator = NO;
-        _scrollView.showsVerticalScrollIndicator = NO;
-        _scrollView.directionalLockEnabled = YES;
-        _scrollView.userInteractionEnabled = YES;
-        // 刻意不使用 delaysContentTouches = NO。iOS 在 app 切后台时偶尔不会把
-        // touchesCancelled 正确派发给嵌套 scrollView，delaysContentTouches=NO 时更易让
-        // 手势卡在「追踪中」，导致切回前台后整行点不动/滑不动。保持默认（YES）更稳。
-        _scrollView.canCancelContentTouches = YES;
-        [self.contentView addSubview:_scrollView];
+        // 不再内嵌 UIScrollView：嵌套 scrollView 在 app 切后台回来时极易卡在手势追踪态，
+        // 导致整行点不动/滑不动（本设备在 2.5.7 仍复现）。改用「自动换行」布局，所有
+        // chip 直接 add 到 contentView，可点性与滚动无关，切后台回来永不卡。
         for (NSMutableDictionary *it in _flatItems) {
             UIButton *b = [self wxkbMakeButton:it mode:mode];
             [b addTarget:self action:@selector(selectTap:) forControlEvents:UIControlEventTouchUpInside];
             it[@"button"] = b;
-            [_scrollView addSubview:b];
+            [self.contentView addSubview:b];
         }
     }
 
@@ -229,19 +222,22 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
             y += rowH + gap;
         }
     } else {
-        CGFloat padY = 8.0, gap = 8.0;
+        // 自动换行（flow）布局：从左到右排，当前行放不下就折到下一行。无需 scrollView。
+        CGFloat padX = 12.0, padY = 8.0, gapX = 8.0, gapY = 8.0;
+        CGFloat maxX = b.size.width - padX;
         CGFloat h = b.size.height - 2.0 * padY;
         if (h < 20.0) h = 20.0;
-        CGFloat y = padY;
-        CGFloat x = 12.0;
+        CGFloat x = padX, y = padY;
         for (NSMutableDictionary *it in _flatItems) {
-            UIButton *bt = it[@"button"];
             CGFloat w = [self wxkbChipWidth:it mode:mode];
+            if (x + w > maxX && x > padX) {   // 当前行放不下 → 换行
+                x = padX;
+                y += h + gapY;
+            }
+            UIButton *bt = it[@"button"];
             bt.frame = CGRectMake(x, y, w, h);
-            x += w + gap;
+            x += w + gapX;
         }
-        _scrollView.frame = b;
-        _scrollView.contentSize = CGSizeMake(x + 12.0 - gap, b.size.height);
     }
 }
 
@@ -316,20 +312,9 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
     }
 }
 
-// 前台恢复时调用：让嵌套 scrollView 的手势状态复位，避免「切后台回来整行点不动/滑不动」
-// （iOS 偶尔在 app 中断触摸时不派发 touchesCancelled，使 pan 手势卡在追踪态）。
-- (void)wxkbResetScroll {
-    UIScrollView *sv = _scrollView;
-    if (!sv) return;
-    sv.panGestureRecognizer.enabled = NO;
-    sv.panGestureRecognizer.enabled = YES;
-    [sv setContentOffset:sv.contentOffset animated:NO];
-    [sv setNeedsLayout];
-}
-
 // 未授权时整格置灰、按钮不可点。该 SDK 的 PSTableCell 不暴露 setEnabled:，框架也不会
 // 调它；故由基类 tableView:cellForRowAtIndexPath: 显式调用 setWxkbEnabled: 同步锁定态。
-// 注意：按钮置为不可交互后，hitTest 会自然跳过它们（仍可横向滚动查看，只是不触发选择）。
+// 注意：按钮置为不可交互后，hitTest 会自然跳过它们（锁定态下整格不可选）。
 - (void)setWxkbEnabled:(BOOL)enabled {
     _wxkbEnabled = enabled;
     [self wxkbApplyEnabledState];
@@ -343,8 +328,6 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         b.userInteractionEnabled = _wxkbEnabled;
         b.alpha = a;
     }
-    // 滚动容器始终保留滑动（锁定下仅能滑动、不能选）；字母网格无 scrollView 则跳过
-    if (_scrollView) _scrollView.userInteractionEnabled = YES;
 }
 
 - (UIColor *)wxkbTextOn:(UIColor *)c {
