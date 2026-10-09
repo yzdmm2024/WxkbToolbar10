@@ -1,5 +1,6 @@
-// WXKBPickerControllers.m — 系统取色器入口 + 单选列表
+// WXKBPickerControllers.m — 系统取色器入口 + 单选列表 + 子页预览选择器
 #import "WXKBCommon.h"
+#import "WXKBPreviewKeyboardView.h"
 
 #pragma mark - 系统取色器（UIColorPickerViewController）
 
@@ -91,7 +92,7 @@
 
 @end
 
-#pragma mark - 单选列表
+#pragma mark - 单选列表（旧，保留兼容）
 
 @interface WXKBChoiceListController : WXKBBaseListController
 @end
@@ -145,6 +146,127 @@
 
 @end
 
+#pragma mark - 子页预览选择器（横向布局 + 实时预览 + 确定返回）
+
+@interface WXKBChoicePreviewController : WXKBBaseListController {
+    WXKBPreviewKeyboardView *_pv;
+    UIScrollView *_optScroll;
+    NSMutableArray *_optButtons;
+    NSString *_key;
+    NSArray *_values;
+    NSArray *_titles;
+    BOOL _isTheme;
+}
+@end
+
+@implementation WXKBChoicePreviewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = [self.specifier name] ?: @"选择";
+    _key = [self.specifier propertyForKey:@"key"];
+    _values = [self.specifier propertyForKey:@"values"];
+    _titles = [self.specifier propertyForKey:@"titles"];
+    _isTheme = [_key isEqualToString:WXKB_KEY_SKIN_THEME];
+
+    CGFloat w = CGRectGetWidth([UIScreen mainScreen].bounds);
+    if (w < 1.0) w = 375.0;
+    CGFloat pad = 12.0;
+    CGFloat innerW = w - pad * 2.0;
+
+    CGFloat ph = [WXKBPreviewKeyboardView preferredHeightForWidth:innerW];
+    _pv = [[WXKBPreviewKeyboardView alloc] initWithFrame:CGRectMake(pad, pad, innerW, ph)];
+    _pv.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [_pv refresh];
+
+    CGFloat btnH = 58.0, btnW = 72.0, gap = 10.0;
+    CGFloat scrollY = pad * 2.0 + ph;
+    _optScroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, scrollY, w, btnH + 6.0)];
+    _optScroll.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    _optScroll.showsHorizontalScrollIndicator = NO;
+    _optScroll.showsVerticalScrollIndicator = NO;
+    _optButtons = [NSMutableArray array];
+    CGFloat x = pad;
+    id current = [self readPreferenceValue:self.specifier];
+    for (NSUInteger i = 0; i < _values.count; i++) {
+        UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+        b.frame = CGRectMake(x, 0, btnW, btnH);
+        b.layer.cornerRadius = 10.0;
+        b.layer.masksToBounds = YES;
+        b.titleLabel.font = [UIFont systemFontOfSize:13.0];
+        b.titleLabel.textAlignment = NSTextAlignmentCenter;
+        b.titleLabel.numberOfLines = 2;
+        [b setTitle:_titles[i] forState:UIControlStateNormal];
+        if (_isTheme) {
+            UIColor *sw = WXKBThemeSwatchColor([_values[i] integerValue]);
+            [b setBackgroundColor:(sw ?: [UIColor lightGrayColor])];
+            [b setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+        } else {
+            [b setBackgroundColor:[UIColor colorWithWhite:0.92 alpha:1.0]];
+            [b setTitleColor:[UIColor darkTextColor] forState:UIControlStateNormal];
+        }
+        b.tag = (NSInteger)i;
+        [b addTarget:self action:@selector(pick:) forControlEvents:UIControlEventTouchUpInside];
+        [_optScroll addSubview:b];
+        [_optButtons addObject:b];
+        x += btnW + gap;
+    }
+    _optScroll.contentSize = CGSizeMake(MAX(x, w), btnH + 6.0);
+    [self updateHighlight:current];
+
+    CGFloat headerH = scrollY + btnH + 6.0 + pad;
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, headerH)];
+    header.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    [header addSubview:_pv];
+    [header addSubview:_optScroll];
+    self.tableView.tableHeaderView = header;
+}
+
+- (NSArray *)specifiers {
+    if (_specifiers) {
+        return _specifiers;
+    }
+    NSMutableArray *s = [NSMutableArray array];
+    PSSpecifier *g = [PSSpecifier groupSpecifierWithName:nil];
+    [g setProperty:@"上方实时预览随选择即时变化；选好后点「确定并返回」。"
+            forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbButton:@"确定并返回" action:@selector(done:)]];
+    _specifiers = s;
+    return _specifiers;
+}
+
+- (void)pick:(UIButton *)b {
+    NSInteger i = b.tag;
+    if (i < 0 || i >= (NSInteger)_values.count) {
+        return;
+    }
+    id val = _values[i];
+    WXKBSetPref(_key, val);
+    if ([_key isEqualToString:WXKB_KEY_SKIN_THEME] && [val integerValue] != 0) {
+        WXKBSetPref(WXKB_KEY_SKIN_ENABLED, @YES);
+    }
+    [[self class] wxkbNotifyChanged];
+    [_pv refresh];
+    [self updateHighlight:val];
+}
+
+- (void)updateHighlight:(id)cur {
+    NSString *curDesc = [cur description];
+    for (NSUInteger i = 0; i < _optButtons.count; i++) {
+        UIButton *b = _optButtons[i];
+        BOOL sel = [[_values[i] description] isEqualToString:curDesc];
+        b.layer.borderWidth = sel ? 3.0 : 0.0;
+        b.layer.borderColor = sel ? ([[UIColor systemBlueColor] CGColor]) : nil;
+    }
+}
+
+- (void)done:(id)sender {
+    [self.navigationController popViewControllerAnimated:YES];
+}
+
+@end
+
 #pragma mark - 26 字母逐个上色（原生子页列表，替代自定义内联网格）
 
 @interface WXKBLetterListController : WXKBBaseListController
@@ -169,7 +291,7 @@
     }
     NSMutableArray *s = [NSMutableArray array];
     PSSpecifier *g = [PSSpecifier groupSpecifierWithName:nil];
-    [g setProperty:@"点任意字母，直接用系统取色器上色；返回即生效。顶部预览实时跟随。"
+    [g setProperty:@"点任意字母，直接用系统取色器上色；返回即生效。"
             forKey:@"footerText"];
     [s addObject:g];
     for (NSInteger i = 0; i < 26; i++) {
