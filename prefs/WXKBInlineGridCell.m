@@ -33,6 +33,7 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         self.backgroundColor = [UIColor clearColor];
         self.textLabel.hidden = YES;
         self.detailTextLabel.hidden = YES;
+        self.contentView.userInteractionEnabled = YES;   // 保证内嵌按钮能收触摸
         _flatItems = [NSMutableArray array];
         _cols = 0;
     }
@@ -195,6 +196,19 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
         }
         y += rowH + gap;
     }
+}
+
+// 关键修复：PSTableCell 对 PSLinkCell 会接管整行触摸，导致 contentView 内的 UIButton
+// 收不到 TouchUpInside。这里让落在按钮矩形内的触摸优先交给按钮，其余区域回落到 cell。
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    for (UIView *sub in self.contentView.subviews) {
+        if (!sub.userInteractionEnabled || sub.hidden) continue;
+        CGPoint p = [sub convertPoint:point fromView:self];
+        if ([sub pointInside:p withEvent:event]) {
+            return sub;
+        }
+    }
+    return [super hitTest:point withEvent:event];
 }
 
 - (void)wxkbUpdateSelection {
