@@ -327,14 +327,9 @@ static void WXKBInlineGridNotify(CFNotificationCenterRef center, void *observer,
     [sv setNeedsLayout];
 }
 
-// 未授权时整格置灰、按钮不可点。PSListController 会通过 setEnabled: 把 specifier 的
-// 禁用状态透传给 cell；这里同时暴露 setWxkbEnabled: 供基类显式同步。
+// 未授权时整格置灰、按钮不可点。该 SDK 的 PSTableCell 不暴露 setEnabled:，框架也不会
+// 调它；故由基类 tableView:cellForRowAtIndexPath: 显式调用 setWxkbEnabled: 同步锁定态。
 // 注意：按钮置为不可交互后，hitTest 会自然跳过它们（仍可横向滚动查看，只是不触发选择）。
-- (void)setEnabled:(BOOL)enabled {
-    [super setEnabled:enabled];
-    [self setWxkbEnabled:enabled];
-}
-
 - (void)setWxkbEnabled:(BOOL)enabled {
     _wxkbEnabled = enabled;
     [self wxkbApplyEnabledState];
