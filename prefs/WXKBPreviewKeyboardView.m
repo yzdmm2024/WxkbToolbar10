@@ -65,6 +65,83 @@ static UIBezierPath *wxkbPVWaterDrop(CGSize s) {
     return p;
 }
 
+// 形状路径（与 Tweak 的 WXKBShapePath 完全一致）：shape 1~11
+static UIBezierPath *wxkbPVShapePath(NSInteger shape, CGSize s) {
+    CGFloat w = s.width, h = s.height;
+    if (w <= 0 || h <= 0) return nil;
+    CGFloat cx = w / 2.0, cy = h / 2.0;
+    UIBezierPath *p = [UIBezierPath bezierPath];
+    switch (shape) {
+        case 1:  // 圆形
+            return [UIBezierPath bezierPathWithOvalInRect:CGRectMake(0, 0, w, h)];
+        case 2:  // 六边形
+            return wxkbPVHexagon(s);
+        case 3:  // 水珠
+            return wxkbPVWaterDrop(s);
+        case 4: {  // 椭圆（略扁）
+            CGFloat ew = w * 0.98, eh = h * 0.86;
+            return [UIBezierPath bezierPathWithOvalInRect:
+                        CGRectMake((w - ew) / 2.0, (h - eh) / 2.0, ew, eh)];
+        }
+        case 5: {  // 菱形
+            CGPoint pts[4] = { CGPointMake(cx, h * 0.06), CGPointMake(w * 0.94, cy),
+                               CGPointMake(cx, h * 0.94), CGPointMake(w * 0.06, cy) };
+            [p moveToPoint:pts[0]];
+            for (int i = 1; i < 4; i++) [p addLineToPoint:pts[i]];
+            [p closePath]; return p;
+        }
+        case 6: {  // 五边形（正）
+            NSInteger n = 5; CGFloat R = MIN(w, h) / 2.0 * 0.98;
+            for (int i = 0; i < n; i++) {
+                double ang = -1.570796326794897 + i * 2 * 3.141592653589793 / n;
+                CGPoint pt = CGPointMake(cx + R * cos(ang), cy + R * sin(ang));
+                if (i == 0) [p moveToPoint:pt]; else [p addLineToPoint:pt];
+            }
+            [p closePath]; return p;
+        }
+        case 7: {  // 星形（五芒）
+            NSInteger n = 5; CGFloat Ro = MIN(w, h) / 2.0 * 0.98, Ri = Ro * 0.45;
+            for (int i = 0; i < n * 2; i++) {
+                double ang = -1.570796326794897 + i * 3.141592653589793 / n;
+                CGFloat rr = (i % 2 == 0) ? Ro : Ri;
+                CGPoint pt = CGPointMake(cx + rr * cos(ang), cy + rr * sin(ang));
+                if (i == 0) [p moveToPoint:pt]; else [p addLineToPoint:pt];
+            }
+            [p closePath]; return p;
+        }
+        case 8: {  // 心形（参数方程采样）
+            NSInteger N = 72; CGFloat sc = MIN(w, h) / 32.0;
+            for (int i = 0; i < N; i++) {
+                double tt = 2.0 * 3.141592653589793 * i / (N - 1);
+                double hx = 16.0 * pow(sin(tt), 3.0);
+                double hy = 13.0 * cos(tt) - 5.0 * cos(2 * tt)
+                          - 2.0 * cos(3 * tt) - cos(4 * tt);
+                CGPoint pt = CGPointMake(cx + hx * sc * 0.5,
+                                        cy - hy * sc * 0.5 + h * 0.14);
+                if (i == 0) [p moveToPoint:pt]; else [p addLineToPoint:pt];
+            }
+            [p closePath]; return p;
+        }
+        case 9:  // 药丸（横向胶囊）
+            return [UIBezierPath bezierPathWithRoundedRect:
+                        CGRectMake(w * 0.02, h * 0.06, w * 0.96, h * 0.88)
+                                                 cornerRadius:h * 0.44];
+        case 10: { // 半圆（平边在下）
+            CGFloat r = MIN(w, h) / 2.0 * 0.98;
+            [p moveToPoint:CGPointMake(cx - r, cy)];
+            [p addArcWithCenter:CGPointMake(cx, cy) radius:r
+                     startAngle:3.141592653589793 endAngle:0.0 clockwise:NO];
+            [p closePath]; return p;
+        }
+        case 11: // 圆角方（小圆角）
+            return [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, w, h)
+                                                 cornerRadius:MIN(w, h) * 0.18];
+        default:  // 兜底：圆角矩形
+            return [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, w, h)
+                                                 cornerRadius:MIN(w, h) / 2.0];
+    }
+}
+
 // HSL -> UIColor（与 Tweak 的 WXKBFromHSL 一致；共用 WXKBCommon 的实现）
 // 主题族（与 Tweak 的 kThemeFam 一致）：现由 WXKBCommon 的 WXKBThemeFam[32][4] 提供
 
@@ -77,10 +154,26 @@ static UIColor *wxkbPVThemeGradientColor(NSInteger gSkinTheme, NSInteger gSkinDi
     if (h1 < h0) h1 += 360.0;
     double ty = row / 3.0;
     double t;
-    switch (gSkinDir) {
-        case 1:  t = ty; break;
-        case 2:  t = (tx + ty) / 2.0; break;
-        default: t = tx; break;
+    if (gSkinDir >= 3) {
+        // 角度方向（3~11 → 15°/30°/60°/75°/105°/120°/135°/150°/165°）
+        static const double kAng[9] = {15.0,30.0,60.0,75.0,105.0,120.0,135.0,150.0,165.0};
+        if (gSkinDir - 3 < 9) {
+            double a = kAng[gSkinDir - 3] * 3.141592653589793 / 180.0;
+            double c = cos(a), d = sin(a);
+            double val = tx * c + ty * d;
+            double mn = (c > 0 ? 0.0 : c) + (d > 0 ? 0.0 : d);
+            double mx = (c > 0 ? c : 0.0) + (d > 0 ? d : 0.0);
+            double denom = mx - mn;
+            t = (denom > 1e-6) ? (val - mn) / denom : 0.5;
+        } else {
+            t = tx;
+        }
+    } else {
+        switch (gSkinDir) {
+            case 1:  t = ty; break;
+            case 2:  t = (tx + ty) / 2.0; break;
+            default: t = tx; break;
+        }
     }
     if (t < 0.0) t = 0.0; if (t > 1.0) t = 1.0;
     return WXKBFromHSL(h0 + (h1 - h0) * t, s, l);
@@ -261,12 +354,12 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     _gCorner     = d[WXKB_KEY_CORNER] ? [d[WXKB_KEY_CORNER] doubleValue] : 0.0;
     if (_gCorner < 0.0 || _gCorner > 22.0) _gCorner = 0.0;
     int sh = d[WXKB_KEY_SHAPE] ? [d[WXKB_KEY_SHAPE] intValue] : 0;
-    if (sh < 0 || sh > 3) sh = 0; _gShape = sh;
+    if (sh < 0 || sh > 11) sh = 0; _gShape = sh;
     _gSkinEnabled = [d[WXKB_KEY_SKIN_ENABLED] boolValue];
     _gSkinTheme   = d[WXKB_KEY_SKIN_THEME] ? [d[WXKB_KEY_SKIN_THEME] integerValue] : 0;
     if (_gSkinTheme < 0 || _gSkinTheme > 31) _gSkinTheme = 0;
     _gSkinDir     = d[WXKB_KEY_SKIN_DIR] ? [d[WXKB_KEY_SKIN_DIR] integerValue] : 0;
-    if (_gSkinDir < 0 || _gSkinDir > 2) _gSkinDir = 0;
+    if (_gSkinDir < 0 || _gSkinDir > 11) _gSkinDir = 0;
     _gSkinBg      = d[WXKB_KEY_SKIN_BG] ? [d[WXKB_KEY_SKIN_BG] integerValue] : 0;
     if (_gSkinBg < 0 || _gSkinBg > 3) _gSkinBg = 0;
 
@@ -274,7 +367,7 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     // 与 WXKBCapStyle() 一致：皮肤 + 关 -> 默认彩虹3D
     _gEffCapStyle = _gCapStyle;
     if (_gSkinEnabled && _gCapStyle == 0) _gEffCapStyle = 3;
-    if (_gEffCapStyle < 0 || _gEffCapStyle > 5) _gEffCapStyle = 0;
+    if (_gEffCapStyle < 0 || _gEffCapStyle > 11) _gEffCapStyle = 0;
 
     _gBgColor = wxkbPVColor(d[WXKB_KEY_BG_COLOR], _gBgAlpha)
                     ?: [UIColor colorWithWhite:0.11 alpha:_gBgAlpha];
@@ -566,6 +659,13 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     else if (cs == 3) { kDepth = 7.0; kInset = 4.5; kFront = 8.0; topY = 2.5; }
     else if (cs == 4) { kDepth = 4.0; kInset = 2.5; kFront = 5.0; topY = 2.0; }
     else if (cs == 5) { kDepth = 5.0; kInset = 3.0; kFront = 6.0; topY = 2.0; }
+    else if (cs >= 6 && cs <= 11) {
+        NSInteger v = cs - 6;
+        if      (v == 1) { kDepth = 5.0; kInset = 3.0; kFront = 6.0; topY = 2.0; }
+        else if (v == 3) { kDepth = 4.0; kInset = 2.5; kFront = 5.0; topY = 2.0; }
+        else if (v == 5) { kDepth = 5.0; kInset = 2.5; kFront = 6.0; topY = 2.0; }
+        else            { kDepth = 4.0; kInset = 4.0; kFront = 7.0; topY = 2.0; }
+    }
 
     CGFloat rad = 5.0;
     if (shape == 0) {
@@ -632,22 +732,33 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
         cEdge  = [UIColor colorWithWhite:0.60 alpha:0.30];
         cHi    = cLight;
         cLow   = cFace;
+    } else if (cs >= 6 && cs <= 11) {
+        // 6 磨砂 / 7 镜面 / 8 描边 / 9 软萌 / 10 极简 / 11 双色
+        NSInteger v = cs - 6;
+        if      (v == 0) { cHi = cLight; }                                  // 磨砂：弱高光
+        else if (v == 1) { cHi = [UIColor colorWithWhite:1.0 alpha:1.0]; }  // 镜面：强高光
+        else if (v == 4) { cHi = cLight; cLow = cFace; }                     // 极简：平顶
+        if      (v == 2) cEdge = [UIColor colorWithWhite:0.08 alpha:0.95];   // 描边：更黑更粗
+        else if (v == 3) cEdge = [UIColor colorWithWhite:0.0 alpha:0.0];     // 软萌：无描边
+        else if (v == 4) cEdge = [UIColor colorWithWhite:0.25 alpha:0.6];    // 极简：细描边
+        else if (v == 5) cEdge = [UIColor colorWithHue:h saturation:MIN(s*1.2,1.0) brightness:1.0 alpha:0.8]; // 双色：彩边
+        else             cEdge = [UIColor colorWithWhite:0.18 alpha:0.92];
     } else {
         cEdge = [UIColor colorWithWhite:0.18 alpha:0.92];
     }
 
     UIBezierPath *silLeaf;
-    if (effShape == 2) silLeaf = wxkbPVHexagon(sz);
-    else if (effShape == 3) silLeaf = wxkbPVWaterDrop(sz);
-    else {
-        if (effShape == 1) rad = MIN(sz.width, sz.height) / 2.0;
+    if (effShape == 0) {
         silLeaf = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0,0,sz.width,sz.height)
                                              cornerRadius:rad];
+    } else {
+        if (effShape == 1) rad = MIN(sz.width, sz.height) / 2.0;
+        silLeaf = wxkbPVShapePath(effShape, sz);
     }
     if (!silLeaf) return;
 
     UIBezierPath *topPath;
-    if (effShape >= 2) {
+    if (effShape >= 1) {
         topPath = [silLeaf copy];
         CGFloat cx = sz.width/2.0, cy = sz.height/2.0;
         CGAffineTransform t = CGAffineTransformMakeTranslation(cx, cy);
@@ -667,13 +778,11 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     }
 
     UIBezierPath *silWall;
-    if (effShape == 2) silWall = wxkbPVHexagon(sz);
-    else if (effShape == 3) silWall = wxkbPVWaterDrop(sz);
-    else {
-        CGFloat r2 = rad;
-        if (effShape == 1) r2 = MIN(sz.width, sz.height)/2.0;
+    if (effShape == 0) {
         silWall = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0,0,sz.width,sz.height)
-                                             cornerRadius:r2];
+                                             cornerRadius:rad];
+    } else {
+        silWall = wxkbPVShapePath(effShape, sz);
     }
     if (!silWall) return;
 
@@ -694,7 +803,7 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     skirt.colors = @[(id)cWallHi.CGColor, (id)cWallLo.CGColor];
     CAShapeLayer *smask = [CAShapeLayer layer]; smask.path = silLeaf.CGPath;
     skirt.mask = smask; skirt.zPosition = -997.5;
-    skirt.hidden = (cs == 3);
+    skirt.hidden = (cs == 3) || (cs == 8);
     [root addSublayer:skirt];
 
     // ② 凸起顶面（穹顶渐变）
@@ -713,6 +822,14 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     } else if (cs == 2) {
         top.locations = @[@0.0,@0.45,@0.85,@1.0];
         top.colors = @[(id)cHi.CGColor,(id)cFace.CGColor,(id)cFace.CGColor,(id)cLow.CGColor];
+    } else if (cs >= 6 && cs <= 11) {
+        if (cs == 10) {   // 极简：平顶
+            top.locations = @[@0.0,@0.5,@0.5,@1.0];
+            top.colors = @[(id)cLight.CGColor,(id)cLight.CGColor,(id)cFace.CGColor,(id)cFace.CGColor];
+        } else {
+            top.locations = @[@0.0,@0.12,@0.55,@1.0];
+            top.colors = @[(id)cHi.CGColor,(id)cLight.CGColor,(id)cFace.CGColor,(id)cLow.CGColor];
+        }
     } else {
         top.locations = @[@0.0,@0.12,@0.55,@1.0];
         top.colors = @[(id)cHi.CGColor,(id)cLight.CGColor,(id)cFace.CGColor,(id)cLow.CGColor];
@@ -749,7 +866,22 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     else if (cs == 4) { key.layer.shadowOpacity = 0.20; key.layer.shadowOffset = CGSizeMake(0,3.5);key.layer.shadowRadius = 5; }
     else if (cs == 5) { key.layer.shadowOpacity = 0.50; key.layer.shadowOffset = CGSizeMake(0,2);  key.layer.shadowRadius = 6; key.layer.shadowColor = cEdge.CGColor; }
     else if (cs == 2) { key.layer.shadowOpacity = 0.20; key.layer.shadowOffset = CGSizeMake(0,3);  key.layer.shadowRadius = 4.5; }
-    else              { key.layer.shadowOpacity = 0.28; key.layer.shadowOffset = CGSizeMake(0,2);  key.layer.shadowRadius = 3; }
+    else if (cs >= 6 && cs <= 11) {
+        NSInteger v = cs - 6;
+        if      (v == 1) {   // 7 镜面：明显投影
+            key.layer.shadowOpacity = 0.35; key.layer.shadowOffset = CGSizeMake(0,4);   key.layer.shadowRadius = 5;
+            key.layer.shadowColor = [UIColor colorWithWhite:1.0 alpha:1.0].CGColor;
+        } else if (v == 3) {  // 9 软萌：浮起投影
+            key.layer.shadowOpacity = 0.20; key.layer.shadowOffset = CGSizeMake(0,3.5); key.layer.shadowRadius = 5;
+        } else if (v == 5) {  // 11 双色：发光投影
+            key.layer.shadowOpacity = 0.50; key.layer.shadowOffset = CGSizeMake(0,2);   key.layer.shadowRadius = 6;
+            key.layer.shadowColor = cEdge.CGColor;
+        } else {              // 6 磨砂 / 8 描边 / 10 极简：标准投影
+            key.layer.shadowOpacity = 0.28; key.layer.shadowOffset = CGSizeMake(0,2);   key.layer.shadowRadius = 3;
+        }
+    } else {
+        key.layer.shadowOpacity = 0.28; key.layer.shadowOffset = CGSizeMake(0,2);  key.layer.shadowRadius = 3;
+    }
 }
 
 @end
