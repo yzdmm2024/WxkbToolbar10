@@ -1005,13 +1005,13 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
         v.layer.shadowOffset  = CGSizeMake(0.0, 3.0);
         v.layer.shadowRadius  = 4.5;
     } else if (capStyle >= 6 && capStyle <= 11) {
-        NSInteger v = capStyle - 6;
-        if      (v == 1) {   // 7 镜面：明显投影
+        NSInteger st = capStyle - 6;
+        if      (st == 1) {   // 7 镜面：明显投影
             v.layer.shadowOpacity = 0.35; v.layer.shadowOffset = CGSizeMake(0.0, 4.0); v.layer.shadowRadius = 5.0;
             v.layer.shadowColor = [UIColor colorWithWhite:1.0 alpha:1.0].CGColor;
-        } else if (v == 3) {  // 9 软萌：浮起投影
+        } else if (st == 3) {  // 9 软萌：浮起投影
             v.layer.shadowOpacity = 0.20; v.layer.shadowOffset = CGSizeMake(0.0, 3.5); v.layer.shadowRadius = 5.0;
-        } else if (v == 5) {  // 11 双色：发光投影
+        } else if (st == 5) {  // 11 双色：发光投影
             v.layer.shadowOpacity = 0.50; v.layer.shadowOffset = CGSizeMake(0.0, 2.0); v.layer.shadowRadius = 6.0;
             v.layer.shadowColor = cEdge.CGColor;
         } else {              // 6 磨砂 / 8 描边 / 10 极简：标准投影
