@@ -12,6 +12,13 @@ extern const char *lk_reason_cstr(lk_reason r);
 }
 #endif
 
+// 该 SDK 的 PSSpecifier 头未声明 setEnabled:/isEnabled，但运行期 Preferences 框架确实
+// 实现它们（标准 cell 据此自动置灰）。补一个分类声明以便禁用/查询 specifier。
+@interface PSSpecifier (WXKBEnabled)
+- (void)setEnabled:(BOOL)enabled;
+- (BOOL)isEnabled;
+@end
+
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_previewView;   // 顶部内联实时预览
     BOOL _didPromptUnlock;                   // 本次打开面板是否已弹过解锁（避免子页返回重复弹）
