@@ -32,6 +32,7 @@ WxkbToolbar10Prefs_FILES = \
 	prefs/WXKBCommon.m \
 	prefs/WXKBInlineGridCell.m \
 	prefs/WxkbToolbar10PrefsRootListController.m \
+	prefs/WxkbToolbar10PrefsSubpages.m \
 	prefs/WXKBPickerControllers.m \
 	prefs/WXKBLetterColors.m \
 	prefs/WXKBPhotoPicker.m \
