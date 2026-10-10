@@ -210,7 +210,38 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     return WXKBFromHSL(h0 + (h1 - h0) * 0.5, s, l);
 }
 
+@interface WXKBBaseListController () {
+    PSSpecifier *_wxkbCachedSpecifier;
+}
+@end
+
 @implementation WXKBBaseListController
+#pragma mark - Roothide/iOS16 鍏煎锛氶噸鍐欐墍鏈夊彲鑳界己澶辩殑 PSListController 绉佹湁鏂规硶
+
+// specifier getter锛氬厛 super锛堝鏋滄湁鐨勮瘽锛夛紝鍚﹀垯杩斿洖鎴戜滑缂撳瓨鐨?
+- (PSSpecifier *)specifier {
+    if (_wxkbCachedSpecifier) return _wxkbCachedSpecifier;
+    if ([super respondsToSelector:@selector(specifier)]) {
+        return [super specifier];
+    }
+    return nil;
+}
+
+// setSpecifier:锛歅SListController push 瀛愭帶鍒跺櫒鏃朵細璋冭繖涓紝鎴戜滑缂撳瓨涓€浠?
+- (void)setSpecifier:(PSSpecifier *)specifier {
+    _wxkbCachedSpecifier = specifier;
+    if ([super respondsToSelector:@selector(setSpecifier:)]) {
+        [super setSpecifier:specifier];
+    }
+}
+
+// specifierAtIndexPath: 绉佹湁璁块棶鍣細respondsToSelector 鍚庢墠 super 璋?
+- (PSSpecifier *)specifierAtIndexPath:(NSIndexPath *)indexPath {
+    if ([super respondsToSelector:@selector(specifierAtIndexPath:)]) {
+        return [super specifierAtIndexPath:indexPath];
+    }
+    return nil;
+}
 
 + (void)wxkbNotifyChanged {
     // 通知键盘扩展立刻重读偏好；收不到也没关系，重弹键盘一样生效。
