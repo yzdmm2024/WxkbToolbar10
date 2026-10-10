@@ -415,7 +415,8 @@ static void WXKBReload(BOOL force) {
     gSkinEnabled = [d[WXKB_KEY_SKIN_ENABLED] boolValue];
     id sb = d[WXKB_KEY_SKIN_BG];
     NSInteger sbv = sb ? [sb integerValue] : 0;
-    if (sbv < 0 || sbv > 3) sbv = 0;
+    // 3.3：背景 4~9 为新增纯色画布
+    if (sbv < 0 || sbv > 9) sbv = 0;
     gSkinBg = sbv;
     id sn = d[WXKB_KEY_SKIN_NAME];
     gSkinName = ([sn isKindOfClass:[NSString class]] && [sn length]) ? sn : @"rainbow";
@@ -425,7 +426,9 @@ static void WXKBReload(BOOL force) {
     gSkinTheme = stv;
     id sd = d[WXKB_KEY_SKIN_DIR];
     NSInteger sdv = sd ? [sd integerValue] : 0;
-    if (sdv < 0 || sdv > 2) sdv = 0;
+    // 3.3 修复：方向 3~11（15°~165° 角度）此前被钳制回 0（横向），导致真键盘上
+    // 选角度方向「按了没效果」。与预览端一致放宽到 0~11。
+    if (sdv < 0 || sdv > 11) sdv = 0;
     gSkinDir = sdv;
 
     gCapStyle = [d[WXKB_KEY_CAP_STYLE] integerValue];
@@ -689,12 +692,14 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     // 压掉系统原生阴影（取消裁剪后会漏出灰圈），改用我们自己的柔和投影
     if (v.layer.shadowOpacity > 0.0 && v.layer.shadowRadius < 0.5) v.layer.shadowOpacity = 0.0;
 
-    // 2.2.8 实际生效的形状：六边形/水珠只用于正方形键，长矩形键回退为圆角
+    // 3.3 形状只作用于「与字母键同样大小」的键（比例 0.90~1.12）：
+    // 空格 / shift / 删除 / 123 等长键一律回退为普通圆角，空格永不变形。
+    // 圆形（shape 1）同样遵守（旧版长键会被剪成胶囊）。
     CGFloat ratio = (sz.height > 1) ? sz.width / sz.height : 1.0;
     if (ratio < 0) ratio = -ratio;
-    BOOL isSquareish = (ratio >= 0.75 && ratio <= 1.35);
+    BOOL isSquareish = (ratio >= 0.90 && ratio <= 1.12);
     NSInteger effShape = gShape;
-    if (gShape >= 2 && !isSquareish) effShape = 0;  // 长键：降级为普通圆角
+    if (gShape >= 1 && !isSquareish) effShape = 0;  // 长键：降级为普通圆角
 
     NSInteger capStyle = WXKBCapStyle();
     CGFloat kDepth = 4.0;                   // 底部伸出厚度
@@ -1085,14 +1090,13 @@ static void WXKBApplyCornerInner(UIView *v) {
     }
 
     // shape 1/2/3：忽略 keyCornerRadius，用形状（蒙版只加在背景叶子，不裁文字）
-    // 2.2.8 修复：六边形/水珠形状只应用于接近正方形的键（字母键等）。
-    // 长矩形键（空格、shift、删除、123、回车…）强行改成六边形会变形、
-    // 还会和周围键之间露出黑色三角空隙，视觉上不伦不类。长键回退为普通圆角。
+    // 3.3 形状规则：只应用于「与字母键同样大小」的键（比例 0.90~1.12）。
+    // 空格 / shift / 删除 / 123 / 回车等长键一律回退为普通圆角；圆形（1）同样遵守。
     CGSize sz = v.bounds.size;
     CGFloat ratio = (sz.height > 1) ? sz.width / sz.height : 1.0;
     if (ratio < 0) ratio = -ratio;
-    BOOL isSquareish = (ratio >= 0.75 && ratio <= 1.35);
-    if (gShape >= 2 && !isSquareish) {
+    BOOL isSquareish = (ratio >= 0.90 && ratio <= 1.12);
+    if (gShape >= 1 && !isSquareish) {
         // 长键：六边形/水珠 → 改用普通大圆角，保持协调
         target.layer.mask = nil;
         objc_setAssociatedObject(target, kWXKBMaskLayerKey, nil,
@@ -2151,6 +2155,18 @@ static UIColor *WXKBSkinCanvasColor(void) {
             return [UIColor colorWithRed:0.80 green:0.80 blue:0.82 alpha:1.0];
         case 3:  // 白50%：白色半透明，隐约透出后面内容
             return [UIColor colorWithWhite:1.0 alpha:0.5];
+        case 4:  // 3.3 浅粉
+            return [UIColor colorWithRed:1.0 green:0.890 blue:0.925 alpha:1.0];
+        case 5:  // 3.3 浅蓝
+            return [UIColor colorWithRed:0.863 green:0.922 blue:1.0 alpha:1.0];
+        case 6:  // 3.3 浅绿
+            return [UIColor colorWithRed:0.875 green:0.961 blue:0.882 alpha:1.0];
+        case 7:  // 3.3 米黄
+            return [UIColor colorWithRed:1.0 green:0.953 blue:0.839 alpha:1.0];
+        case 8:  // 3.3 淡紫
+            return [UIColor colorWithRed:0.937 green:0.890 blue:1.0 alpha:1.0];
+        case 9:  // 3.3 浅橙
+            return [UIColor colorWithRed:1.0 green:0.914 blue:0.839 alpha:1.0];
         default: // 0 白底（默认，demo 同款浅色底）
             return [UIColor colorWithRed:245.0 / 255.0 green:247.0 / 255.0 blue:250.0 / 255.0 alpha:1.0];
     }
@@ -3253,7 +3269,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 3.2 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%ld capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld",
+    NSLog(@"[WxkbToolbar10] 3.3 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%ld capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
           gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir);
 }

@@ -361,7 +361,7 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     _gSkinDir     = d[WXKB_KEY_SKIN_DIR] ? [d[WXKB_KEY_SKIN_DIR] integerValue] : 0;
     if (_gSkinDir < 0 || _gSkinDir > 11) _gSkinDir = 0;
     _gSkinBg      = d[WXKB_KEY_SKIN_BG] ? [d[WXKB_KEY_SKIN_BG] integerValue] : 0;
-    if (_gSkinBg < 0 || _gSkinBg > 3) _gSkinBg = 0;
+    if (_gSkinBg < 0 || _gSkinBg > 9) _gSkinBg = 0;
 
     _gCapStyle    = d[WXKB_KEY_CAP_STYLE] ? [d[WXKB_KEY_CAP_STYLE] integerValue] : 0;
     // 与 WXKBCapStyle() 一致：皮肤 + 关 -> 默认彩虹3D
@@ -482,11 +482,17 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     } else if (_gBgEnabled) {
         canvas = _gBgColor;
     } else if (_gSkinEnabled) {
-        // 皮肤画布色（对齐 WXKBSkinCanvasColor）
+        // 皮肤画布色（对齐 WXKBSkinCanvasColor；4~9 为 3.3 新增纯色）
         switch (_gSkinBg) {
             case 1: canvas = [UIColor clearColor]; transparent = YES; break;
             case 2: canvas = [UIColor colorWithRed:0.80 green:0.80 blue:0.82 alpha:1.0]; break;
             case 3: canvas = [UIColor colorWithWhite:1.0 alpha:0.5]; break;
+            case 4: canvas = [UIColor colorWithRed:1.0 green:0.890 blue:0.925 alpha:1.0]; break;  // 浅粉
+            case 5: canvas = [UIColor colorWithRed:0.863 green:0.922 blue:1.0 alpha:1.0]; break;  // 浅蓝
+            case 6: canvas = [UIColor colorWithRed:0.875 green:0.961 blue:0.882 alpha:1.0]; break; // 浅绿
+            case 7: canvas = [UIColor colorWithRed:1.0 green:0.953 blue:0.839 alpha:1.0]; break;  // 米黄
+            case 8: canvas = [UIColor colorWithRed:0.937 green:0.890 blue:1.0 alpha:1.0]; break;  // 淡紫
+            case 9: canvas = [UIColor colorWithRed:1.0 green:0.914 blue:0.839 alpha:1.0]; break;  // 浅橙
             default: canvas = [UIColor colorWithRed:245.0/255.0
                                                green:247.0/255.0 blue:250.0/255.0 alpha:1.0];
         }
@@ -647,12 +653,14 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     NSInteger cs = _gEffCapStyle;
     NSInteger shape = _gShape;
 
-    // 2.2.8 长键（空格等）的六边形/水珠回退为圆角
+    // 3.3 形状只作用于「与字母键同样大小」的键（比例 0.90~1.12）：
+    // 空格 / shift / 删除 / 123 等长键一律回退为普通圆角，空格永不变形。
+    // 圆形（shape 1）同样遵守该规则（旧版长键会被剪成胶囊）。
     CGFloat ratio = sz.width / sz.height;
     if (ratio < 0) ratio = -ratio;
-    BOOL squareish = (ratio >= 0.75 && ratio <= 1.35);
+    BOOL squareish = (ratio >= 0.90 && ratio <= 1.12);
     NSInteger effShape = shape;
-    if (shape >= 2 && !squareish) effShape = 0;
+    if (shape >= 1 && !squareish) effShape = 0;
 
     CGFloat kDepth = 4.0, kInset = 4.0, kFront = 7.0, topY = 2.5;
     if (cs == 2)      { kInset = 3.0; kFront = 8.0; topY = 2.0; }

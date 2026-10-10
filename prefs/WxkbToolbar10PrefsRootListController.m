@@ -40,9 +40,11 @@
                            values:@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9,@10,@11]
                            titles:@[@"横向",@"竖向",@"斜向",@"15°",@"30°",@"60°",@"75°",@"105°",@"120°",@"135°",@"150°",@"165°"]]];
 
-    // 皮肤背景
+    // 皮肤背景：0~3 原有 + 4~9 新增纯色（3.3）
     [s addObject:[self wxkbChoice:@"皮肤背景" key:WXKB_KEY_SKIN_BG def:@0
-                           values:@[@0,@1,@2,@3] titles:@[@"白底",@"透明",@"灰色",@"白50%"]]];
+                           values:@[@0,@1,@2,@3,@4,@5,@6,@7,@8,@9]
+                           titles:@[@"白底",@"透明",@"灰色",@"白50%",
+                                    @"浅粉",@"浅蓝",@"浅绿",@"米黄",@"淡紫",@"浅橙"]]];
 
     // ---- 键帽与形状 ----
     g = [PSSpecifier groupSpecifierWithName:@"键帽与形状"];
@@ -133,7 +135,7 @@
 
     // ---- 关于 ----
     g = [PSSpecifier groupSpecifierWithName:@"关于"];
-    [g setProperty:@"WxkbToolbar10 版本 3.2\n反馈请联系：wacljcr@qq.com（邮件）"
+    [g setProperty:@"WxkbToolbar10 版本 3.3\n反馈请联系：wacljcr@qq.com（邮件）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"反馈（邮件联系 wacljcr@qq.com）"

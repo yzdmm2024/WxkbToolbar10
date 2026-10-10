@@ -151,7 +151,6 @@
 
 @interface WXKBChoicePreviewController : WXKBBaseListController {
     WXKBPreviewKeyboardView *_pv;
-    UIScrollView *_optScroll;
     NSMutableArray *_optButtons;
     NSString *_key;
     NSArray *_values;
@@ -172,29 +171,40 @@
 
     CGFloat w = CGRectGetWidth([UIScreen mainScreen].bounds);
     if (w < 1.0) w = 375.0;
-    CGFloat pad = 12.0;
-    CGFloat innerW = w - pad * 2.0;
+    // 3.3：左右固定 16pt 对称边距（预览键盘不再贴屏、左右等距）
+    CGFloat pad = 12.0;          // 上下间距
+    CGFloat margin = 16.0;       // 左右对称边距
+    CGFloat innerW = w - margin * 2.0;
 
     CGFloat ph = [WXKBPreviewKeyboardView preferredHeightForWidth:innerW];
-    _pv = [[WXKBPreviewKeyboardView alloc] initWithFrame:CGRectMake(pad, pad, innerW, ph)];
-    _pv.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    _pv = [[WXKBPreviewKeyboardView alloc] initWithFrame:CGRectMake(margin, pad, innerW, ph)];
+    _pv.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin |
+                           UIViewAutoresizingFlexibleRightMargin;
     [_pv refresh];
 
-    CGFloat btnH = 58.0, btnW = 72.0, gap = 10.0;
-    CGFloat scrollY = pad * 2.0 + ph;
-    _optScroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, scrollY, w, btnH + 6.0)];
-    _optScroll.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    _optScroll.showsHorizontalScrollIndicator = NO;
-    _optScroll.showsVerticalScrollIndicator = NO;
+    // 3.3：选项改为一排五个的网格（最后一行不足五个时居中），不再横向滚动
+    NSInteger cols = 5;
+    CGFloat gapX = 8.0, gapY = 8.0, btnH = 44.0;
+    CGFloat btnW = (innerW - gapX * (cols - 1)) / cols;
+    NSUInteger n = _values.count;
+    NSUInteger rows = (n + (NSUInteger)cols - 1) / (NSUInteger)cols;
+    CGFloat gridY = pad + ph + pad;
     _optButtons = [NSMutableArray array];
-    CGFloat x = pad;
     id current = [self readPreferenceValue:self.specifier];
-    for (NSUInteger i = 0; i < _values.count; i++) {
+    for (NSUInteger i = 0; i < n; i++) {
+        NSUInteger r = i / (NSUInteger)cols;
+        NSUInteger c = i % (NSUInteger)cols;
+        CGFloat rowOffset = 0.0;
+        NSUInteger inRow = n - r * (NSUInteger)cols;
+        if (r == rows - 1 && inRow < (NSUInteger)cols) {
+            rowOffset = (innerW - inRow * btnW - (inRow - 1) * gapX) / 2.0;
+        }
         UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
-        b.frame = CGRectMake(x, 0, btnW, btnH);
+        b.frame = CGRectMake(margin + rowOffset + c * (btnW + gapX),
+                             gridY + r * (btnH + gapY), btnW, btnH);
         b.layer.cornerRadius = 10.0;
         b.layer.masksToBounds = YES;
-        b.titleLabel.font = [UIFont systemFontOfSize:13.0];
+        b.titleLabel.font = [UIFont systemFontOfSize:11.0];
         b.titleLabel.textAlignment = NSTextAlignmentCenter;
         b.titleLabel.numberOfLines = 2;
         [b setTitle:_titles[i] forState:UIControlStateNormal];
@@ -208,18 +218,17 @@
         }
         b.tag = (NSInteger)i;
         [b addTarget:self action:@selector(pick:) forControlEvents:UIControlEventTouchUpInside];
-        [_optScroll addSubview:b];
         [_optButtons addObject:b];
-        x += btnW + gap;
     }
-    _optScroll.contentSize = CGSizeMake(MAX(x, w), btnH + 6.0);
+    CGFloat gridH = rows * btnH + (rows > 0 ? (rows - 1) : 0) * gapY;
+
     [self updateHighlight:current];
 
-    CGFloat headerH = scrollY + btnH + 6.0 + pad;
+    CGFloat headerH = gridY + gridH + pad;
     UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, w, headerH)];
     header.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [header addSubview:_pv];
-    [header addSubview:_optScroll];
+    for (UIButton *b in _optButtons) [header addSubview:b];
 
     // 修复 3.2 崩溃：iOS 16 的 Preferences 运行时里 PSListController 没有 tableView
     // 方法（doesNotRecognizeSelector）。改为运行时安全地取表格：
