@@ -1,6 +1,7 @@
 // WXKBPickerControllers.m — 系统取色器入口 + 单选列表 + 子页预览选择器
 #import "WXKBCommon.h"
 #import "WXKBPreviewKeyboardView.h"
+#import <objc/runtime.h>
 
 #pragma mark - 系统取色器（UIColorPickerViewController）
 
@@ -219,7 +220,43 @@
     header.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [header addSubview:_pv];
     [header addSubview:_optScroll];
-    self.tableView.tableHeaderView = header;
+
+    // 修复 3.2 崩溃：iOS 16 的 Preferences 运行时里 PSListController 没有 tableView
+    // 方法（doesNotRecognizeSelector）。改为运行时安全地取表格：
+    // 1) PSListController 的 _table ivar（社区通用名）；
+    // 2) 逐层扫描父类里名字含 "table" 的对象型 ivar；
+    // 3) self.view 本身或其一级子视图中的 UITableView。
+    UITableView *tv = nil;
+    Ivar iv = class_getInstanceVariable(objc_getClass("PSListController"), "_table");
+    if (iv) tv = object_getIvar(self, iv);
+    if (![tv isKindOfClass:[UITableView class]]) {
+        tv = nil;
+        Class c = [self class];
+        for (int depth = 0; c && depth < 8 && !tv; depth++) {
+            unsigned int n = 0;
+            Ivar *ivs = class_copyIvarList(c, &n);
+            for (unsigned int i = 0; i < n; i++) {
+                const char *nm = ivar_getName(ivs[i]);
+                const char *ty = ivar_getTypeEncoding(ivs[i]);
+                if (!nm || !ty || ty[0] != '@') continue;
+                if (!strstr(nm, "able") && !strstr(nm, "Table")) continue;
+                id v = object_getIvar(self, ivs[i]);
+                if ([v isKindOfClass:[UITableView class]]) { tv = v; break; }
+            }
+            if (ivs) free(ivs);
+            c = class_getSuperclass(c);
+        }
+    }
+    if (!tv) {
+        if ([self.view isKindOfClass:[UITableView class]]) {
+            tv = (UITableView *)self.view;
+        } else {
+            for (UIView *sub in self.view.subviews) {
+                if ([sub isKindOfClass:[UITableView class]]) { tv = (UITableView *)sub; break; }
+            }
+        }
+    }
+    tv.tableHeaderView = header;  // tv 为 nil 时是安全的空操作
 }
 
 - (NSArray *)specifiers {
