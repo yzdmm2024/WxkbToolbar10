@@ -245,7 +245,6 @@ static NSInteger  gSkinDir      = 0;     // 变色方向：0横向 1竖向 2斜�
 static NSString *gSkinName     = nil;    // 皮肤名（当前固定 rainbow）
 static NSInteger gCapStyle     = 0;      // 键帽风格（单选）：0=关闭 1=立体 2=彩虹 3=彩虹3D 4=玻璃态 5=霓虹
 static double    gKbOffset     = 0.0;   // 键盘整体上下位移，正值下移
-static double    gSysKbHeight  = 0.0;   // 系统键盘高度增量，正值=变矮（融合 ClassicKeyboardXS）
 static double    gLastLoad     = -1;
 
 static UIColor *WXKBColor(NSString *hex, CGFloat alpha) {
@@ -299,43 +298,6 @@ static NSString *WXKBJbrootPath(NSString *rel) {
 
 // 键盘扩展是沙盒进程，读偏好要多种途径兜底。
 static NSDictionary *WXKBLoadPrefs(void) {
-    // 1) 首选：cfprefsd 上的「自己偏好域」。键盘扩展沙盒内读不到真实
-    //    /var/mobile/Library/Preferences，但能经 cfprefsd 读自己的域；
-    //    设置面板（未沙盒）写同一域，两端即可互通。
-    {
-        CFDictionaryRef raw = CFPreferencesCopyMultiple(
-            NULL, CFSTR(WXKB_SHARED_DOMAIN_C),
-            kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-        if (raw) {
-            NSDictionary *d = CFBridgingRelease(raw);
-            if ([d isKindOfClass:[NSDictionary class]] && d.count > 0) {
-                return d;
-            }
-        }
-    }
-
-    // 1.5) 兜底：直接读自己容器里的共享域 plist。设置面板 2.4.26 起会把
-    //      键值同步直写一份到 WeType 容器的
-    //      <container>/Library/Preferences/com.tencent.wetype.keyboard.plist；
-    //      cfprefsd 跨进程视图未同步时，沙盒内直读自己容器仍能拿到。
-    {
-        NSString *home = NSHomeDirectory();
-        if (home.length) {
-            NSString *p = [home stringByAppendingPathComponent:
-                @"Library/Preferences/" WXKB_SHARED_DOMAIN_C @".plist"];
-            NSData *pd = [NSData dataWithContentsOfFile:p];
-            if (pd.length) {
-                NSDictionary *d = [NSPropertyListSerialization
-                    propertyListWithData:pd
-                                 options:NSPropertyListImmutable
-                                  format:nil error:nil];
-                if ([d isKindOfClass:[NSDictionary class]] && d.count > 0) {
-                    return d;
-                }
-            }
-        }
-    }
-
     NSMutableArray *paths = [NSMutableArray array];
     NSString *j1 = WXKBJbrootPath(@"/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist");
     NSString *j2 = WXKBJbrootPath(@"/var/jb/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist");
@@ -346,18 +308,7 @@ static NSDictionary *WXKBLoadPrefs(void) {
         @"/var/jb/var/mobile/Library/Preferences/com.yzdmm.wxkbtoolbar10.plist",
     ]];
     for (NSString *p in paths) {
-        // 沙盒键盘扩展里 dictionaryWithContentsOfFile: 可能被拦截（实测返回 nil），
-        // 改用 NSData 读原始字节再解析——与读其它 .plist 同一条路，键盘可读。
-        NSData *pd = [NSData dataWithContentsOfFile:p];
-        NSDictionary *d = nil;
-        if (pd.length) {
-            d = [NSPropertyListSerialization propertyListWithData:pd
-                                                         options:NSPropertyListImmutable
-                                                          format:nil error:nil];
-        }
-        if (![d isKindOfClass:[NSDictionary class]] || d.count == 0) {
-            d = [NSDictionary dictionaryWithContentsOfFile:p];  // 兜底
-        }
+        NSDictionary *d = [NSDictionary dictionaryWithContentsOfFile:p];
         if ([d isKindOfClass:[NSDictionary class]] && d.count > 0) {
             return d;
         }
@@ -386,7 +337,6 @@ static NSDictionary *WXKBLoadPrefs(void) {
     return ([d isKindOfClass:[NSDictionary class]] && d.count > 0) ? d : nil;
 }
 
-
 static void WXKBReload(BOOL force) {
     double now = CFAbsoluteTimeGetCurrent();
     if (!force && gLastLoad > 0 && now - gLastLoad < 2.0) {
@@ -401,6 +351,7 @@ static void WXKBReload(BOOL force) {
 
     id v = d[WXKB_KEY_ENABLED];
     gEnabled = v ? [v boolValue] : YES;
+
 
     // ---- 背景 ----
     gBgEnabled = [d[WXKB_KEY_BG_ENABLED] boolValue];
@@ -484,13 +435,6 @@ static void WXKBReload(BOOL force) {
     gKbOffset = of2 ? [of2 doubleValue] : 0.0;
     if (gKbOffset < -80.0 || gKbOffset > 80.0) {
         gKbOffset = 0.0;
-    }
-
-    // ---- 系统键盘高度（融合 ClassicKeyboardXS 逻辑，仅作用于系统键盘 UIKeyboardImpl）----
-    id sk = d[WXKB_KEY_SYS_KB_HEIGHT];
-    gSysKbHeight = sk ? [sk doubleValue] : 0.0;
-    if (gSysKbHeight < -120.0 || gSysKbHeight > 120.0) {
-        gSysKbHeight = 0.0;
     }
 
 }
@@ -745,19 +689,12 @@ static void WXKBApplyCap(UIView *v, UIView *leaf) {
     // 压掉系统原生阴影（取消裁剪后会漏出灰圈），改用我们自己的柔和投影
     if (v.layer.shadowOpacity > 0.0 && v.layer.shadowRadius < 0.5) v.layer.shadowOpacity = 0.0;
 
-    // 实际生效的形状：凹角形状（六边形/水珠）只用于接近正方形的键，其余凸形状长键在有皮肤时也可生效
+    // 2.2.8 实际生效的形状：六边形/水珠只用于正方形键，长矩形键回退为圆角
     CGFloat ratio = (sz.height > 1) ? sz.width / sz.height : 1.0;
     if (ratio < 0) ratio = -ratio;
     BOOL isSquareish = (ratio >= 0.75 && ratio <= 1.35);
     NSInteger effShape = gShape;
-    // 长键（空格/Shift/删除等）形状处理：
-    // ・凹角形状（六边形=2、水珠=3）无论是否皮肤都降级为圆角，避免键间大块空隙；
-    // ・其余凸形状（圆/椭圆/菱形/五边形/星/心/药丸/半圆/圆角方）仅在「无皮肤」时长键降级，
-    //   有皮肤时凹角区被画布色填平、无黑缝，可照常生效，不再整排不反应。
-    BOOL longKeyDegrade = (!isSquareish) &&
-        ((gShape == 2 || gShape == 3) ||
-         (gShape >= 4 && gShape <= 11 && !gSkinEnabled));
-    if (longKeyDegrade) effShape = 0;
+    if (gShape >= 2 && !isSquareish) effShape = 0;  // 长键：降级为普通圆角
 
     NSInteger capStyle = WXKBCapStyle();
     CGFloat kDepth = 4.0;                   // 底部伸出厚度
@@ -1147,21 +1084,16 @@ static void WXKBApplyCornerInner(UIView *v) {
         return;
     }
 
-    // 形状应用：忽略 keyCornerRadius，用形状（蒙版只加在背景叶子，不裁文字）。
-    // 2.2.8 修复：凹角形状（六边形/水珠）只用于接近正方形的键，否则长键变形、
-    // 且键间露出黑色三角空隙。其余凸形状（圆/椭圆/菱形/星/心/药丸/半圆/圆角方）在
-    // 「有皮肤」时凹角会被画布色填平、无黑缝，长键也照常生效；仅在「无皮肤」时长键降级。
+    // shape 1/2/3：忽略 keyCornerRadius，用形状（蒙版只加在背景叶子，不裁文字）
+    // 2.2.8 修复：六边形/水珠形状只应用于接近正方形的键（字母键等）。
+    // 长矩形键（空格、shift、删除、123、回车…）强行改成六边形会变形、
+    // 还会和周围键之间露出黑色三角空隙，视觉上不伦不类。长键回退为普通圆角。
     CGSize sz = v.bounds.size;
     CGFloat ratio = (sz.height > 1) ? sz.width / sz.height : 1.0;
     if (ratio < 0) ratio = -ratio;
     BOOL isSquareish = (ratio >= 0.75 && ratio <= 1.35);
-    // 长键降级判断与 WXKBApplyCap 一致：凹角形状（六边形/水珠）始终降级；
-    // 其余凸形状仅在「无皮肤」时长键降级（有皮肤时画布色填平凹角、无黑缝）。
-    BOOL longKeyDegrade = (!isSquareish) &&
-        ((gShape == 2 || gShape == 3) ||
-         (gShape >= 4 && gShape <= 11 && !gSkinEnabled));
-    if (longKeyDegrade) {
-        // 长键降级：改用普通大圆角，保持协调
+    if (gShape >= 2 && !isSquareish) {
+        // 长键：六边形/水珠 → 改用普通大圆角，保持协调
         target.layer.mask = nil;
         objc_setAssociatedObject(target, kWXKBMaskLayerKey, nil,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -1709,16 +1641,6 @@ static void WXKBOnPrefsChanged(CFNotificationCenterRef center, void *observer,
     WXKBReload(YES);
     WXKBScheduleSync();
     WXKBForceRelayout();
-    // 安全网：键盘可能刚好在出现/动画中，窗口尚未就绪，稍后再刷两次，
-    // 避免出现「改了要等一会才生效」的观感。
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        WXKBReload(YES); WXKBScheduleSync(); WXKBForceRelayout();
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        WXKBReload(YES); WXKBScheduleSync(); WXKBForceRelayout();
-    });
 }
 
 #pragma mark - 工具栏功能列表
@@ -3325,27 +3247,13 @@ static void WXKBFireAction(int c) {
 
 %end
 
-// ---- 系统键盘高度调整（融合 ClassicKeyboardXS：hook 系统键盘 UIKeyboardImpl 的私有 padding 方法）----
-// 仅作用于系统键盘进程（com.apple.TextInput）；微信键盘走 WXKBApplyOffset，不受影响。
-// 复用本插件自带、rootless 安全的 WXKBLoadPrefs 读偏好，规避 ClassicKeyboardXS 在
-// Dopamine/palera1n 上把偏好路径拼错导致 tweak 失效的致命 bug。
-%hook UIKeyboardImpl
-- (UIEdgeInsets)deviceSpecificPaddingForInterfaceOrientation:(NSInteger)orientation inputMode:(id)inputMode {
-    UIEdgeInsets orig = %orig;
-    if (fabs(gSysKbHeight) > 0.001) {
-        orig.top += (CGFloat)gSysKbHeight;   // 正值=压缩上方留白=>键盘整体变矮
-    }
-    return orig;
-}
-%end
-
 %ctor {
     WXKBReload(YES);
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 3.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f sysKbHeight=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld",
+    NSLog(@"[WxkbToolbar10] 3.1 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%ld capStyle=%ld corner=%.1f offset=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSysKbHeight, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir);
+          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir);
 }

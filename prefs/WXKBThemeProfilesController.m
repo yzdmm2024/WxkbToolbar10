@@ -114,7 +114,8 @@
 - (UITableViewCellEditingStyle)tableView:(UITableView *)tableView
         editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath {
     PSSpecifier *s = [self specifierAtIndexPath:indexPath];
-    if (s && [s propertyForKey:@"wxkbThemeName"]) {
+    if (!s) return UITableViewCellEditingStyleNone;
+    if ([s propertyForKey:@"wxkbThemeName"]) {
         return UITableViewCellEditingStyleDelete;
     }
     return UITableViewCellEditingStyleNone;
@@ -125,6 +126,7 @@
      forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (editingStyle != UITableViewCellEditingStyleDelete) return;
     PSSpecifier *s = [self specifierAtIndexPath:indexPath];
+    if (!s) return;
     NSString *nm = [s propertyForKey:@"wxkbThemeName"];
     if (nm.length) WXKBDeleteThemeProfile(nm);
     [self reloadSpecifiers];

@@ -1,9 +1,6 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
 
-/* WXKBStatusCell 定义在 WXKBCommon.m（cellClass 自定义单元格），
- * 这里用 NSClassFromString 取类，避免跨文件声明。 */
-
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController
 @end
 
@@ -70,18 +67,8 @@
     [g setProperty:@"调整键盘整体上下位置（正值下移，负值上移）。无法恢复时把滑块拉回 0。"
             forKey:@"footerText"];
     [s addObject:g];
-    /* 2.4.27：自定义 WXKBValueSliderCell 真机不能交互，换回系统 PSSliderCell
-     * （「按键圆角」同款，已验证可拖动）。 */
     [s addObject:[self wxkbSlider:@"键盘上下偏移（上下移动）" key:WXKB_KEY_OFFSET def:0.0
                               min:-80.0 max:80.0]];
-
-    // ---- 系统键盘高度（融合 ClassicKeyboardXS，仅作用于系统键盘，非微信键盘）----
-    g = [PSSpecifier groupSpecifierWithName:@"系统键盘高度"];
-    [g setProperty:@"仅作用于系统键盘（非微信键盘）。正值让系统键盘变矮，负值变高，范围 -120~120；拉回 0 即关闭。改动后收起键盘再弹出生效。"
-            forKey:@"footerText"];
-    [s addObject:g];
-    [s addObject:[self wxkbSlider:@"系统键盘高度增量" key:WXKB_KEY_SYS_KB_HEIGHT def:0.0
-                              min:-120.0 max:120.0]];
 
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];
@@ -146,7 +133,7 @@
 
     // ---- 关于 ----
     g = [PSSpecifier groupSpecifierWithName:@"关于"];
-    [g setProperty:@"WxkbToolbar10 版本 3.0\n反馈请联系：wacljcr@qq.com（邮件）"
+    [g setProperty:@"WxkbToolbar10 版本 3.1\n反馈请联系：wacljcr@qq.com（邮件）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"反馈（邮件联系 wacljcr@qq.com）"
@@ -243,19 +230,6 @@
     } else {
         [app openURL:u];
     }
-}
-
-
-- (void)_wxkbToast:(NSString *)msg {
-    UIAlertController *a = [UIAlertController alertControllerWithTitle:nil
-                                                            message:msg
-                                                     preferredStyle:UIAlertControllerStyleAlert];
-    [self presentViewController:a animated:YES completion:^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            [a dismissViewControllerAnimated:YES completion:nil];
-        });
-    }];
 }
 
 @end

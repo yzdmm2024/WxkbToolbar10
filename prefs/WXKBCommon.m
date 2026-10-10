@@ -1,46 +1,33 @@
 // WXKBCommon.m — 偏好面板公共基类与读写工具
 #import "WXKBCommon.h"
-#import <Preferences/PSTableCell.h>
 #import <objc/runtime.h>
-#import <CoreFoundation/CoreFoundation.h>
 
-// 跨进程共享域：设置面板（未沙盒）写、键盘扩展（沙盒）读，二者都走 cfprefsd。
-// 此外 wxkb_shared_sync（见 src/wxkb_shared.m）再把键值直写进 WeType 容器
-// plist 作为兜底——cfprefsd 跨进程视图未同步时，键盘扩展直读自己的容器文件照样拿得到。
-extern void wxkb_shared_sync(NSString *key, id value);
-
-static NSString *WXKBSharedDomain(void) {
-    return WXKB_SHARED_DOMAIN;
+static NSUserDefaults *WXKBDefaults(void) {
+    static NSUserDefaults *d = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        d = [[NSUserDefaults alloc] initWithSuiteName:WXKB_PREFS_DOMAIN];
+    });
+    return d;
 }
 
 id WXKBGetPref(NSString *key) {
     if (!key.length) {
         return nil;
     }
-    // 主通道：cfprefsd 上的共享域（键盘扩展沙盒内能读到）
-    CFPropertyListRef v = CFPreferencesCopyValue(
-        (__bridge CFStringRef)key,
-        (__bridge CFStringRef)WXKBSharedDomain(),
-        kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    if (v) {
-        return (__bridge_transfer id)v;
-    }
-    // 兜底：旧 NSUserDefaults 域（非沙盒环境）
-    return [[[NSUserDefaults alloc] initWithSuiteName:WXKB_PREFS_DOMAIN] objectForKey:key];
+    return [WXKBDefaults() objectForKey:key];
 }
 
 void WXKBSetPref(NSString *key, id value) {
     if (!key.length) {
         return;
     }
-    CFStringRef domain = (__bridge CFStringRef)WXKBSharedDomain();
-    CFPreferencesSetValue(
-        (__bridge CFStringRef)key,
-        value ? (__bridge CFPropertyListRef)value : NULL,
-        domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    CFPreferencesSynchronize(domain, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    // 双通道：同步直写进 WeType 容器 plist（未沙盒进程才真正生效）
-    wxkb_shared_sync(key, value);
+    if (value == nil) {
+        [WXKBDefaults() removeObjectForKey:key];
+    } else {
+        [WXKBDefaults() setObject:value forKey:key];
+    }
+    [WXKBDefaults() synchronize];
 }
 
 #pragma mark - 颜色转换
@@ -220,177 +207,6 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     return WXKBFromHSL(h0 + (h1 - h0) * 0.5, s, l);
 }
 
-#pragma mark - 带数字显示的步进滑块单元格
-
-// 右侧实时显示带正负号的值；滑动时按 step 取整（step>=1 即整数步进）。
-@interface WXKBValueSliderCell : PSTableCell {
-    UISlider  *_slider;
-    UILabel   *_valLabel;
-    UILabel   *_titleLabel;
-    NSString  *_key;
-    double     _min, _max, _step, _def;
-}
-@end
-
-@implementation WXKBValueSliderCell
-
-- (id)initWithStyle:(int)style reuseIdentifier:(id)identifier {
-    self = [super initWithStyle:style reuseIdentifier:identifier];
-    if (self) {
-        _titleLabel = [[UILabel alloc] init];
-        _titleLabel.font = [UIFont systemFontOfSize:15];
-        _titleLabel.textColor = [UIColor labelColor];
-        _titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
-        [self addSubview:_titleLabel];
-
-        _slider = [[UISlider alloc] init];
-        _slider.continuous = YES;
-        [_slider addTarget:self action:@selector(_changed)
-            forControlEvents:UIControlEventValueChanged];
-        [self addSubview:_slider];
-
-        _valLabel = [[UILabel alloc] init];
-        if (@available(iOS 13.0, *)) {
-            _valLabel.font = [UIFont monospacedDigitSystemFontOfSize:15
-                                                             weight:UIFontWeightMedium];
-        } else {
-            _valLabel.font = [UIFont systemFontOfSize:15];
-        }
-        _valLabel.textAlignment = NSTextAlignmentRight;
-        _valLabel.textColor = [UIColor labelColor];
-        [self addSubview:_valLabel];
-    }
-    return self;
-}
-
-- (void)setSpecifier:(PSSpecifier *)spec {
-    [super setSpecifier:spec];
-    _key  = [spec propertyForKey:@"key"];
-    _min  = [[spec propertyForKey:@"min"]  doubleValue];
-    _max  = [[spec propertyForKey:@"max"]  doubleValue];
-    _step = [[spec propertyForKey:@"wxkbStep"] doubleValue];
-    if (_step <= 0.0) _step = 1.0;
-    _def  = [[spec propertyForKey:@"default"] doubleValue];
-    _titleLabel.text = [spec propertyForKey:@"wxkbTitle"];
-
-    id raw = WXKBGetPref(_key);
-    double v = raw ? [raw doubleValue] : _def;
-    if (v < _min) v = _min;
-    if (v > _max) v = _max;
-    v = round(v / _step) * _step;
-
-    _slider.minimumValue = _min;
-    _slider.maximumValue = _max;
-    _slider.value = v;
-    [self _update:v];
-}
-
-- (void)_changed {
-    double raw = _slider.value;
-    double v = round(raw / _step) * _step;
-    if (v < _min) v = _min;
-    if (v > _max) v = _max;
-    [_slider setValue:v animated:NO];
-    [self _update:v];
-    WXKBSetPref(_key, @(v));
-    CFNotificationCenterPostNotification(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL, NULL, YES);
-}
-
-- (void)_update:(double)v {
-    if (_step >= 1.0) {
-        int iv = (int)round(v);
-        _valLabel.text = (iv > 0)
-            ? [NSString stringWithFormat:@"+%d", iv]
-            : [NSString stringWithFormat:@"%d", iv];
-    } else {
-        _valLabel.text = [NSString stringWithFormat:@"%.2f", v];
-    }
-}
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    CGRect b = self.bounds;
-    CGFloat W = b.size.width;
-    CGFloat pad = 16.0;
-    CGFloat rightW = 56.0;
-    _titleLabel.frame = CGRectMake(pad, 7.0, W - pad * 2.0 - rightW, 22.0);
-    CGFloat y = 34.0;
-    _slider.frame = CGRectMake(pad, y, W - pad * 2.0 - rightW, 30.0);
-    _valLabel.frame = CGRectMake(W - pad - rightW, y, rightW, 30.0);
-    [self bringSubviewToFront:_titleLabel];
-    [self bringSubviewToFront:_slider];
-    [self bringSubviewToFront:_valLabel];
-}
-
-- (CGFloat)preferredHeight {
-    return 64.0;
-}
-
-@end
-
-#pragma mark - 状态行单元格（标题左 / 值右）
-
-/* 不依赖 PSTitleValueCell（本 SDK 的 PSSpecifier 无 value 属性，
- * setProperty forKey:value 真机又不渲染）；cellClass 自定义单元格，
- * 与 WXKBValueSliderCell 同一套已验证的渲染路径。 */
-@interface WXKBStatusCell : PSTableCell {
-    UILabel *_titleLabel;
-    UILabel *_valLabel;
-}
-@end
-
-@implementation WXKBStatusCell
-
-- (id)initWithStyle:(int)style reuseIdentifier:(id)identifier {
-    self = [super initWithStyle:style reuseIdentifier:identifier];
-    if (self) {
-        _titleLabel = [[UILabel alloc] init];
-        _titleLabel.font = [UIFont systemFontOfSize:17];
-        _titleLabel.textColor = [UIColor labelColor];
-        [self addSubview:_titleLabel];
-
-        _valLabel = [[UILabel alloc] init];
-        _valLabel.font = [UIFont systemFontOfSize:15];
-        _valLabel.textColor = [UIColor secondaryLabelColor];
-        _valLabel.textAlignment = NSTextAlignmentRight;
-        _valLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
-        _valLabel.adjustsFontSizeToFitWidth = YES;
-        _valLabel.minimumScaleFactor = 0.6;
-        [self addSubview:_valLabel];
-    }
-    return self;
-}
-
-- (void)setSpecifier:(PSSpecifier *)spec {
-    [super setSpecifier:spec];
-    _titleLabel.text = [spec propertyForKey:@"wxkbStatusTitle"] ?: @"";
-    _valLabel.text   = [spec propertyForKey:@"wxkbStatusValue"] ?: @"";
-    BOOL multi = [[spec propertyForKey:@"wxkbStatusMultiline"] boolValue];
-    _valLabel.numberOfLines = multi ? 2 : 1;
-    _valLabel.textAlignment = multi ? NSTextAlignmentLeft : NSTextAlignmentRight;
-}
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    CGFloat pad = 16.0;
-    CGFloat W = self.bounds.size.width;
-    BOOL multi = [[self.specifier propertyForKey:@"wxkbStatusMultiline"] boolValue];
-    if (multi) {
-        /* 标题一行，值换行铺满整行（长 UDID / 诊断串） */
-        _titleLabel.frame = CGRectMake(pad, 6.0, W - pad * 2.0, 20.0);
-        _valLabel.frame  = CGRectMake(pad, 27.0, W - pad * 2.0, 38.0);
-    } else {
-        _titleLabel.frame = CGRectMake(pad, 11.0, W * 0.34, 24.0);
-        _valLabel.frame   = CGRectMake(W * 0.36, 11.0, W * 0.64 - pad, 24.0);
-    }
-    [self bringSubviewToFront:_titleLabel];
-    [self bringSubviewToFront:_valLabel];
-}
-
-@end
-
 @implementation WXKBBaseListController
 
 + (void)wxkbNotifyChanged {
@@ -438,15 +254,7 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 - (UITableViewCell *)tableView:(UITableView *)tableView
          cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
-    // 取该行的 specifier：优先用 cell.specifier（PSTableCell 可靠提供），
-    // 兜底才用 specifierAtIndexPath:（部分 roothide/iOS 环境该私有访问器缺失会闪退）。
-    PSSpecifier *sp = nil;
-    if ([cell respondsToSelector:@selector(specifier)]) {
-        sp = [(PSTableCell *)cell specifier];
-    }
-    if (!sp && [self respondsToSelector:@selector(specifierAtIndexPath:)]) {
-        sp = [self specifierAtIndexPath:indexPath];
-    }
+    PSSpecifier *sp = [self specifierAtIndexPath:indexPath];
     NSString *hex = nil;
 
     NSNumber *letterIdx = [sp propertyForKey:@"wxkbLetterIndex"];
@@ -476,10 +284,7 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 #pragma mark - 行高（内联网格用）
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    PSSpecifier *sp = nil;
-    if ([self respondsToSelector:@selector(specifierAtIndexPath:)]) {
-        sp = [self specifierAtIndexPath:indexPath];
-    }
+    PSSpecifier *sp = [self specifierAtIndexPath:indexPath];
     NSNumber *h = [sp propertyForKey:@"wxkbGridHeight"];
     if (h) return [h doubleValue];
     return [super tableView:tableView heightForRowAtIndexPath:indexPath];
@@ -604,27 +409,6 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     [sp setProperty:@(def) forKey:@"default"];
     [sp setProperty:@(min) forKey:@"min"];
     [sp setProperty:@(max) forKey:@"max"];
-    return sp;
-}
-
-- (PSSpecifier *)wxkbValueSlider:(NSString *)name key:(NSString *)key def:(double)def
-                              min:(double)min max:(double)max step:(double)step {
-    // 标题放自定义属性里，specifier name 留空，避免 PSTableCell 自带标题重复显示
-    PSSpecifier *sp = [PSSpecifier preferenceSpecifierNamed:@""
-                                                     target:self
-                                                        set:nil
-                                                        get:nil
-                                                     detail:nil
-                                                       cell:PSStaticTextCell
-                                                       edit:nil];
-    [sp setProperty:name forKey:@"wxkbTitle"];
-    [sp setProperty:key forKey:@"key"];
-    [sp setProperty:@(def) forKey:@"default"];
-    [sp setProperty:@(min) forKey:@"min"];
-    [sp setProperty:@(max) forKey:@"max"];
-    [sp setProperty:@(step) forKey:@"wxkbStep"];
-    [sp setProperty:[WXKBValueSliderCell class] forKey:@"cellClass"];
-    [sp setProperty:@(64) forKey:@"height"];
     return sp;
 }
 

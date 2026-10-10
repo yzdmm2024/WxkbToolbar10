@@ -23,8 +23,6 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme);
 NSString *WXKBLetterColor(NSInteger index);
 void WXKBSetLetterColor(NSInteger index, NSString *hex);
 
-@class WXKBValueSliderCell;
-
 @interface WXKBBaseListController : PSListController <UIColorPickerViewControllerDelegate>
 
 + (void)wxkbNotifyChanged;
@@ -38,9 +36,6 @@ void WXKBSetLetterColor(NSInteger index, NSString *hex);
               placeholder:(NSString *)placeholder;
 - (PSSpecifier *)wxkbSlider:(NSString *)name key:(NSString *)key def:(double)def
                         min:(double)min max:(double)max;
-// 带数字显示 + 整数步进的滑块（右侧实时显示带正负号的值，滑动一步 = step）
-- (PSSpecifier *)wxkbValueSlider:(NSString *)name key:(NSString *)key def:(double)def
-                              min:(double)min max:(double)max step:(double)step;
 
 // 点一下直接弹系统取色器（带色块预览）
 - (PSSpecifier *)wxkbColorRow:(NSString *)name key:(NSString *)key def:(NSString *)def;

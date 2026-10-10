@@ -12,13 +12,6 @@
 // NSString 版本
 #define WXKB_PREFS_DOMAIN @"com.yzdmm.wxkbtoolbar10"
 
-// 跨进程共享域：键盘扩展是沙盒进程，直接读 /var/mobile/Library/Preferences
-// （真实路径）会被沙盒挡成空目录；但能经 cfprefsd 守护进程读/写“自己的偏好域”。
-// 设置面板（未沙盒）可写任意域，故两端都走这个域即可跨进程互通。
-// 该值 = 微信键盘扩展的 bundle id（frida 实测确认）。
-#define WXKB_SHARED_DOMAIN_C "com.tencent.wetype.keyboard"
-#define WXKB_SHARED_DOMAIN @"com.tencent.wetype.keyboard"
-
 #pragma mark - 偏好键
 
 #define WXKB_KEY_ENABLED       @"enabled"
@@ -91,9 +84,6 @@
 
 // 键盘整体上下位移（pt，-80 ~ +80，正值 = 下移）
 #define WXKB_KEY_OFFSET        @"kbOffset"
-
-// 系统键盘高度增量（pt，仅作用于系统键盘 UIKeyboardImpl；正值=变矮，范围 -120~120）
-#define WXKB_KEY_SYS_KB_HEIGHT @"sysKbHeight"
 
 // 我的主题（用户存档）：NSDictionary { 主题名 -> { 偏好键 -> 值 } }
 #define WXKB_KEY_THEME_PROFILES @"themeProfiles"

@@ -171,24 +171,22 @@
 
     CGFloat w = CGRectGetWidth([UIScreen mainScreen].bounds);
     if (w < 1.0) w = 375.0;
-    CGFloat pad = 16.0;   // 左右留白：预览与选项都与屏幕两侧隔开，且严格对称
+    CGFloat pad = 12.0;
     CGFloat innerW = w - pad * 2.0;
 
     CGFloat ph = [WXKBPreviewKeyboardView preferredHeightForWidth:innerW];
     _pv = [[WXKBPreviewKeyboardView alloc] initWithFrame:CGRectMake(pad, pad, innerW, ph)];
-    // 关键：用「左右居中」弹性而非「拉伸宽度」，否则右留白会被吃掉导致左右不对称
-    _pv.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+    _pv.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [_pv refresh];
 
     CGFloat btnH = 58.0, btnW = 72.0, gap = 10.0;
     CGFloat scrollY = pad * 2.0 + ph;
-    // 选项条同样内缩 pad，与预览左右对齐、对称
-    _optScroll = [[UIScrollView alloc] initWithFrame:CGRectMake(pad, scrollY, innerW, btnH + 6.0)];
-    _optScroll.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
+    _optScroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, scrollY, w, btnH + 6.0)];
+    _optScroll.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     _optScroll.showsHorizontalScrollIndicator = NO;
     _optScroll.showsVerticalScrollIndicator = NO;
     _optButtons = [NSMutableArray array];
-    CGFloat x = 0.0;   // 选项条已整体内缩 pad，按钮从 0 起排即可
+    CGFloat x = pad;
     id current = [self readPreferenceValue:self.specifier];
     for (NSUInteger i = 0; i < _values.count; i++) {
         UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
@@ -213,7 +211,7 @@
         [_optButtons addObject:b];
         x += btnW + gap;
     }
-    _optScroll.contentSize = CGSizeMake(MAX(x, innerW), btnH + 6.0);
+    _optScroll.contentSize = CGSizeMake(MAX(x, w), btnH + 6.0);
     [self updateHighlight:current];
 
     CGFloat headerH = scrollY + btnH + 6.0 + pad;
@@ -221,29 +219,7 @@
     header.autoresizingMask = UIViewAutoresizingFlexibleWidth;
     [header addSubview:_pv];
     [header addSubview:_optScroll];
-
-    // 兼容不同 iOS / 越狱环境下 PSListController 暴露的表视图访问器：
-    // 部分 roothide/rootless 的 Preferences 并未暴露 tableView 属性，直接 self.tableView
-    // 会触发 doesNotRecognizeSelector 闪退（见 2.4.13 根控制器崩溃日记）。
-    // 依次尝试 tableView -> table -> 视图层级兜底，保证子页不再崩溃。
-    UITableView *tv = nil;
-    if ([self respondsToSelector:@selector(tableView)]) {
-        tv = self.tableView;
-    }
-    if (!tv && [self respondsToSelector:@selector(table)]) {
-        tv = (UITableView *)self.table;
-    }
-    if (!tv) {
-        for (UIView *v in self.view.subviews) {
-            if ([v isKindOfClass:[UITableView class]]) { tv = (UITableView *)v; break; }
-        }
-    }
-    if (tv) {
-        tv.tableHeaderView = header;
-    } else {
-        // 极端兜底：直接叠在视图顶部，保证不闪退且预览仍可见
-        [self.view addSubview:header];
-    }
+    self.tableView.tableHeaderView = header;
 }
 
 - (NSArray *)specifiers {
@@ -252,7 +228,8 @@
     }
     NSMutableArray *s = [NSMutableArray array];
     PSSpecifier *g = [PSSpecifier groupSpecifierWithName:nil];
-    // 子页内预览即所见即所得，去掉「实时预览…」等冗余说明文字
+    [g setProperty:@"上方实时预览随选择即时变化；选好后点「确定并返回」。"
+            forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"确定并返回" action:@selector(done:)]];
     _specifiers = s;
