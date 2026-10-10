@@ -1,5 +1,6 @@
 // WXKBCommon.m — 偏好面板公共基类与读写工具
 #import "WXKBCommon.h"
+#import <Preferences/PSTableCell.h>
 #import <objc/runtime.h>
 
 static NSUserDefaults *WXKBDefaults(void) {
@@ -207,6 +208,39 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     return WXKBFromHSL(h0 + (h1 - h0) * 0.5, s, l);
 }
 
+// ---- 类扩展：安全 specifier 缓存 ----
+@interface WXKBBaseListController () {
+    PSSpecifier *_wxkbCachedSpecifier;
+}
+@end
+
+@implementation WXKBBaseListController
+
+// specifier getter：优先 super，否则返回缓存的（roothide 上 super.specifier 可能不存在）
+- (PSSpecifier *)specifier {
+    if (_wxkbCachedSpecifier) return _wxkbCachedSpecifier;
+    if ([super respondsToSelector:@selector(specifier)]) {
+        return [super specifier];
+    }
+    return nil;
+}
+
+// setSpecifier:：PSListController push 子控制器时调这个，我们缓存一份确保 roothide 可用
+- (void)setSpecifier:(PSSpecifier *)specifier {
+    _wxkbCachedSpecifier = specifier;
+    if ([super respondsToSelector:@selector(setSpecifier:)]) {
+        [super setSpecifier:specifier];
+    }
+}
+
+// specifierAtIndexPath:：respondsToSelector 后才 super 调（roothide 上该私有访问器可能缺失）
+- (PSSpecifier *)specifierAtIndexPath:(NSIndexPath *)indexPath {
+    if ([super respondsToSelector:@selector(specifierAtIndexPath:)]) {
+        return [super specifierAtIndexPath:indexPath];
+    }
+    return nil;
+}
+
 @implementation WXKBBaseListController
 
 + (void)wxkbNotifyChanged {
@@ -254,7 +288,12 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 - (UITableViewCell *)tableView:(UITableView *)tableView
          cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
-    PSSpecifier *sp = [self specifierAtIndexPath:indexPath];
+    UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
+    PSSpecifier *sp = nil;
+    if ([cell respondsToSelector:@selector(specifier)]) {
+        sp = [(PSTableCell *)cell specifier];
+    }
+    if (!sp) { sp = [self specifierAtIndexPath:indexPath]; }
     NSString *hex = nil;
 
     NSNumber *letterIdx = [sp propertyForKey:@"wxkbLetterIndex"];
