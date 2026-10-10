@@ -2,6 +2,7 @@
 #import "WXKBCommon.h"
 #import <Preferences/PSTableCell.h>
 #import <Preferences/PSTableCell.h>
+#import <Preferences/PSTableCell.h>
 #import <objc/runtime.h>
 
 static NSUserDefaults *WXKBDefaults(void) {
