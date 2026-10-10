@@ -78,6 +78,11 @@ typedef struct {
     int    (*reputation)(void);
 } lk_env;
 
+/* 适配层提供的运行期环境单例（在 lk_env_ios.m 中定义，编译进本 dylib / bundle）。
+ * 放 extern "C" 块内，确保被 Objective-C++（.xm.mm）引用时按 C 链接，
+ * 与 .m 里的 C 定义对得上，避免 name-mangling 导致的 Undefined symbols。 */
+const lk_env *lk_get_env(void);
+
 /* 存储槽位 */
 enum { LK_SLOT_DEFAULTS = 0, LK_SLOT_FILE = 1, LK_SLOT_KEYCHAIN = 2, LK_SLOT_COUNT = 3 };
 

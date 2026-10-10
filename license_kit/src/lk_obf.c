@@ -18,6 +18,7 @@
 #include "lk_keys.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 
 /* ============================================================
  * 1. 密钥分片
@@ -172,6 +173,22 @@ int lk_suspicious_image(void) {
 #endif
 }
 
+/* arm64e 上函数指针带 PAC 签名；lk_entry_hooked 需要把函数当"数据指针"读它的
+ * 前两条指令做 trampoline 检测。若直接把带签名的指针当数据地址解引用，PAC 签名位
+ * 会被当成地址高位，落到未映射地址 → EXC_BAD_ACCESS（内核报 possible pointer
+ * authentication failure）。用 xpaclng 把 PAC 剥掉得到真实代码地址再读指令。
+ * 非 arm64 平台（含 iOS 模拟器 / PC）直接返回原指针。 */
+#if __has_feature(ptrauth_intrinsics)
+#include <ptrauth.h>
+static const void *lk_strip_pac(const void *p) {
+    /* 剥掉函数指针的 PAC 签名位，得到真实代码地址（不校验），用于读指令做 trampoline 检测。
+     * 非 arm64e / 非 Apple Clang 没有 ptrauth_intrinsics，退化成原样返回。 */
+    return ptrauth_strip(p, ptrauth_key_function_pointer);
+}
+#else
+static const void *lk_strip_pac(const void *p) { return p; }
+#endif
+
 int lk_entry_hooked(const void *fn) {
 #if defined(__APPLE__) && defined(__arm64__)
     /* 入口 trampoline 检测。
@@ -182,7 +199,7 @@ int lk_entry_hooked(const void *fn) {
      *   - ldr xN,#imm + br xN：Substrate / ElleKit 的经典两指令 trampoline
      * 刻意不查 b.cond / br / adrp：那些在正常代码里太常见（尤其 adrp+add
      * 是取全局地址的标配），加进来只会制造误报。 */
-    const uint32_t *p = (const uint32_t *)fn;
+    const uint32_t *p = (const uint32_t *)lk_strip_pac(fn);
     uint32_t a, b;
     if (!p) return 0;
     a = p[0];
@@ -228,7 +245,7 @@ uint64_t lk_self_hash(void) {
     const unsigned char *p;
     uint64_t hash = 1469598103934665603ULL;
 
-    if (!dladdr((const void *)&lk_self_hash, &info) || !info.dli_fbase) return 0;
+    if (!dladdr(lk_strip_pac((const void *)&lk_self_hash), &info) || !info.dli_fbase) return 0;
     h = (const struct mach_header_64 *)info.dli_fbase;
     s = getsectbynamefromheader_64(h, LK_SELFHASH_SEG, LK_SELFHASH_SECT);
     if (!s) return 0;

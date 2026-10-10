@@ -113,8 +113,8 @@
 
 - (UITableViewCellEditingStyle)tableView:(UITableView *)tableView
         editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath {
-    PSSpecifier *s = [self specifierAtIndex:indexPath.row];
-    if ([s propertyForKey:@"wxkbThemeName"]) {
+    PSSpecifier *s = [self specifierAtIndexPath:indexPath];
+    if (s && [s propertyForKey:@"wxkbThemeName"]) {
         return UITableViewCellEditingStyleDelete;
     }
     return UITableViewCellEditingStyleNone;
@@ -124,7 +124,7 @@
     commitEditingStyle:(UITableViewCellEditingStyle)editingStyle
      forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (editingStyle != UITableViewCellEditingStyleDelete) return;
-    PSSpecifier *s = [self specifierAtIndex:indexPath.row];
+    PSSpecifier *s = [self specifierAtIndexPath:indexPath];
     NSString *nm = [s propertyForKey:@"wxkbThemeName"];
     if (nm.length) WXKBDeleteThemeProfile(nm);
     [self reloadSpecifiers];

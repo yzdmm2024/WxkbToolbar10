@@ -1,7 +1,20 @@
 // WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
+#import "lk.h"
+#include <time.h>
 
-@interface WxkbToolbar10PrefsRootListController : WXKBBaseListController
+extern const char *lk_reason_cstr(lk_reason r);
+
+/* 2.4.27 诊断探针读取（定义在 src/lk_env_ios.m） */
+extern NSString *wxkb_diag_read(NSString *key);
+
+/* WXKBStatusCell 定义在 WXKBCommon.m（cellClass 自定义单元格），
+ * 这里用 NSClassFromString 取类，避免跨文件声明。 */
+
+@interface WxkbToolbar10PrefsRootListController : WXKBBaseListController {
+    NSString *_wxkbStatus;
+    NSString *_wxkbUDID;
+}
 @end
 
 @implementation WxkbToolbar10PrefsRootListController
@@ -67,8 +80,18 @@
     [g setProperty:@"调整键盘整体上下位置（正值下移，负值上移）。无法恢复时把滑块拉回 0。"
             forKey:@"footerText"];
     [s addObject:g];
+    /* 2.4.27：自定义 WXKBValueSliderCell 真机不能交互，换回系统 PSSliderCell
+     * （「按键圆角」同款，已验证可拖动）。 */
     [s addObject:[self wxkbSlider:@"键盘上下偏移（上下移动）" key:WXKB_KEY_OFFSET def:0.0
                               min:-80.0 max:80.0]];
+
+    // ---- 系统键盘高度（融合 ClassicKeyboardXS，仅作用于系统键盘，非微信键盘）----
+    g = [PSSpecifier groupSpecifierWithName:@"系统键盘高度"];
+    [g setProperty:@"仅作用于系统键盘（非微信键盘）。正值让系统键盘变矮，负值变高，范围 -120~120；拉回 0 即关闭。改动后收起键盘再弹出生效。"
+            forKey:@"footerText"];
+    [s addObject:g];
+    [s addObject:[self wxkbSlider:@"系统键盘高度增量" key:WXKB_KEY_SYS_KB_HEIGHT def:0.0
+                              min:-120.0 max:120.0]];
 
     // ---- 键盘背景 ----
     g = [PSSpecifier groupSpecifierWithName:@"键盘背景"];
@@ -133,11 +156,59 @@
 
     // ---- 关于 ----
     g = [PSSpecifier groupSpecifierWithName:@"关于"];
-    [g setProperty:@"WxkbToolbar10 版本 2.4.14\n反馈请联系：wacljcr@qq.com（邮件）"
+    [g setProperty:@"WxkbToolbar10 版本 2.4.27\n反馈请联系：wacljcr@qq.com（邮件）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"反馈（邮件联系 wacljcr@qq.com）"
                            action:@selector(wxkbFeedback:)]];
+
+    // ---- 授权与验证（license_kit 门禁） ----
+    g = [PSSpecifier groupSpecifierWithName:@"授权与验证"];
+    [g setProperty:@"用作者签发的 16 位解锁码解锁；未解锁时工具栏增强不生效。"
+            forKey:@"footerText"];
+    [s addObject:g];
+
+    [self _wxkbCompute];
+    /* 本 SDK 的 PSSpecifier 无 value 属性（st.value 编不过），而
+     * setProperty forKey:value 真机又不渲染 —— 走 cellClass 自定义单元格
+     * （WXKBStatusCell，定义在 WXKBCommon.m，渲染路径与值滑块同源）。 */
+    PSSpecifier *st = [PSSpecifier preferenceSpecifierNamed:@""
+                          target:self set:nil get:nil detail:nil cell:PSStaticTextCell edit:nil];
+    [st setProperty:@"状态" forKey:@"wxkbStatusTitle"];
+    [st setProperty:(_wxkbStatus ?: @"…") forKey:@"wxkbStatusValue"];
+    [st setProperty:NSClassFromString(@"WXKBStatusCell") forKey:@"cellClass"];
+    [st setProperty:@(44) forKey:@"height"];
+    [s addObject:st];
+
+    PSSpecifier *ud = [PSSpecifier preferenceSpecifierNamed:@""
+                          target:self set:nil get:nil detail:nil cell:PSStaticTextCell edit:nil];
+    [ud setProperty:@"本机 UDID（换码用）" forKey:@"wxkbStatusTitle"];
+    [ud setProperty:(_wxkbUDID ?: @"…") forKey:@"wxkbStatusValue"];
+    [ud setProperty:@YES forKey:@"wxkbStatusMultiline"];
+    [ud setProperty:NSClassFromString(@"WXKBStatusCell") forKey:@"cellClass"];
+    [ud setProperty:@(66) forKey:@"height"];
+    [s addObject:ud];
+
+    /* 诊断行：键盘扩展每次弹键盘都会把「它看到的 UDID/授权/通道实况」写进
+     * kb_probe 探针键；这行读出来，截图即可定位键盘侧卡在哪一环。 */
+    NSString *diag = wxkb_diag_read(@"kb_probe");
+    PSSpecifier *dg = [PSSpecifier preferenceSpecifierNamed:@""
+                          target:self set:nil get:nil detail:nil cell:PSStaticTextCell edit:nil];
+    [dg setProperty:@"诊断（键盘→面板通道实况）" forKey:@"wxkbStatusTitle"];
+    [dg setProperty:(diag ?: @"(nil)") forKey:@"wxkbStatusValue"];
+    [dg setProperty:@YES forKey:@"wxkbStatusMultiline"];
+    [dg setProperty:NSClassFromString(@"WXKBStatusCell") forKey:@"cellClass"];
+    [dg setProperty:@(66) forKey:@"height"];
+    [s addObject:dg];
+
+    PSSpecifier *hint = [PSSpecifier groupSpecifierWithName:@"诊断说明"];
+    [hint setProperty:@"先去任意输入框呼出微信键盘，再回到本页点「重新检查授权」——诊断行会显示键盘扩展最近一次上报：ud=键盘拿到的UDID（须与本机UDID一致）、store/cfpLic/fileLic=授权blob三通道、cfpKeys/fileKeys=两通道键数。"
+            forKey:@"footerText"];
+    [s addObject:hint];
+
+    [s addObject:[self wxkbButton:@"复制 UDID" action:@selector(_wxkbCopyUDID:)]];
+    [s addObject:[self wxkbButton:@"解锁" action:@selector(_wxkbDoUnlock:)]];
+    [s addObject:[self wxkbButton:@"重新检查授权" action:@selector(_wxkbRecheck:)]];
 
     _specifiers = s;
     return _specifiers;
@@ -230,6 +301,118 @@
     } else {
         [app openURL:u];
     }
+}
+
+#pragma mark - 授权与验证（license_kit）
+
+- (void)_wxkbCompute {
+    const lk_env *env = lk_get_env();
+    long long exp = 0;
+    lk_reason why = LK_R_NONE;
+    lk_status st = LK_LOCKED;
+    if (env) st = lk_peek(env, &exp, &why);
+
+    if (st == LK_UNLOCKED) {
+        long long remain = exp - lk_time_to_exp((double)time(NULL));
+        if (remain < 0) remain = 0;
+        _wxkbStatus = [NSString stringWithFormat:@"已解锁（剩余约 %lld 分钟）", remain];
+    } else if (st == LK_EXPIRED) {
+        _wxkbStatus = @"已过期，请重新输入解锁码";
+    } else if (st == LK_TAMPER) {
+        _wxkbStatus = [NSString stringWithFormat:@"环境异常（%s）", lk_reason_cstr(why)];
+    } else {
+        _wxkbStatus = [NSString stringWithFormat:@"未解锁（%s）", lk_reason_cstr(why)];
+    }
+
+    char ub[160];
+    if (env && env->device_id(ub, (int)sizeof(ub)) > 0)
+        _wxkbUDID = [NSString stringWithUTF8String:ub];
+    else
+        _wxkbUDID = @"(无法读取 UDID)";
+}
+
+- (void)_wxkbCopyUDID:(PSSpecifier *)spec {
+    (void)spec;
+    [UIPasteboard generalPasteboard].string = _wxkbUDID;
+    [self _wxkbToast:@"已复制 UDID 到剪贴板"];
+}
+
+- (void)_wxkbDoUnlock:(PSSpecifier *)spec {
+    (void)spec;
+    const lk_env *env = lk_get_env();
+    if (!env) { [self _wxkbToast:@"验证模块未加载"]; return; }
+
+    /* 母本 dongle 优先：已装正版母本直接自动解锁，无需输码 */
+    lk_reason why = LK_R_NONE;
+    long long exp = 0;
+    if (lk_master_verify(env, &why, &exp) == LK_UNLOCKED) {
+        /* 修复：母本解锁必须也把解锁码持久化进跨进程共享域。
+         * 键盘扩展是沙盒进程，读不到母本（LSApplicationWorkspace +
+         * 读别家二进制被沙盒拦截），lk_master_verify 在键盘里永远 LOCKED，
+         * 只能靠共享域里的码来解锁。原先这里只弹 toast、不写码，
+         * 导致「设置里显示已解锁、键盘里永远锁死」，皮肤/增强整片静默失效。 */
+        char ub[160];
+        char code[LK_CODE_LEN_S + 1];
+        if (env->device_id(ub, (int)sizeof(ub)) > 0 &&
+            lk_code_make_s(LK_PRODUCT_ID, ub, exp, code, (int)sizeof(code)) == LK_CODE_LEN_S) {
+            lk_submit(env, code, &why);   // 写入共享域（cfprefsd + 容器 plist 双通道）
+        }
+        [self _wxkbToast:@"已通过母本自动解锁"];
+        [self _wxkbRecheck:spec];
+        return;
+    }
+
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"解锁"
+                                                          message:@"请粘贴作者签发的 16 位解锁码"
+                                                   preferredStyle:UIAlertControllerStyleAlert];
+    [a addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.placeholder = @"解锁码";
+        tf.clearButtonMode = UITextFieldViewModeWhileEditing;
+    }];
+    [a addAction:[UIAlertAction actionWithTitle:@"取消"
+                                          style:UIAlertActionStyleCancel
+                                        handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:@"解锁"
+                                          style:UIAlertActionStyleDefault
+                                        handler:^(UIAlertAction *act) {
+        UITextField *tf = a.textFields.firstObject;
+        lk_reason w = LK_R_NONE;
+        lk_status st = lk_submit(env, [tf.text UTF8String], &w);
+        if (st == LK_UNLOCKED) [self _wxkbToast:@"解锁成功"];
+        else [self _wxkbToast:[NSString stringWithFormat:@"解锁失败：%s", lk_reason_cstr(w)]];
+        [self _wxkbRecheck:spec];
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    /* 每次进页面都重算状态/UDID 并重建行，解锁回来不用手动点「重新检查」 */
+    [self _wxkbRecheck:nil];
+}
+
+- (void)_wxkbRecheck:(id)sender {
+    (void)sender;
+    [self _wxkbCompute];
+    /* 通知注入到键盘扩展里的 dylib 重新加载配置并刷新授权状态，
+     * 否则已运行的键盘进程会一直沿用解锁前的 gWXKBUnlocked=NO，
+     * 表现为「解锁了但工具栏增强仍然不生效」。 */
+    [[self class] wxkbNotifyChanged];
+    _specifiers = nil;
+    [self reloadSpecifiers];
+    [self _wxkbToast:[NSString stringWithFormat:@"已重新检查：%@", _wxkbStatus ?: @"…"]];
+}
+
+- (void)_wxkbToast:(NSString *)msg {
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:nil
+                                                            message:msg
+                                                     preferredStyle:UIAlertControllerStyleAlert];
+    [self presentViewController:a animated:YES completion:^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [a dismissViewControllerAnimated:YES completion:nil];
+        });
+    }];
 }
 
 @end

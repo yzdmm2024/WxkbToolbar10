@@ -22,7 +22,7 @@ WxkbToolbar10_FILES = src/Tweak.xm \
 	license_kit/src/lk_sha256.c \
 	license_kit/ios_glue/lk_master_ios.m \
 	src/lk_env_ios.m
-WxkbToolbar10_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -w -Ilicense_kit/include -DLK_MASTER_UNLOCK=1 -DLK_SELFHASH_REQUIRED=0
+WxkbToolbar10_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -w -Ilicense_kit/include -DLK_MASTER_UNLOCK=1 -DLK_SELFHASH_REQUIRED=0 -fvisibility=hidden
 WxkbToolbar10_FRAMEWORKS = UIKit Foundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk
@@ -49,6 +49,6 @@ WxkbToolbar10Prefs_BUNDLE_RESOURCE_DIRS = prefs/Resources
 WxkbToolbar10Prefs_INSTALL_PATH = /Library/PreferenceBundles
 WxkbToolbar10Prefs_FRAMEWORKS = UIKit Foundation PhotosUI
 WxkbToolbar10Prefs_PRIVATE_FRAMEWORKS = Preferences
-WxkbToolbar10Prefs_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -w -Ilicense_kit/include -DLK_MASTER_UNLOCK=1 -DLK_SELFHASH_REQUIRED=0
+WxkbToolbar10Prefs_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -w -Ilicense_kit/include -DLK_MASTER_UNLOCK=1 -DLK_SELFHASH_REQUIRED=0 -fvisibility=hidden
 
 include $(THEOS_MAKE_PATH)/bundle.mk

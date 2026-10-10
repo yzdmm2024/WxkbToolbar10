@@ -128,7 +128,7 @@
  *
  * 注意：产品端 LK_MODE_A = 0 时必须保持 1，否则没有任何码能通过。 */
 #ifndef LK_ACCEPT_MODE_S
-#define LK_ACCEPT_MODE_S 1
+#define LK_ACCEPT_MODE_S 1   /* 母本生成器签的就是 16 位 Mode S 码，必须收；否则 lk_code_verify 一律拒收、任何码都过不了 */
 #endif
 /* 待办（P0，需要配套改动才能翻）：改成 0 才能拿到 Mode A 的全部强度。
  * 但不能只翻这一行 —— 翻了之后所有已发出的 16 位码立刻失效，会批量锁死老用户。

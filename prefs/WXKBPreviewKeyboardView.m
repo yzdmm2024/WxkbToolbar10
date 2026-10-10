@@ -8,6 +8,7 @@
 // 注意：这里只依赖 UIKit 与 NSUserDefaults（偏好走同一个 suite），
 //       不需要键盘扩展进程，因此能独立在设置里实时预览。
 #import "WXKBPreviewKeyboardView.h"
+#import <CoreFoundation/CoreFoundation.h>
 
 #pragma mark - 与 Tweak.xm 同源的数学（直接搬，保证一致）
 
@@ -317,8 +318,15 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
 
 - (void)refresh {
     NSDictionary *d = nil;
-    NSUserDefaults *ud = [[NSUserDefaults alloc] initWithSuiteName:WXKB_PREFS_DOMAIN];
-    d = [ud persistentDomainForName:WXKB_PREFS_DOMAIN];
+    // 对齐 WXKBLoadPrefs：优先从 cfprefsd 共享域读（键盘扩展沙盒内能读到）
+    CFDictionaryRef raw = CFPreferencesCopyMultiple(
+        NULL, (__bridge CFStringRef)WXKB_SHARED_DOMAIN,
+        kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (raw) {
+        NSDictionary *dd = (__bridge NSDictionary *)raw;
+        if ([dd isKindOfClass:[NSDictionary class]]) d = dd;
+        CFRelease(raw);
+    }
     if (![d isKindOfClass:[NSDictionary class]] || d.count == 0) {
         d = @{};
     }
@@ -415,9 +423,9 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
         return;
     }
 
-    // 键盘内边距 + 行间距（紧凑）
-    CGFloat sideMargin = W * 0.018;
-    CGFloat gap = W * 0.009;
+    // 键盘内边距 + 行间距（紧凑但不挤）
+    CGFloat sideMargin = W * 0.03;   // 与预览框两侧拉开一点，更透气
+    CGFloat gap = W * 0.012;
     CGFloat topPad = H * 0.05;
     CGFloat usableW = W - 2 * sideMargin;
 
@@ -652,7 +660,12 @@ static void WXKBPreviewNotifyCallback(CFNotificationCenterRef center,
     if (ratio < 0) ratio = -ratio;
     BOOL squareish = (ratio >= 0.75 && ratio <= 1.35);
     NSInteger effShape = shape;
-    if (shape >= 2 && !squareish) effShape = 0;
+    // 与 Tweak 一致：凹角形状（六边形=2 / 水珠=3）长键降级；
+    // 其余凸形状仅在「无皮肤」时长键降级（有皮肤时凹角被画布色填平、无黑缝）。
+    BOOL longKeyDegrade = (!squareish) &&
+        ((shape == 2 || shape == 3) ||
+         (shape >= 4 && shape <= 11 && !_gSkinEnabled));
+    if (longKeyDegrade) effShape = 0;
 
     CGFloat kDepth = 4.0, kInset = 4.0, kFront = 7.0, topY = 2.5;
     if (cs == 2)      { kInset = 3.0; kFront = 8.0; topY = 2.0; }
