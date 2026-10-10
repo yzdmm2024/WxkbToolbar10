@@ -1,5 +1,6 @@
 // WXKBCommon.m — 偏好面板公共基类与读写工具
 #import "WXKBCommon.h"
+#import <Preferences/PSTableCell.h>
 #import <objc/runtime.h>
 
 static NSUserDefaults *WXKBDefaults(void) {
@@ -254,7 +255,15 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 - (UITableViewCell *)tableView:(UITableView *)tableView
          cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
-    PSSpecifier *sp = [self specifierAtIndexPath:indexPath];
+    // 取该行的 specifier：优先用 cell.specifier（PSTableCell 可靠提供），
+    // 兜底才用 specifierAtIndexPath:（部分 roothide/iOS 环境该私有访问器缺失会闪退）。
+    PSSpecifier *sp = nil;
+    if ([cell respondsToSelector:@selector(specifier)]) {
+        sp = [(PSTableCell *)cell specifier];
+    }
+    if (!sp && [self respondsToSelector:@selector(specifierAtIndexPath:)]) {
+        sp = [self specifierAtIndexPath:indexPath];
+    }
     NSString *hex = nil;
 
     NSNumber *letterIdx = [sp propertyForKey:@"wxkbLetterIndex"];
@@ -284,7 +293,10 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 #pragma mark - 行高（内联网格用）
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
-    PSSpecifier *sp = [self specifierAtIndexPath:indexPath];
+    PSSpecifier *sp = nil;
+    if ([self respondsToSelector:@selector(specifierAtIndexPath:)]) {
+        sp = [self specifierAtIndexPath:indexPath];
+    }
     NSNumber *h = [sp propertyForKey:@"wxkbGridHeight"];
     if (h) return [h doubleValue];
     return [super tableView:tableView heightForRowAtIndexPath:indexPath];
