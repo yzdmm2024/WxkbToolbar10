@@ -1,4 +1,4 @@
-// WxkbToolbar10PrefsRootListController.m — 设置面板根页
+﻿// WxkbToolbar10PrefsRootListController.m — 设置面板根页
 #import "WXKBCommon.h"
 
 @interface WxkbToolbar10PrefsRootListController : WXKBBaseListController
@@ -233,3 +233,4 @@
 }
 
 @end
+
