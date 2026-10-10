@@ -1,4 +1,4 @@
-// WXKBThemeProfilesController.m — 「我的主题」管理页
+﻿// WXKBThemeProfilesController.m — 「我的主题」管理页
 //
 // 列出所有已存主题；点一行 = 套用（写回偏好 + 通知键盘 + 返回根页让预览刷新）；
 // 右上角「编辑」可滑动删除。底部有「保存当前外观为新主题」按钮。
@@ -114,7 +114,7 @@
 // 安全获取 specifier：respondsToSelector 守卫防 roothide/iOS 私有访问器缺失
 - (PSSpecifier *)wxkbSpecifierAt:(NSIndexPath *)indexPath {
     if ([self respondsToSelector:@selector(specifierAtIndexPath:)]) {
-        return [self specifierAtIndexPath:indexPath];
+        return [self wxkbSpecifierAt:indexPath];
     }
     return nil;
 }
@@ -141,3 +141,4 @@
 }
 
 @end
+
