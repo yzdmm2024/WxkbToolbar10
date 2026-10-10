@@ -5,9 +5,8 @@
 #import <CoreFoundation/CoreFoundation.h>
 
 // 跨进程共享域：设置面板（未沙盒）写、键盘扩展（沙盒）读，二者都走 cfprefsd。
-// 2.4.26：CFPreferences 写完后再把键值合并直写一份到 WeType 容器的域 plist
-//（wxkb_shared_sync，见 src/lk_env_ios.m）——cfprefsd 跨进程视图未同步时，
-// 键盘扩展直读自己容器里的这份文件照样拿得到。
+// 此外 wxkb_shared_sync（见 src/wxkb_shared.m）再把键值直写进 WeType 容器
+// plist 作为兜底——cfprefsd 跨进程视图未同步时，键盘扩展直读自己的容器文件照样拿得到。
 extern void wxkb_shared_sync(NSString *key, id value);
 
 static NSString *WXKBSharedDomain(void) {

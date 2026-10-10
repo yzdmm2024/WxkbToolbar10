@@ -112,34 +112,6 @@
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import "WXKBShared.h"
-#import "lk.h"
-
-/* 2.4.27 键盘→设置诊断探针（lk_env_ios.m 提供）。
- * Tweak.xm 会按 ObjC++ 编译，必须 extern "C" 否则名字被修饰。 */
-#if defined(__cplusplus)
-extern "C" void wxkb_self_sync(NSString *key, id value);
-#else
-extern void wxkb_self_sync(NSString *key, id value);
-#endif
-
-/* ---- 验证门禁（license_kit）：母本 dongle 或有效解锁码才放行功能 ----
- * lk_get_env 由 src/lk_env_ios.m 提供（编译进本 dylib），声明见 lk.h（extern "C"）。 */
-
-/* 门禁状态：仅在「装正版母本」或「有效解锁码」时为 YES。
- * 不是可 patch 的裸枚举——真值来自 lk_func_key：它仅在母本在场或解锁码有效时
- * 返回 0 并产出有效功能密钥；解不开时返回非 0 且不置有效密钥，上层功能因此无法
- * 还原，等于「功能数据被功能密钥锁死」。patch 掉本布尔也无济于事。 */
-static BOOL gWXKBUnlocked = NO;
-
-static void WXKBRefreshLicense(void) {
-    gWXKBUnlocked = NO;
-    const lk_env *env = lk_get_env();
-    if (!env) return;
-    uint8_t fk[32];
-    if (lk_func_key(env, fk) == 0) {
-        gWXKBUnlocked = YES;
-    }
-}
 
 #pragma mark - 私有类声明（实现由原 App 提供）
 
@@ -375,7 +347,7 @@ static NSDictionary *WXKBLoadPrefs(void) {
     ]];
     for (NSString *p in paths) {
         // 沙盒键盘扩展里 dictionaryWithContentsOfFile: 可能被拦截（实测返回 nil），
-        // 改用 NSData 读原始字节再解析——与 license_kit 读 .license.plist 同一条路，键盘可读。
+        // 改用 NSData 读原始字节再解析——与读其它 .plist 同一条路，键盘可读。
         NSData *pd = [NSData dataWithContentsOfFile:p];
         NSDictionary *d = nil;
         if (pd.length) {
@@ -414,67 +386,6 @@ static NSDictionary *WXKBLoadPrefs(void) {
     return ([d isKindOfClass:[NSDictionary class]] && d.count > 0) ? d : nil;
 }
 
-/* ---- 2.4.27 键盘→设置诊断探针 ----
- * 键盘扩展把「自己看到的 UDID / 授权 blob / 各通道读值」写进探针键：
- *   1) cfprefsd 共享域（若 cfprefsd 是全局按域名取存储，设置面板能读到）；
- *   2) 自己容器的域 plist 直写（设置面板扫描容器后直读）。
- * 设置面板「诊断」行读同名键即可判断两条通道哪条通、UDID 是否对齐。 */
-static NSString *WxkbProbeCfp(NSString *key) {
-    CFPropertyListRef v = CFPreferencesCopyValue(
-        (__bridge CFStringRef)key,
-        (__bridge CFStringRef)@"com.tencent.wetype.keyboard",
-        kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-    if (!v) return @"nil";
-    if (CFGetTypeID(v) != CFStringGetTypeID()) { CFRelease(v); return @"(type)"; }
-    NSString *s = (__bridge_transfer NSString *)v;
-    return s.length ? @"yes" : @"nil";
-}
-
-static void WXKBPostProbe(void) {
-    static double last = 0;
-    double now = CFAbsoluteTimeGetCurrent();
-    if (last > 0 && now - last < 30.0) return;
-    last = now;
-    @try {
-        char ub[160] = {0}, lb[512] = {0};
-        const lk_env *env = lk_get_env();
-        NSString *ud = (env && env->device_id && env->device_id(ub, (int)sizeof(ub)) > 0)
-            ? [NSString stringWithUTF8String:ub] : @"(none)";
-        int storeN = (env && env->store_read) ? env->store_read(0, lb, (int)sizeof(lb)) : -1;
-
-        NSString *home = NSHomeDirectory();
-        NSUInteger fileKeys = 0, fileLic = 0;
-        if (home.length) {
-            NSDictionary *fd = [NSDictionary dictionaryWithContentsOfFile:
-                [home stringByAppendingPathComponent:
-                      @"Library/Preferences/com.tencent.wetype.keyboard.plist"]];
-            if ([fd isKindOfClass:[NSDictionary class]]) {
-                fileKeys = fd.count;
-                fileLic = fd[@"wxkb_lic_0"] ? 1 : 0;
-            }
-        }
-        NSDictionary *cd = (__bridge_transfer NSDictionary *)CFPreferencesCopyMultiple(
-            NULL, (__bridge CFStringRef)@"com.tencent.wetype.keyboard",
-            kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-        NSUInteger cfpKeys = [cd isKindOfClass:[NSDictionary class]] ? cd.count : 0;
-
-        NSString *info = [NSString stringWithFormat:
-            @"t=%.0f|ud=%@|store=%d|cfpLic=%@|fileLic=%lu|cfpKeys=%lu|fileKeys=%lu|skin=%@",
-            now, ud, storeN, WxkbProbeCfp(@"wxkb_lic_0"),
-            (unsigned long)fileLic, (unsigned long)cfpKeys, (unsigned long)fileKeys,
-            WxkbProbeCfp(@"skinEnabled")];
-
-        CFPreferencesSetValue(
-            (__bridge CFStringRef)@"kb_probe",
-            (__bridge CFPropertyListRef)info,
-            (__bridge CFStringRef)@"com.tencent.wetype.keyboard",
-            kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-        CFPreferencesSynchronize(
-            (__bridge CFStringRef)@"com.tencent.wetype.keyboard",
-            kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
-        wxkb_self_sync(@"kb_probe", info);
-    } @catch (NSException *e) { }
-}
 
 static void WXKBReload(BOOL force) {
     double now = CFAbsoluteTimeGetCurrent();
@@ -483,8 +394,6 @@ static void WXKBReload(BOOL force) {
     }
     gLastLoad = now;
 
-    WXKBPostProbe();   /* 无论偏好读没读到，先把键盘侧实况写给设置面板 */
-
     NSDictionary *d = WXKBLoadPrefs();
     if (!d) {
         return;   // 读不到就沿用当前值（首次为内置默认）
@@ -492,11 +401,6 @@ static void WXKBReload(BOOL force) {
 
     id v = d[WXKB_KEY_ENABLED];
     gEnabled = v ? [v boolValue] : YES;
-
-    /* ---- 验证门禁（license_kit）：未解锁则整体失效，功能数据被功能密钥锁死 ---- */
-    WXKBRefreshLicense();
-    gEnabled = gEnabled && gWXKBUnlocked;
-
 
     // ---- 背景 ----
     gBgEnabled = [d[WXKB_KEY_BG_ENABLED] boolValue];
@@ -3441,7 +3345,7 @@ static void WXKBFireAction(int c) {
                                     NULL, WXKBOnPrefsChanged,
                                     CFSTR(WXKB_CHANGED_NOTIFICATION_C), NULL,
                                     CFNotificationSuspensionBehaviorDeliverImmediately);
-    NSLog(@"[WxkbToolbar10] 2.4.27 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f sysKbHeight=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld licensed=%d",
+    NSLog(@"[WxkbToolbar10] 3.0 loaded enabled=%d bg=%d trans=%d key=%d grad=%d shape=%d capStyle=%ld corner=%.1f offset=%.1f sysKbHeight=%.1f skin=%d skinBg=%ld skinTheme=%ld skinDir=%ld",
           gEnabled, gBgEnabled, gTransparent, gKeyEnabled,
-          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSysKbHeight, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir, gWXKBUnlocked);
+          gGradEnabled, gShape, (long)gCapStyle, gCorner, gKbOffset, gSysKbHeight, gSkinEnabled, (long)gSkinBg, (long)gSkinTheme, (long)gSkinDir);
 }
