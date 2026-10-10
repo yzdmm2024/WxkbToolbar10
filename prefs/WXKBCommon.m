@@ -214,8 +214,6 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 }
 @end
 
-@implementation WXKBBaseListController
-
 // specifier getter：优先 super，否则返回缓存的（roothide 上 super.specifier 可能不存在）
 - (PSSpecifier *)specifier {
     if (_wxkbCachedSpecifier) return _wxkbCachedSpecifier;
@@ -288,12 +286,12 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 - (UITableViewCell *)tableView:(UITableView *)tableView
          cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
-    UITableViewCell *cell = [super tableView:tableView cellForRowAtIndexPath:indexPath];
     PSSpecifier *sp = nil;
     if ([cell respondsToSelector:@selector(specifier)]) {
         sp = [(PSTableCell *)cell specifier];
     }
     if (!sp) { sp = [self specifierAtIndexPath:indexPath]; }
+
     NSString *hex = nil;
 
     NSNumber *letterIdx = [sp propertyForKey:@"wxkbLetterIndex"];
