@@ -214,6 +214,8 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
 }
 @end
 
+@implementation WXKBBaseListController
+
 // specifier getter：优先 super，否则返回缓存的（roothide 上 super.specifier 可能不存在）
 - (PSSpecifier *)specifier {
     if (_wxkbCachedSpecifier) return _wxkbCachedSpecifier;
@@ -239,7 +241,6 @@ UIColor *WXKBThemeSwatchColor(NSInteger theme) {
     return nil;
 }
 
-@implementation WXKBBaseListController
 
 + (void)wxkbNotifyChanged {
     // 通知键盘扩展立刻重读偏好；收不到也没关系，重弹键盘一样生效。
