@@ -133,7 +133,7 @@
 
     // ---- 关于 ----
     g = [PSSpecifier groupSpecifierWithName:@"关于"];
-    [g setProperty:@"WxkbToolbar10 版本 3.1\n反馈请联系：wacljcr@qq.com（邮件）"
+    [g setProperty:@"WxkbToolbar10 版本 3.1.1\n反馈请联系：wacljcr@qq.com（邮件）"
             forKey:@"footerText"];
     [s addObject:g];
     [s addObject:[self wxkbButton:@"反馈（邮件联系 wacljcr@qq.com）"
