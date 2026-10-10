@@ -1,5 +1,6 @@
-// WXKBCommon.m — 偏好面板公共基类与读写工具
+﻿// WXKBCommon.m — 偏好面板公共基类与读写工具
 #import "WXKBCommon.h"
+#import <Preferences/PSTableCell.h>
 #import <Preferences/PSTableCell.h>
 #import <objc/runtime.h>
 
