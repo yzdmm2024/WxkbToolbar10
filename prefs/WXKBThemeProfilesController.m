@@ -109,11 +109,19 @@
     [self.navigationController popViewControllerAnimated:YES];
 }
 
+// 安全 specifier 获取：走基类重写的 specifierAtIndexPath（roothide 兼容）
+- (PSSpecifier *)wxkbSpecifierAt:(NSIndexPath *)indexPath {
+    if ([self respondsToSelector:@selector(specifierAtIndexPath:)]) {
+        return [self wxkbSpecifierAt:indexPath];
+    }
+    return nil;
+}
+
 #pragma mark - 删除主题
 
 - (UITableViewCellEditingStyle)tableView:(UITableView *)tableView
         editingStyleForRowAtIndexPath:(NSIndexPath *)indexPath {
-    PSSpecifier *s = [self specifierAtIndexPath:indexPath];
+    PSSpecifier *s = [self wxkbSpecifierAt:indexPath];
     if (!s) return UITableViewCellEditingStyleNone;
     if ([s propertyForKey:@"wxkbThemeName"]) {
         return UITableViewCellEditingStyleDelete;
@@ -125,7 +133,7 @@
     commitEditingStyle:(UITableViewCellEditingStyle)editingStyle
      forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (editingStyle != UITableViewCellEditingStyleDelete) return;
-    PSSpecifier *s = [self specifierAtIndexPath:indexPath];
+    PSSpecifier *s = [self wxkbSpecifierAt:indexPath];
     if (!s) return;
     NSString *nm = [s propertyForKey:@"wxkbThemeName"];
     if (nm.length) WXKBDeleteThemeProfile(nm);
@@ -133,3 +141,4 @@
 }
 
 @end
+
