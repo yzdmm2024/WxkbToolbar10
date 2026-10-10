@@ -1,9 +1,9 @@
 Package: com.yzdmm.wxkbtoolbar10
 Name: WxkbToolbar10
-Version: 3.1.2
+Version: 3.1.3
 Architecture: iphoneos-arm64
 Maintainer: yzdmm
 Author: yzdmm
 Section: Tweaks
 Depends: mobilesubstrate, preferenceloader
-Description: 微信输入法键盘扩展增强：整键盘透明、自定义键盘背景与按键配色、按键圆角、立体键帽（含彩虹3D键帽/马卡龙浮雕/彩虹键盘帽/电脑键盘风）；工具栏图标增删/顺序请在微信输入法内「定制工具栏」调整
+Description: 寰俊杈撳叆娉曢敭鐩樻墿灞曞寮猴細鏁撮敭鐩橀€忔槑銆佽嚜瀹氫箟閿洏鑳屾櫙涓庢寜閿厤鑹层€佹寜閿渾瑙掋€佺珛浣撻敭甯斤紙鍚僵铏?D閿附/椹崱榫欐诞闆?褰╄櫣閿洏甯?鐢佃剳閿洏椋庯級锛涘伐鍏锋爮鍥炬爣澧炲垹/椤哄簭璇峰湪寰俊杈撳叆娉曞唴銆屽畾鍒跺伐鍏锋爮銆嶈皟鏁?
